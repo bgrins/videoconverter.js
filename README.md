@@ -17,7 +17,10 @@ First, make sure you have Emscripten set up:
 
     git clone git@github.com:kripken/emscripten.git
 
-Depending on your system may need to also get the SDK to make sure Emscripten will work.  The have [documentation on their site](https://github.com/kripken/emscripten/wiki/Tutorial) about getting this to work.  Here are the basic configuration options we ended up using.  Most of the configuration options are actually disabling features that either don't make sense, or are there to save space.  The only other flag that I needed right off the bat was --enable-pic.
+Depending on your system may need to also get the SDK to make sure Emscripten will work.  The have [documentation on their site](https://github.com/kripken/emscripten/wiki/Tutorial) about getting this to work.
 
+Once this is all set up and `emcc` is on your path, you should be able to run:
 
     git clone git@github.com:bgrins/videoconverter.js.git
+    cd videoconverter.js/ffmpeg_build
+    ./build_lgpl.sh
