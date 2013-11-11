@@ -1,7 +1,7 @@
 
 #videoconverter.js
 
-This is a project that converts the popular [FFmpeg]() library into JavaScript, using [Emscripten](https://github.com/kripken/emscripten).
+This is a project that converts the popular [FFmpeg](http://ffmpeg.org/) library into JavaScript, using [Emscripten](https://github.com/kripken/emscripten).
 
 ## Usage instructions
 
