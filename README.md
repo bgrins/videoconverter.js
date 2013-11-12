@@ -1,15 +1,22 @@
-
 #videoconverter.js
 
-This is a project that converts the popular [FFmpeg](http://ffmpeg.org/) library into JavaScript, using [Emscripten](https://github.com/kripken/emscripten).
+videoconverter.js is a library that allows you to convert and manipulate videos inside of your web browser.
 
-## Usage instructions
+This is acheived by converting the popular [FFmpeg](http://ffmpeg.org/) library into JavaScript, using [Emscripten](https://github.com/kripken/emscripten).
 
-These instructions are still See the `test/` directory for a basic usage example.  Call `ffmpeg_run` with an `Module` object as seen [here](test/index.html).  **Note**: this should be done in a worker normally to prevent browser hangs.
+It was originally conceived for a project called [http://nodeknockout.com/teams/devcomo](Video Funhouse) in Node Knockout 2013.
 
-## External Library Support
+## How big is the JavaScript file?
 
-This isn't yet compiled with any other static library support (like zlib, x264, libvpx, etc.  It should be possible to do though.
+It is 24MB.  For the original demo, it was around 50MB.
+
+## Can I Use It?
+
+Sure, as long as you follow any relevant [FFmpeg license](http://www.ffmpeg.org/legal.html) terms.
+
+The usage instructions are still in development.  See the [test/](test/index.html) directory for a very basic usage example.  We are working on bringing a more robust sample app into the repository.
+
+Call `ffmpeg_run` with an `Module` object as seen [here](test/index.html).  **Note**: this should be done in a worker normally to prevent browser hangs.
 
 ## Instructions to build yourself
 
@@ -24,3 +31,18 @@ Once this is all set up and `emcc` is on your path, you should be able to run:
     git clone git@github.com:bgrins/videoconverter.js.git
     cd videoconverter.js/ffmpeg_build
     ./build_lgpl.sh
+
+
+## Potential Uses
+
+### Video Editing / Conversion
+
+This is what we are doing with http://devcomo.2013.nodeknockout.com/.  Obviously, this could be expanded and optimized.  Quite likely to bump up against performance bottlenecks - I [wrote about some of the issues we bumped into](http://www.briangrinstead.com/blog/video-funhouse) if you are interested in more information.
+
+### Benchmarking
+
+We are beginning to build a [benchmark](jsperf_test/) to compare different browser performances.  It would be interesting to compare performance versus native as well.
+
+### External Library Support
+
+This isn't yet compiled with any other static library support (like zlib, x264, libvpx, etc.  It should be possible to do though.
