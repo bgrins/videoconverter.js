@@ -12,7 +12,7 @@ It is 24MB.  For the original demo, it was around 50MB.
 
 ## Can I Use It?
 
-Sure, as long as you follow any relevant [FFmpeg license](http://www.ffmpeg.org/legal.html) terms.
+Sure, as long as you follow any relevant [FFmpeg license](http://www.ffmpeg.org/legal.html) terms.  You can also read a copy of the [LICENSE](LICENSE) file - the [ffmpeg.js](ffmpeg_build/ffmpeg.js) file is built under the LGPL terms described on the FFmpeg site above.
 
 The usage instructions are still in development.  See the [test/](test/index.html) directory for a very basic usage example.  We are working on bringing a more robust sample app into the repository.
 
