@@ -13,7 +13,7 @@ This isn't yet compiled with any other static library support (like zlib, x264, 
 
 ## Instructions to build yourself
 
-First, make sure you have Emscripten set up:
+Want to build the ffmpeg.js file for yourself?  First, make sure you have Emscripten set up:
 
     git clone git@github.com:kripken/emscripten.git
 
