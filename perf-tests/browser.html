@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<head>
+<script src="ffmpeg.js"></script>
+</head>
+
+<pre></pre>
+
+<script type="text/worker">
+
+function run(filename, data, args) {
+  run("big_buck_bunny.webm", byteArray,
+          "vf showinfo,scale=w=-1:h=-1 -strict experimental -v verbose output.gif");
+    var mod = {
+      print: function (text) {
+        document.querySelector("pre").textContent += "\n" + text;
+      },
+      printErr: function (text) {
+        document.querySelector("pre").textContent += "\n" + text;
+      },
+      'arguments': args,
+      'fileData': data,
+      'fileName': filename
+    };
+
+    var result = ffmpeg_run(mod);
+
+    var buffers = [];
+    if (result && result.object && result.object.contents) {
+      for (var i in result.object.contents) {
+        if (result.object.contents.hasOwnProperty(i)) {
+          buffers.push(new Uint8Array(result.object.contents[i].contents).buffer);
+        }
+      }
+    }
+    return buffers;
+  }
+}
+
+</script>
+
+<script>
+  window.URL = window.URL || window.webkitURL;
+  function processSampleVideo() {
+    var oReq = new XMLHttpRequest();
+    oReq.open("GET", "big_buck_bunny.webm", true);
+    oReq.responseType = "arraybuffer";
+    oReq.onload = function (oEvent) {
+      var arrayBuffer = oReq.response;
+      if (arrayBuffer) {
+        var byteArray = new Uint8Array(arrayBuffer);
+        
+      }
+    };
+
+    oReq.send(null);
+  }
+</script>
