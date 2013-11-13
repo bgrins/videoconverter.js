@@ -26,6 +26,16 @@ Note: this is done in the main thread.  It should really be done in workers.  Ru
     return img;
   }
 
+  function getDownloadLink(fileData, fileName) {
+    var a = document.createElement('a');
+    a.download = fileName || 'output.mov';
+    var blob = new Blob([fileData]);
+    var src = window.URL.createObjectURL(blob);
+    a.href = src;
+    a.textContent = 'Click here to download ' + fileName + "!";
+    return a;
+  }
+
   function processSampleImage() {
     var oReq = new XMLHttpRequest();
     oReq.open("GET", "bigbuckbunny.jpg", true);
@@ -55,8 +65,11 @@ Note: this is done in the main thread.  It should really be done in workers.  Ru
       var arrayBuffer = oReq.response;
       if (arrayBuffer) {
         var byteArray = new Uint8Array(arrayBuffer);
-        run("bigbuckbunny.webm", byteArray,
-          ['-t', '2', '-i', 'bigbuckbunny.webm', 'output/output.mov']);
+        var buffers = run("bigbuckbunny.webm", byteArray,
+          ['-t', '10', '-i', 'bigbuckbunny.webm', '-strict', '-2', 'output/output.mov']);
+        buffers.forEach(function(file) {
+          document.body.appendChild(getDownloadLink(file, "output.mov"));
+        });
       }
     };
 
@@ -87,6 +100,7 @@ Note: this is done in the main thread.  It should really be done in workers.  Ru
         }
       }
     }
+    console.log(buffers);
     return buffers;
   }
 </script>
