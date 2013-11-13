@@ -6,7 +6,7 @@ self.addEventListener('message', function(e) {
   });
 
   var results = run("big_buck_bunny.webm", e.data,
-    ["-i", "big_buck_bunny.webm", "-vf", "showinfo,scale=w=-1:h=-1", "-strict", "experimental", "-v", "verbose", "output.gif"]);
+    ["-i", "big_buck_bunny.webm", "-vf", "showinfo,scale=w=-1:h=-1", "-strict", "experimental", "-v", "verbose", "output.mov"]);
 
   postMessage({
     'type' : 'end'
