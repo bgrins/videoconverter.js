@@ -1,16 +1,27 @@
-importScripts('localhost:8000/ffmpeg.js');
+importScripts('../ffmpeg_build/ffmpeg.js');
 
 self.addEventListener('message', function(e) {
-  run("big_buck_bunny.webm", e.data, "vf showinfo,scale=w=-1:h=-1 -strict experimental -v verbose output.gif");
+  var results = run("big_buck_bunny.webm", e.data,
+    ["-i", "big_buck_bunny.webm", "-vf", "showinfo,scale=w=-1:h=-1", "-strict", "experimental", "-v", "verbose", "output.gif"]);
+
+  postMessage({
+    'type' : 'done'
+  });
 });
 
-function run(filename, data, args) {  
+function run(filename, data, args) {
     var mod = {
       print: function (text) {
-        self.postMessage(text);
+        postMessage({
+          'type' : 'stdout',
+          'data' : text
+        });
       },
       printErr: function (text) {
-        self.postMessage(text);
+        postMessage({
+          'type' : 'stdout',
+          'data' : text
+        });
       },
       'arguments': args,
       'fileData': data,

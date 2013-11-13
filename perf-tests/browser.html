@@ -11,11 +11,11 @@ function makeWorker(script) {
     var URL = window.URL || window.webkitURL;
     var Blob = window.Blob;
     var Worker = window.Worker;
- 
+
     if (!URL || !Blob || !Worker || !script) {
         return null;
     }
- 
+
     var blob = new Blob([script]);
     var worker = new Worker(URL.createObjectURL(blob));
     return worker;
@@ -30,7 +30,7 @@ self.addEventListener('message', function(e) {
   run("big_buck_bunny.webm", e.data, "vf showinfo,scale=w=-1:h=-1 -strict experimental -v verbose output.gif");
 });
 
-function run(filename, data, args) {  
+function run(filename, data, args) {
     var mod = {
       print: function (text) {
         console.log(text);
@@ -61,6 +61,19 @@ function run(filename, data, args) {
 <script>
   window.URL = window.URL || window.webkitURL;
   var worker =  new Worker("worker.js");
+  var pre = document.querySelector("pre");
+  var start;
+  worker.onmessage = function(e) {
+
+    if (e.data.type === "stdout") {
+      pre.textContent += e.data.data + "\n";
+    }
+    if (e.data.type === "done") {
+      var finished = Date.now();
+
+      pre.textContent += "\n\nFinished!  Took: " + (start - finished) + "ms";
+    }
+  }
   function processSampleVideo() {
     var oReq = new XMLHttpRequest();
     oReq.open("GET", "big_buck_bunny.webm", true);
@@ -70,7 +83,8 @@ function run(filename, data, args) {
       console.log(oEvent);
       var arrayBuffer = oReq.response;
       if (arrayBuffer) {
-        var byteArray = new Uint8Array(arrayBuffer);    
+        var byteArray = new Uint8Array(arrayBuffer);
+        start = Date.now();
         worker.postMessage(byteArray);
       }
     };
