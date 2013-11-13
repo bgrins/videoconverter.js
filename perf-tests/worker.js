@@ -1,11 +1,15 @@
 importScripts('../ffmpeg_build/ffmpeg.js');
 
 self.addEventListener('message', function(e) {
+  postMessage({
+    'type' : 'start'
+  });
+
   var results = run("big_buck_bunny.webm", e.data,
     ["-i", "big_buck_bunny.webm", "-vf", "showinfo,scale=w=-1:h=-1", "-strict", "experimental", "-v", "verbose", "output.gif"]);
 
   postMessage({
-    'type' : 'done'
+    'type' : 'end'
   });
 });
 

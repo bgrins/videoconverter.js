@@ -63,15 +63,21 @@ function run(filename, data, args) {
   var worker =  new Worker("worker.js");
   var pre = document.querySelector("pre");
   var start;
+  var init;
   worker.onmessage = function(e) {
 
     if (e.data.type === "stdout") {
       pre.textContent += e.data.data + "\n";
     }
-    if (e.data.type === "done") {
+    if (e.data.type === "start") {
+      start = Date.now();
+      pre.textContent += "Starting!  Took: " + (start - init) + "ms to initialize\n\n";
+
+    }
+    if (e.data.type === "end") {
       var finished = Date.now();
 
-      pre.textContent += "\n\nFinished!  Took: " + (start - finished) + "ms";
+      pre.textContent += "\n\nFinished!  Took: " + (finished - start) + "ms";
     }
   }
   function processSampleVideo() {
@@ -80,11 +86,10 @@ function run(filename, data, args) {
     oReq.responseType = "arraybuffer";
 
     oReq.onload = function (oEvent) {
-      console.log(oEvent);
       var arrayBuffer = oReq.response;
       if (arrayBuffer) {
         var byteArray = new Uint8Array(arrayBuffer);
-        start = Date.now();
+        init = Date.now();
         worker.postMessage(byteArray);
       }
     };
