@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <head>
-<script src="ffmpeg.js"></script>
 </head>
 
 <pre></pre>
@@ -24,6 +23,8 @@ function makeWorker(script) {
 </script>
 
 <script type="text/worker" id="main-worker">
+
+importScripts('localhost:8000/ffmpeg.js');
 
 self.addEventListener('message', function(e) {
   run("big_buck_bunny.webm", e.data, "vf showinfo,scale=w=-1:h=-1 -strict experimental -v verbose output.gif");
@@ -59,20 +60,23 @@ function run(filename, data, args) {
 
 <script>
   window.URL = window.URL || window.webkitURL;
-  var worker = makeWorker(document.getElementById('main-worker').textContent);
+  var worker =  new Worker("worker.js");
   function processSampleVideo() {
     var oReq = new XMLHttpRequest();
     oReq.open("GET", "big_buck_bunny.webm", true);
     oReq.responseType = "arraybuffer";
 
     oReq.onload = function (oEvent) {
+      console.log(oEvent);
       var arrayBuffer = oReq.response;
       if (arrayBuffer) {
         var byteArray = new Uint8Array(arrayBuffer);    
-        inlineWorker.postMessage(byteArray);
+        worker.postMessage(byteArray);
       }
     };
 
     oReq.send(null);
   }
+
+  processSampleVideo();
 </script>
