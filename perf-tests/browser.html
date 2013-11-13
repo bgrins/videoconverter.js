@@ -5,13 +5,34 @@
 
 <pre></pre>
 
-<script type="text/worker">
+<script>
+//http://www.briangrinstead.com/blog/load-web-workers-without-a-javascript-file
+// makeWorker is a little wrapper for generating web workers from strings
+function makeWorker(script) {
+    var URL = window.URL || window.webkitURL;
+    var Blob = window.Blob;
+    var Worker = window.Worker;
+ 
+    if (!URL || !Blob || !Worker || !script) {
+        return null;
+    }
+ 
+    var blob = new Blob([script]);
+    var worker = new Worker(URL.createObjectURL(blob));
+    return worker;
+}
+</script>
 
-function run(filename, data, args) {
-  run("big_buck_bunny.webm", byteArray,
-          "vf showinfo,scale=w=-1:h=-1 -strict experimental -v verbose output.gif");
+<script type="text/worker" id="main-worker">
+
+self.addEventListener('message', function(e) {
+  run("big_buck_bunny.webm", e.data, "vf showinfo,scale=w=-1:h=-1 -strict experimental -v verbose output.gif");
+});
+
+function run(filename, data, args) {  
     var mod = {
       print: function (text) {
+        console.log(text);
         document.querySelector("pre").textContent += "\n" + text;
       },
       printErr: function (text) {
@@ -23,7 +44,6 @@ function run(filename, data, args) {
     };
 
     var result = ffmpeg_run(mod);
-
     var buffers = [];
     if (result && result.object && result.object.contents) {
       for (var i in result.object.contents) {
@@ -33,22 +53,23 @@ function run(filename, data, args) {
       }
     }
     return buffers;
-  }
 }
 
 </script>
 
 <script>
   window.URL = window.URL || window.webkitURL;
+  var worker = makeWorker(document.getElementById('main-worker').textContent);
   function processSampleVideo() {
     var oReq = new XMLHttpRequest();
     oReq.open("GET", "big_buck_bunny.webm", true);
     oReq.responseType = "arraybuffer";
+
     oReq.onload = function (oEvent) {
       var arrayBuffer = oReq.response;
       if (arrayBuffer) {
-        var byteArray = new Uint8Array(arrayBuffer);
-        
+        var byteArray = new Uint8Array(arrayBuffer);    
+        inlineWorker.postMessage(byteArray);
       }
     };
 
