@@ -2,7 +2,7 @@ http://jsperf.com/videoencode/edit
 
 Html Markup
 
-    <script src="http://aaronm67.com/videoconverter.js/ffmpeg_build/ffmpeg.js"></script>
+    <script src="http://aaronm67.com/videoconverter.js/build/ffmpeg.js"></script>
 
     <pre></pre>
 

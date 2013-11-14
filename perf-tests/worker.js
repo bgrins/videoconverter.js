@@ -1,4 +1,4 @@
-importScripts('../ffmpeg_build/ffmpeg.js');
+importScripts('../build/ffmpeg.js');
 
 self.addEventListener('message', function(e) {
   postMessage({
