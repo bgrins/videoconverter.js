@@ -1,0 +1,33 @@
+
+h1 {
+  margin: 0;
+  padding: 0;
+  font-size: 32px;
+  line-height: 32px;
+}
+
+h1 a, h1 a:visited {
+  color: #333;
+}
+h1 span {
+  vertical-align: top;
+  margin-left: 3px;
+}
+
+.pull-left { float: left; }
+.pull-right { float: right; }
+
+.clearfix {
+  *zoom: 1;
+}
+
+.clearfix:before,
+.clearfix:after {
+  display: table;
+  line-height: 0;
+  content: "";
+}
+
+.clearfix:after {
+  clear: both;
+}

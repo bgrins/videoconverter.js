@@ -1,0 +1,106 @@
+
+<h1>FFMPEG TEST</h1>
+<p>
+Note: this is done in the main thread.  It should really be done in workers.  Run this demo at your own risk - it is just showing basic usage.
+</p>
+<p>
+  Sample image and video are taken from <a href="http://www.bigbuckbunny.org/">Big Buck Bunny</a>, under the <a href="http://creativecommons.org/licenses/by/3.0/">Creative Commons Attribution 3.0</a> license.
+</p>
+<script src="../ffmpeg_build/ffmpeg.js"></script>
+
+<button id="process-image">Process Image</button>
+<button id="process-video">Process Video</button>
+<pre></pre>
+<script>
+
+  document.querySelector("#process-image").addEventListener("click", processSampleImage, false);
+  document.querySelector("#process-video").addEventListener("click", processSampleVideo, false);
+
+  window.URL = window.URL || window.webkitURL;
+  function getImage(fileData) {
+    var blob = new Blob([fileData]);
+    var src = window.URL.createObjectURL(blob);
+    var img = document.createElement('img');
+
+    img.src = src;
+    return img;
+  }
+
+  function getDownloadLink(fileData, fileName) {
+    var a = document.createElement('a');
+    a.download = fileName || 'output.mov';
+    var blob = new Blob([fileData]);
+    var src = window.URL.createObjectURL(blob);
+    a.href = src;
+    a.textContent = 'Click here to download ' + fileName + "!";
+    return a;
+  }
+
+  function processSampleImage() {
+    var oReq = new XMLHttpRequest();
+    oReq.open("GET", "bigbuckbunny.jpg", true);
+    oReq.responseType = "arraybuffer";
+
+    oReq.onload = function (oEvent) {
+      var arrayBuffer = oReq.response;
+      if (arrayBuffer) {
+        var byteArray = new Uint8Array(arrayBuffer);
+        var files = run("bigbuckbunny.jpg", byteArray,
+          ['-i', 'bigbuckbunny.jpg', 'output/output.jpeg']);
+        files.forEach(function(file) {
+          document.body.appendChild(getImage(file))
+        })
+      }
+    };
+
+    oReq.send(null);
+  }
+
+  function processSampleVideo() {
+    var oReq = new XMLHttpRequest();
+    oReq.open("GET", "bigbuckbunny.webm", true);
+    oReq.responseType = "arraybuffer";
+
+    oReq.onload = function (oEvent) {
+      var arrayBuffer = oReq.response;
+      if (arrayBuffer) {
+        var byteArray = new Uint8Array(arrayBuffer);
+        var buffers = run("bigbuckbunny.webm", byteArray,
+          ['-t', '10', '-i', 'bigbuckbunny.webm', '-strict', '-2', 'output/output.mov']);
+        buffers.forEach(function(file) {
+          document.body.appendChild(getDownloadLink(file, "output.mov"));
+        });
+      }
+    };
+
+    oReq.send(null);
+  }
+
+  function run(filename, data, args) {
+
+    var mod = {
+      print: function (text) {
+        document.querySelector("pre").textContent += "\n" + text;
+      },
+      printErr: function (text) {
+        document.querySelector("pre").textContent += "\n" + text;
+      },
+      'arguments': args,
+      'fileData': data,
+      'fileName': filename
+    };
+
+    var result = ffmpeg_run(mod);
+
+    var buffers = [];
+    if (result && result.object && result.object.contents) {
+      for (var i in result.object.contents) {
+        if (result.object.contents.hasOwnProperty(i)) {
+          buffers.push(new Uint8Array(result.object.contents[i].contents).buffer);
+        }
+      }
+    }
+    console.log(buffers);
+    return buffers;
+  }
+</script>

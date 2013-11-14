@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>videoconverter.js - Convert Videos In Your Web Browser</title>
+    <meta name="description" content="Video Converter is a port of the FFmpeg project that allows audio/video conversion and processing in JavaScript.">
+    <meta name="author" content="Brian Grinstead, Aaron Marasco, and contributors">
+    <link rel="shortcut icon" href="../site/favicon.ico">
+    <link href="../site/site.css" rel="stylesheet">
+    <style type="text/css">
+      #input {
+        width: 500px;
+      }
+      #run {
+
+      }
+    </style>
+  </head>
+<body>
+
+  <div class="container-fluid">
+    <div class='content'>
+      <div class='inner-content'>
+        <div class="clearfix">
+          <div class="pull-left">
+          <H1><a href='../'><img src='../site/logo.png' width="30" /><span>videoconverter.js</span></a>
+          </H1>
+          </div>
+          <div class="pull-right"><a href='http://github.com/bgrins/videoconverter.js'>source code on github</a></div>
+        </div>
+
+        <div class="clearfix">
+          <h2>Terminal Demo</h2>
+            <p>
+Imagine that you have installed FFmpeg on your computer.  Also imagine that you have files called input.webm and input.jpeg in the current directory.  Feel free to run whatever commands you want.
+            </p>
+
+            <p>
+              Try these sample commands: <a href="#" class="sample">-i input.jpeg -vf vflip output.jpeg</a>
+            </p>
+            <input id="input" value="-help" />
+            <button id="run">Run Command</button>
+            <pre id="output"></pre>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script type='text/javascript' src='terminal.js'></script>
+</body>
+</html>
