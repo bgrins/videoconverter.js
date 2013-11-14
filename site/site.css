@@ -20,6 +20,14 @@ body {
   color: #4D4D4D;
 }
 
+center {
+  margin: 10px 0;
+}
+
+strong {
+  font-weight: bold;
+}
+
 .container-fluid {
   width: 90%;
   margin: 0 auto;
@@ -34,7 +42,7 @@ body {
   padding-bottom: 20px;
 }
 
-p {
+p, li {
   font-size: 16px;
 }
 
@@ -59,6 +67,32 @@ h2 {
   font-weight: lighter;
 }
 
+h2 a {
+  opacity: 0;
+  text-decoration: none;
+  font-style: normal;
+  color: #333;
+  vertical-align: middle;
+  font-size: 80%;
+  text-transform: none;
+  transition: opacity linear .1s;
+}
+
+h2:hover a {
+  opacity: 1;
+}
+
+h2 a:hover {
+  color: #74ad5a;
+}
+
+h3 {
+  font-size: 18px;
+  text-decoration: underline;
+  font-family: Georgia;
+  font-weight: normal;
+}
+
 h1 {
   margin: 0;
   padding: 0;
@@ -81,9 +115,25 @@ h1 span {
   margin-left: 5px;
 }
 
+
+code, pre {
+  font-family: Consolas,"Liberation Mono",Courier,monospace;
+  font-size: 12px;
+}
+pre {
+  background-color: #F8F8F8;
+  border: 1px solid #DDD;
+  font-size: 13px;
+  line-height: 19px;
+  overflow: auto;
+  padding: 6px 10px;
+  border-radius: 3px;
+}
+pre code {
+  color: #333;
+}
 code {
   color: #33e;
-  background: #fff;
   font-family: inherit;
 }
 

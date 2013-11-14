@@ -44,35 +44,102 @@ The project was originally conceived and implemented for a project in Node Knock
 The idea for the application was to try and convert any video file into another video format, while allowing filters to be applied to the video – <strong>all inside of the browser, without uploading anything</strong>.  And to build it in a single weekend.
             </p>
             <p>
-This is a gargantuan task, and we knew that existing libraries like FFmpeg would do a great job.  But, FFmpeg is not written in JavaScript.  Luckily, there is a project called <a href="https://github.com/kripken/emscripten">Emscripten</a>, which is an LLVM to JavaScript compiler, so we were able to compile FFmpeg into JavaScript.
+This is a huge task, and we knew that existing libraries like FFmpeg would do a great job.  But, FFmpeg is not written in JavaScript.  Luckily, there is a project called <a href="https://github.com/kripken/emscripten">Emscripten</a>, which is an LLVM to JavaScript compiler, so we were able to compile FFmpeg into JavaScript.
+            </p>
+            <p>
+Here is a video demonstrating the sample application we made with this library over the weekend:
             </p>
 
-            <p>
-Watch a video demonstrating the sample application we made with this library over the weekend:
-            </p>
 <center>
 <iframe src="//www.youtube.com/embed/TR_RGeRBroI" allowfullscreen="" frameborder="0" height="315" width="560"></iframe>
 </center>
-<!--
-            <h2 id="why">Why Would You Compile FFmpeg Into JavaScript?</h2>
+
+            <h2 id="faq">FAQ <a href="#faq">[#]</a></h2>
+            <h3 id="why">Why?</h3>
+            <p>
+              <strong>Why would you compile FFmpeg into JavaScript?</strong> We were curious if it would work, and it seemed like a fun project.
             <p>
 
-            </p>
-            <h2 id="how">How Do You Compile FFmpeg Into JavaScript?</h2>
+            <h3>Who?</h3>
             <p>
-
+            Most of the grunt work has been done by <a href="https://twitter.com/bgrins">@bgrins</a> and <a href="https://twitter.com/aaronm67">@aaronm67</a>.
             </p>
 
-            <h2 id="uses">Potential Uses</h2>
+            <h3>Should I Use This?</h2>
             <p>
-
+              <strong>Feel free to use this program, but keep in mind the following things:</strong>
             </p>
+            <ul>
+              <li>
+                FFmpeg has <a href="http://www.ffmpeg.org/legal.html">license terms</a> that you must abide by.  The default build in this project is LGPL 2.1, but including different codecs or build parameters when <a href="#how">building it yourself</a> can change this.
+              </li>
+              <li>
+                It is quite a large JavaScript file.  Around <code>24 MB</code> or so.  About <code>6MB transferred</code> if it is gzipped.
+              </li>
+              <li>
+                We haven't tried using this in a real world application - we built it in a single weekend for a hackathon.  We are working on doing more thourough performance testing and making a more advanced sample application.  But in the meantime, use it at your own risk.
+              </li>
+            </ul>
 
-            <h2 id="docs">Documentation</h2>
+            <h2 id="docs">Usage <a href="#docs">[#]</a></h2>
             <p>
-
+              <strong>Want to try it out?</strong>
             </p>
- -->
+            <p>
+              The usage instructions are still in development.  See the <a href="/bgrins/videoconverter.js/blob/master/demo/">demo/</a> directory for a couple usage examples.
+            </p>
+
+            <h2 id="build">Build It <a href="#build">[#]</a></h2>
+
+            <p>Want to build the ffmpeg.js file for yourself?  First, make sure you have Emscripten set up:</p>
+
+            <pre><code>git clone git@github.com:kripken/emscripten.git
+</code></pre>
+
+            <p>Depending on your system may need to also get the SDK to make sure Emscripten will work.  The have <a href="https://github.com/kripken/emscripten/wiki/Tutorial">documentation on their site</a> about getting this to work.</p>
+
+            <p>Once this is all set up and <code>emcc</code> is on your path, you should be able to run:</p>
+
+            <pre><code>git clone git@github.com:bgrins/videoconverter.js.git
+cd videoconverter.js/ffmpeg_build
+./build_lgpl.sh
+</code></pre>
+
+            <h2 id="contributing">Contributing <a href="#contributing">[#]</a></h2>
+            <p>
+Want to help with this project?  If you are interested, ping <a href="https://twitter.com/bgrins">@bgrins</a> or <a href="https://twitter.com/aaronm67">@aaronm67</a> on twitter or open an issue / pull request at <a href="https://github.com/bgrins/videoconverter.js">https://github.com/bgrins/videoconverter.js</a>.
+            </p>
+            <p>
+              Here are some ideas of things we'd like to do, and could use some help with:
+            </p>
+            <ul>
+              <li>
+            Have some experience with benchmarks and are interested in helping us with benchmarking FFmpeg performance in browser / node / native?
+              </li>
+              <li>
+            Know a bunch about <a href="https://github.com/kripken/emscripten">Emscripten</a> / <a href="http://asmjs.org/">asm.js</a>, or want to learn?  We are interested in ways to tweak the <a href="">build script</a> to squeeze out some extra performance or trim down the size.
+              </li>
+              <li>
+            Good at building programs and linking libraries together?  It should be possible, and would be cool, to build in libraries like zlib, x264, and libvpx.
+              </li>
+            </ul>
+            <h2 id="uses">Pontential Uses <a href="#uses">[#]</a></h2>
+
+            <h3>Video Editing / Conversion</h3>
+            <p>
+This is what we are doing with <a href="http://devcomo.2013.nodeknockout.com/">http://devcomo.2013.nodeknockout.com/</a>. Obviously, this could be expanded and optimized. Quite likely to bump up against performance bottlenecks - I <a href="http://www.briangrinstead.com/blog/video-funhouse">wrote about some of the issues we bumped into</a> if you are interested in more information.
+            </p>
+            <h3>Benchmarking</h3>
+
+            <p>
+            We are beginning to build a benchmark to compare different browser performances. It would be interesting to compare performance versus native as well.
+            </p>
+
+            <h3>External Library Support</h3>
+
+            <p>
+            This isn't yet compiled with any other static library support (like zlib, x264, libvpx, etc. It should be possible to do though.
+            </p>
         </div>
       </div>
     </div>
