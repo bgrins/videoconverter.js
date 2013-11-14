@@ -65,6 +65,11 @@ Here is a video demonstrating the sample application we made with this library o
             Most of the grunt work has been done by <a href="https://twitter.com/bgrins">@bgrins</a> and <a href="https://twitter.com/aaronm67">@aaronm67</a>.
             </p>
 
+            <h3>How Big is the JavaScript File?</h3>
+            <p>
+              The <a href="https://github.com/bgrins/videoconverter.js/blob/master/build/ffmpeg.js">ffmpeg.js</a> file is around <code>24 MB</code> or so.  It ends up being around <code>6MB transferred</code> if it is gzipped.  The original version before optimizations was around <code>50MB</code>.
+            </p>
+
             <h3>Should I Use This?</h2>
             <p>
               <strong>Feel free to use this program, but keep in mind the following things:</strong>
@@ -74,19 +79,19 @@ Here is a video demonstrating the sample application we made with this library o
                 FFmpeg has <a href="http://www.ffmpeg.org/legal.html">license terms</a> that you must abide by.  The default build in this project is LGPL 2.1, but including different codecs or build parameters when <a href="#build">building it yourself</a> can change this.
               </li>
               <li>
-                It is quite a large JavaScript file.  Around <code>24 MB</code> or so.  About <code>6MB transferred</code> if it is gzipped.
+                It is quite a large JavaScript file, and it will take a long time to load and evaluate.
               </li>
               <li>
                 We haven't tried using this in a real world application - we built it in a single weekend for a hackathon.  We are working on doing more thourough performance testing and making a more advanced sample application.  But in the meantime, use it at your own risk.
               </li>
             </ul>
 
-            <h2 id="docs">Usage <a href="#docs">[#]</a></h2>
+            <h2 id="docs">Usage Documentation <a href="#docs">[#]</a></h2>
             <p>
               <strong>Want to try it out?</strong>
             </p>
             <p>
-              The usage instructions are still in development.  See the <a href="/bgrins/videoconverter.js/blob/master/demo/">demo/</a> directory for a couple usage examples.
+              The usage instructions are still in development.  See the <a href="https://github.com/bgrins/videoconverter.js/blob/master/demo/">demo/</a> directory for a couple usage examples.
             </p>
 
             <h2 id="build">Build It <a href="#build">[#]</a></h2>
