@@ -79,7 +79,7 @@
         <div class="clearfix">
           <h2>Terminal Demo</h2>
             <p>
-Imagine that you have installed FFmpeg on your computer.  Also imagine that you have files called <code>input.webm</code> and <code>input.jpeg</code> in the current directory.  Feel free to run whatever commands you want, or <strong>try the sample commands below:</strong>
+Imagine that you have installed FFmpeg on your computer.  Also imagine that you have files called <a href="bigbuckbunny.webm">input.webm</a> and <a href="bigbuckbunny.jpg">input.jpeg</a> in the current directory.  Feel free to run whatever commands you want, or <strong>try the sample commands below:</strong>
             </p>
 
             <div class="sample-commands">
@@ -97,6 +97,7 @@ Imagine that you have installed FFmpeg on your computer.  Also imagine that you 
 
               <button class="plain-button sample" data-command="-i input.webm -s 100x100 -f image2 -vf fps=fps=1,showinfo -an out%d.jpeg">Video to screenshots</button>
 
+              <button class="plain-button sample" data-command="-i input.webm -vf &quot;showinfo,drawbox=enable='between(n,0,60)' : x=10 : y=10 : w=50 : h=50 : color=red,drawbox=enable='gte(t,1)' : x=100 : y=100 : w=200 : h=200 : color=green&quot; -strict -2 output.mp4">Draw Boxes on Video</button>
 
             </div>
             <div id="terminal">

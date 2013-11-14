@@ -55,11 +55,27 @@ function retrieveSampleVideo() {
   oReq.send(null);
 }
 
+function parseArguments(text) {
+  text = text.replace(/\s+/g, ' ');
+  var args = [];
+  // Allow double quotes to not split args.
+  text.split('"').forEach(function(t, i) {
+    t = t.trim();
+    if ((i % 2) === 1) {
+      args.push(t);
+    } else {
+      args = args.concat(t.split(" "));
+    }
+  });
+  return args;
+}
+
 
 function runCommand(text) {
   if (isReady()) {
     startRunning();
-    var args = text.split(" ");
+    var args = parseArguments(text);
+    console.log(args);
     worker.postMessage({
       type: "command",
       arguments: args,
@@ -147,6 +163,9 @@ document.addEventListener("DOMContentLoaded", function() {
 
   [].forEach.call(document.querySelectorAll(".sample"), function(link) {
     link.addEventListener("click", function(e) {
+      console.log("HI", this);
+      console.log(this.dataset.command)
+      console.log("HI", this.getAttribute("data-command"));
       inputElement.value = this.getAttribute("data-command");
       runCommand(inputElement.value);
       e.preventDefault();
