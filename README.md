@@ -4,45 +4,20 @@ videoconverter.js is a library that allows you to convert and manipulate videos 
 
 This is acheived by converting the popular [FFmpeg](http://ffmpeg.org/) library into JavaScript, using [Emscripten](https://github.com/kripken/emscripten).
 
-It was originally conceived for a project called [http://nodeknockout.com/teams/devcomo](Video Funhouse) in Node Knockout 2013.
-
-## How big is the JavaScript file?
-
-It is 24MB.  For the original demo, it was around 50MB.
-
-## Can I Use It?
-
-Sure, as long as you follow any relevant [FFmpeg license](http://www.ffmpeg.org/legal.html) terms.  You can also read a copy of the [LICENSE](LICENSE) file - the [ffmpeg.js](build/ffmpeg.js) file is built under the LGPL terms described on the FFmpeg site above.
-
-The usage instructions are still in development.  See the [test/](test/index.html) directory for a very basic usage example.  We are working on bringing a more robust sample app into the repository.
-
-Call `ffmpeg_run` with an `Module` object as seen [here](test/index.html).  **Note**: this should be done in a worker normally to prevent browser hangs.
-
-## Instructions to build yourself
-
-Want to build the ffmpeg.js file for yourself?  First, make sure you have Emscripten set up:
-
-    git clone git@github.com:kripken/emscripten.git
-
-Depending on your system may need to also get the SDK to make sure Emscripten will work.  The have [documentation on their site](https://github.com/kripken/emscripten/wiki/Tutorial) about getting this to work.
-
-Once this is all set up and `emcc` is on your path, you should be able to run:
-
-    git clone git@github.com:bgrins/videoconverter.js.git
-    cd videoconverter.js/build
-    ./build_lgpl.sh
+It was originally conceived for a project called [Video Funhouse](http://nodeknockout.com/teams/devcomo) in Node Knockout 2013.
 
 
-## Potential Uses
+## Demo, Documentation, Build Instructions
 
-### Video Editing / Conversion
+For more information, visit the project homepage at http://bgrins.github.io/videoconverter.js/.
 
-This is what we are doing with http://devcomo.2013.nodeknockout.com/.  Obviously, this could be expanded and optimized.  Quite likely to bump up against performance bottlenecks - I [wrote about some of the issues we bumped into](http://www.briangrinstead.com/blog/video-funhouse) if you are interested in more information.
+To jump straight to a demo, see http://bgrins.github.io/videoconverter.js/demo or http://devcomo.2013.nodeknockout.com/.
 
-### Benchmarking
+## Questions and Comments
 
-We are beginning to build a [benchmark](jsperf_test/) to compare different browser performances.  It would be interesting to compare performance versus native as well.
+Feel free to ping [@bgrins](https://github.com/bgrins/bgrins) or [@aaronm67](https://github.com/bgrins/aaronm67).
 
-### External Library Support
+## Contributing
 
-This isn't yet compiled with any other static library support (like zlib, x264, libvpx, etc.  It should be possible to do though.
+Interested in helping out?  We have added a section on the project page: http://bgrins.github.io/videoconverter.js#contributing.
+
