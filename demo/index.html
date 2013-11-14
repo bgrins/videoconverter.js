@@ -9,13 +9,35 @@
     <link href="../site/site.css" rel="stylesheet">
     <style type="text/css">
       #terminal {
-        background: #ddd;
+        background: #fff;
+        color: #000;
+        font-family: "Lucida Console", "Lucida Sans Typewriter", Monaco, "Bitstream Vera Sans Mono", monospace;
+        font-weight: lighter;
         border: solid 1px;
         padding: 10px;
-        margin-bottom: 10px;
+        margin-top: 35px;
+        margin-bottom: 20px;
+      }
+      .terminal-top-bar {
+        background: rgb(233, 233, 233);
+        height: 14px;
+        font-size: 12px;
+        line-height: 14px;
+        margin-top: -30px;
+        margin-left: -11px;
+        margin-right: -11px;
+        padding: 3px;
+        text-align: center;
+        color: rgb(92, 92, 92);
+        border: solid 1px;
+        border-radius: 2px 2px 0 0;
+      }
+      .terminal-header {
+        padding-top: 15px;
       }
       #input {
         width: 80%;
+        padding: 4px;
       }
       #run {
         width: 15%
@@ -33,6 +55,9 @@
       }
       #files img {
         max-width: 80%;
+      }
+      .sample-commands {
+        text-align: center;
       }
     </style>
   </head>
@@ -55,33 +80,36 @@
         <div class="clearfix">
           <h2>Terminal Demo</h2>
             <p>
-Imagine that you have installed FFmpeg on your computer.  Also imagine that you have files called <code>input.webm</code> and <code>input.jpeg</code> in the current directory.  Feel free to run whatever commands you want.
+Imagine that you have installed FFmpeg on your computer.  Also imagine that you have files called <code>input.webm</code> and <code>input.jpeg</code> in the current directory.  Feel free to run whatever commands you want, or <strong>try the sample commands below:</strong>
             </p>
 
-            <p>
-              Try these sample commands:
+            <div class="sample-commands">
+              <button class="plain-button sample" data-command="-help">Help</button>
 
-              <button class="sample" data-command="-help">Help</button>
+              <button class="plain-button sample" data-command="-codecs">List Codecs</button>
 
-              <button class="sample" data-command="-codecs">List Codecs</button>
+              <button class="plain-button sample" data-command="-i input.jpeg -vf vflip output.jpeg">Vertical Flip Image</button>
 
-              <button class="sample" data-command="-i input.jpeg -vf vflip output.jpeg">Vertical Flip Image</button>
+              <button class="plain-button sample" data-command="-i input.jpeg -vf hflip output.jpeg">Horizontal Flip Image</button>
 
-              <button class="sample" data-command="-i input.jpeg -vf hflip output.jpeg">Horizontal Flip Image</button>
+              <button class="plain-button sample" data-command="-i input.webm -vf showinfo -strict -2 output.mp4">Video to .mp4</button>
 
-              <button class="sample" data-command="-i input.webm -vf showinfo -strict -2 output.mp4">Convert Video to .mp4</button>
+              <button class="plain-button sample" data-command="-t 5 -i input.webm -vf showinfo -strict -2 output.gif">Video to .gif</button>
 
-              <button class="sample" data-command="-t 5 -i input.webm -vf showinfo -strict -2 output.gif">Convert Video to .gif</button>
-
-              <button class="sample" data-command="-i input.webm -s 100x100 -f image2 -vf fps=fps=1,showinfo -an out%d.jpeg">Convert Video to screenshots</button>
+              <button class="plain-button sample" data-command="-i input.webm -s 100x100 -f image2 -vf fps=fps=1,showinfo -an out%d.jpeg">Video to screenshots</button>
 
 
-            </p>
+            </div>
             <div id="terminal">
-              <input id="input" value="-help" />
-              <button id="run">Run Command</button>
-              <img id="image-loader" src="../site/load.gif" />
-              <pre id="output"></pre>
+              <div class="terminal-top-bar">
+                videoconverter.js
+              </div>
+              <div class="terminal-header">
+                <input id="input" value="-help" />
+                <button id="run" class="plain-button">Run Command</button>
+                <img id="image-loader" src="../site/load.gif" />
+              </div>
+              <pre id="output">Loading JavaScript files (it may take a minute)</pre>
             </div>
             <div id="files">
 
