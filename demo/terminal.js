@@ -3,17 +3,26 @@ var worker;
 var sampleImageData;
 var sampleVideoData;
 var outputElement;
+var filesElement;
+var running = false;
 var isWorkerLoaded = false;
 var isSupported = (function() {
   return document.querySelector && window.URL && window.Worker;
 })();
 
 function isReady() {
-  return isWorkerLoaded && sampleImageData && sampleVideoData;
+  return !running && isWorkerLoaded && sampleImageData && sampleVideoData;
 }
 
-function showLoader() {
-
+function startRunning() {
+  document.querySelector("#image-loader").style.visibility = "visible";
+  outputElement.className = "";
+  filesElement.innerHTML = "";
+  running = true;
+}
+function stopRunning() {
+  document.querySelector("#image-loader").style.visibility = "hidden";
+  running = false;
 }
 
 function retrieveSampleImage() {
@@ -49,6 +58,7 @@ function retrieveSampleVideo() {
 
 function runCommand(text) {
   if (isReady()) {
+    startRunning();
     var args = text.split(" ");
     worker.postMessage({
       type: "command",
@@ -68,7 +78,7 @@ function runCommand(text) {
 }
 
 function getDownloadLink(fileData, fileName) {
-  if (fileName.indexOf(".jpeg") > -1) {
+  if (fileName.match(/\.jpeg|\.gif|\.jpg|\.png/)) {
     var blob = new Blob([fileData]);
     var src = window.URL.createObjectURL(blob);
     var img = document.createElement('img');
@@ -93,17 +103,22 @@ function initWorker() {
     var message = event.data;
     if (message.type == "ready") {
       isWorkerLoaded = true;
+      worker.postMessage({
+        type: "command",
+        arguments: ["-help"]
+      });
     } else if (message.type == "stdout") {
       outputElement.textContent += message.data + "\r\n";
     } else if (message.type == "start") {
       outputElement.textContent = "Worker has received command\r\n";
-      showLoader();
     } else if (message.type == "done") {
+      stopRunning();
       var buffers = message.data;
-        console.log(buffers);
+      if (buffers.length) {
+        outputElement.className = "closed";
+      }
       buffers.forEach(function(file) {
-        console.log(file);
-        document.body.appendChild(getDownloadLink(file.data, file.name));
+        filesElement.appendChild(getDownloadLink(file.data, file.name));
       });
     } else if (message.type == "ready") {
       workerReady();
@@ -119,9 +134,9 @@ document.addEventListener("DOMContentLoaded", function() {
 
   var inputElement = document.querySelector("#input");
   outputElement = document.querySelector("#output");
+  filesElement = document.querySelector("#files");
 
   inputElement.addEventListener("keydown", function(e) {
-    console.log(e, e.keyCode);
     if (e.keyCode === 13) {
       runCommand(inputElement.value);
     }
@@ -132,7 +147,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
   [].forEach.call(document.querySelectorAll(".sample"), function(link) {
     link.addEventListener("click", function(e) {
-      inputElement.value = this.textContent;
+      inputElement.value = this.getAttribute("data-command");
       runCommand(inputElement.value);
       e.preventDefault();
     });
