@@ -134,13 +134,13 @@ code, pre {
 pre {
   font-size: 12px;
   background-color: #F8F8F8;
-  border: 1px solid #DDD;
+  border: 1px solid #BDB;
   font-size: 13px;
   line-height: 19px;
   overflow: auto;
   padding: 6px 10px;
   border-radius: 3px;
-  color: #333;
+  color: #232;
 }
 
 code {
