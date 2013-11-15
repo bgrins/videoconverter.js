@@ -72,7 +72,7 @@ h2 a {
   text-decoration: none;
   font-style: normal;
   color: #333;
-  vertical-align: middle;
+  vertical-align: text-top;
   font-size: 80%;
   text-transform: none;
   transition: opacity linear .1s;
@@ -138,8 +138,6 @@ pre {
   overflow: auto;
   padding: 6px 10px;
   border-radius: 3px;
-}
-pre code {
   color: #333;
 }
 

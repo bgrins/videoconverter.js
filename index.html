@@ -59,7 +59,7 @@ Here is a video demonstrating the sample application we made with this library o
             <h2 id="faq">FAQ <a href="#faq">[#]</a></h2>
             <h3 id="why">Why?</h3>
             <p>
-              <strong>Why would you compile FFmpeg into JavaScript?</strong> We were curious if it would work, and it seemed like a fun project.
+              Why would you compile FFmpeg into JavaScript? We were curious if it would work, and it seemed like a fun project.
             <p>
 
             <h3>Who?</h3>
@@ -84,13 +84,13 @@ Here is a video demonstrating the sample application we made with this library o
                 It is quite a large JavaScript file, and it will take a long time to load and evaluate.
               </li>
               <li>
-                We haven't tried using this in a real world application - we built it in a single weekend for a hackathon.  We are working on doing more thourough performance testing and making a more advanced sample application.  But in the meantime, use it at your own risk.
+                We haven't yet thoroughly tested the performance - use it at your own risk.
               </li>
             </ul>
 
             <h2 id="uses">Pontential Uses <a href="#uses">[#]</a></h2>
 
-            <h3>Video Editing / Conversion</h3>
+            <h3>Audio / Video Editing and Conversion</h3>
             <p>
             This is what we are doing in the browser with <a href="http://devcomo.2013.nodeknockout.com/">http://devcomo.2013.nodeknockout.com/</a>.  Obviously, this could be expanded and optimized. It is quite likely to bump up against performance bottlenecks - I <a href="http://www.briangrinstead.com/blog/video-funhouse">wrote about some of the issues we bumped into</a> if you are interested in more information.
             </p>
@@ -100,12 +100,12 @@ Here is a video demonstrating the sample application we made with this library o
 
             <h3>Benchmarking</h3>
             <p>
-            We are beginning to build a benchmark to compare different browser performances. It would be interesting to compare performance versus native as well.
+            It would be interesting to build a benchmark to compare performance of such a large application across different browsers, node.js, and native performance.
             </p>
 
-            <h3>External Library Support</h3>
+            <h3>Processing Additional Codecs</h3>
             <p>
-            This isn't yet compiled with any other static library support (like zlib, x264, libvpx, etc. It should be possible to do though.
+            This isn't yet compiled with support for additional codecs like zlib, x264, libvpx, etc. It should be possible to do.
             </p>
 
             <h2 id="contributing">Contributing <a href="#contributing">[#]</a></h2>
@@ -117,13 +117,13 @@ Here is a video demonstrating the sample application we made with this library o
             </p>
             <ul>
               <li>
-            Have some experience with benchmarks and are interested in helping us with benchmarking FFmpeg performance in browser / node / native?
+            Have some experience with benchmarks or performance testing?  We would like to benchmark FFmpeg performance in browser / node / native.
               </li>
               <li>
-            Know a bunch about <a href="https://github.com/kripken/emscripten">Emscripten</a> / <a href="http://asmjs.org/">asm.js</a>, or want to learn?  We are interested in ways to tweak the <a href="">build script</a> to squeeze out some extra performance or trim down the size.
+            Know a bunch about <a href="https://github.com/kripken/emscripten">Emscripten</a> / <a href="http://asmjs.org/">asm.js</a>, or want to learn more?  There should be ways to tweak the <a href="https://github.com/bgrins/videoconverter.js/blob/master/build/build_lgpl.sh">build script</a> and squeeze out some extra performance or trim down the size.
               </li>
               <li>
-            Good at building programs and linking libraries together?  It should be possible, and would be cool, to build in libraries like zlib, x264, and libvpx.
+            Good at building programs and linking libraries together?  It would be cool to build in support for libraries like zlib, x264, and libvpx.
               </li>
             </ul>
 
@@ -188,7 +188,7 @@ postMessage({
 });
 </pre>
             <p>
-Then, from your page start up the worker:
+              Then, from your page start up the worker:
             </p>
 <pre>
 var worker = new Worker("worker.js");
@@ -209,19 +209,27 @@ worker.onmessage = function (event) {
 </pre>
             <h2 id="build">Build Documentation <a href="#build">[#]</a></h2>
 
-            <p>Want to build the ffmpeg.js file for yourself?  First, make sure you have Emscripten set up:</p>
+            <p>
+              Want to build the ffmpeg.js file for yourself?  First, make sure you have Emscripten set up:
+            </p>
 
-            <pre><code>git clone git@github.com:kripken/emscripten.git
-</code></pre>
+<pre>
+git clone git@github.com:kripken/emscripten.git
+</pre>
 
-            <p>Depending on your system may need to also get the SDK to make sure Emscripten will work.  The have <a href="https://github.com/kripken/emscripten/wiki/Tutorial">documentation on their site</a> about getting this to work.</p>
+            <p>
+              Depending on your system may need to also get the SDK to make sure Emscripten will work.  The have <a href="https://github.com/kripken/emscripten/wiki/Tutorial">documentation on their site</a> about getting this to work.
+            </p>
 
-            <p>Once this is all set up and <code>emcc</code> is on your path, you should be able to run:</p>
+            <p>
+              Once this is all set up and <code>emcc</code> is on your path, you should be able to run:
+            </p>
 
-            <pre><code>git clone git@github.com:bgrins/videoconverter.js.git
+<pre>
+git clone git@github.com:bgrins/videoconverter.js.git
 cd videoconverter.js/build
 ./build_lgpl.sh
-</code></pre>
+</pre>
         </div>
       </div>
     </div>
