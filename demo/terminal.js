@@ -124,9 +124,9 @@ function initWorker() {
         arguments: ["-help"]
       });
     } else if (message.type == "stdout") {
-      outputElement.textContent += message.data + "\r\n";
+      outputElement.textContent += message.data + "\n";
     } else if (message.type == "start") {
-      outputElement.textContent = "Worker has received command\r\n";
+      outputElement.textContent = "Worker has received command\n";
     } else if (message.type == "done") {
       stopRunning();
       var buffers = message.data;
@@ -136,8 +136,6 @@ function initWorker() {
       buffers.forEach(function(file) {
         filesElement.appendChild(getDownloadLink(file.data, file.name));
       });
-    } else if (message.type == "ready") {
-      workerReady();
     }
   };
 }
