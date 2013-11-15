@@ -12,7 +12,6 @@ function print(text) {
 onmessage = function(event) {
 
   var message = event.data;
-  var args = message.arguments || [];
 
   if (message.type === "command") {
 
