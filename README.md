@@ -6,7 +6,6 @@ This is acheived by converting the popular [FFmpeg](http://ffmpeg.org/) library 
 
 It was originally conceived for a project called [Video Funhouse](http://nodeknockout.com/teams/devcomo) in Node Knockout 2013.
 
-
 ## Demo, Documentation, Build Instructions
 
 For more information, visit the project homepage at http://bgrins.github.io/videoconverter.js/.
@@ -20,4 +19,3 @@ Feel free to ping [@bgrins](https://github.com/bgrins/bgrins) or [@aaronm67](htt
 ## Contributing
 
 Interested in helping out?  We have added a section on the project page: http://bgrins.github.io/videoconverter.js#contributing.
-
