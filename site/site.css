@@ -126,6 +126,15 @@ h1 span {
   padding: 6px 10px;
   border-radius: 3px;
 }
+.note {
+  background-color: #E8FEE8;
+  border: 1px solid #DDD;
+  font-size: 13px;
+  line-height: 19px;
+  overflow: auto;
+  padding: 6px 10px;
+  border-radius: 3px;
+}
 
 code, pre {
   font-family: Consolas,"Liberation Mono",Courier,monospace;

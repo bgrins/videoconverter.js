@@ -74,7 +74,7 @@ Here is a video demonstrating the sample application we made with this library o
 
             <h3>Should I Use This?</h2>
             <p>
-              <strong>Feel free to use this program, but keep in mind the following things:</strong>
+              Feel free to use this program, but keep in mind the following things:
             </p>
             <ul>
               <li>
@@ -95,7 +95,7 @@ Here is a video demonstrating the sample application we made with this library o
             This is what we are doing in the browser with <a href="http://devcomo.2013.nodeknockout.com/">http://devcomo.2013.nodeknockout.com/</a>.  Obviously, this could be expanded and optimized. It is quite likely to bump up against performance bottlenecks - I <a href="http://www.briangrinstead.com/blog/video-funhouse">wrote about some of the issues we bumped into</a> if you are interested in more information.
             </p>
             <p>
-            Also, it may be possible to make this run on node, and distribute this as an <code>npm</code> module, to make setting up video conversions on a server or desktop much easier.
+            Also, it may be possible to make this run on node, and distribute this as an npm module, to make setting up video conversions on a server or desktop much easier.
             </p>
 
             <h3>Benchmarking</h3>
@@ -128,8 +128,11 @@ Here is a video demonstrating the sample application we made with this library o
             </ul>
 
             <h2 id="docs">Usage Documentation <a href="#docs">[#]</a></h2>
+            <p class="note">
+              To see the code used in the terminal demo on this site, see <a href="https://github.com/bgrins/videoconverter.js/blob/master/demo/terminal.js">terminal.js</a> and <a href="https://github.com/bgrins/videoconverter.js/blob/master/demo/worker.js">worker.js</a> in the repository.
+            </p>
             <p>
-              The <a href="https://github.com/bgrins/videoconverter.js/blob/master/demo/">demo directory on github</a> has some usage examples.  The only function exposed from the library is <code>ffmpeg_run</code>.  It can be described by the following interface:
+              The only function exposed from the library is <code>ffmpeg_run</code>.  It can be described by the following interface:
             </p>
 <pre>
 var results = ffmpeg_run({
@@ -147,12 +150,13 @@ results.forEach(function(file) {
   console.log("File recieved", file.name, file.data);
 });
 </pre>
+            <h3>Calling from a Worker</h3>
             <p class="warning">
               Note: while ffmpeg.js could be loaded directly from a &lt;script&gt; tag, it should be loaded from a <a href="https://developer.mozilla.org/en-US/docs/Web/Guide/Performance/Using_web_workers">Web Worker</a> to prevent blocking the main thread.
             </p>
 
             <p>
-              To load <code>ffmpeg.js</code> inside of a web worker, we just need to call <code>importScripts('ffmpeg.js');</code> from inside the worker.  Following is a sample worker. Or, click to view a slightly bigger sample <a href="https://github.com/bgrins/videoconverter.js/blob/master/demo/worker.js">worker implementation</a> used in the <a href="demo/">demo</a>
+              To load ffmpeg.js inside of a web worker, we just need to call <code>importScripts('ffmpeg.js');</code> from inside the worker.  Following is a sample worker. Or, click to view a slightly bigger sample <a href="https://github.com/bgrins/videoconverter.js/blob/master/demo/worker.js">worker implementation</a> used in the <a href="demo/">demo</a>
             </p>
 
 <pre>
@@ -207,6 +211,50 @@ worker.onmessage = function (event) {
   }
 };
 </pre>
+            <h3>Converting to and from UInt8Array</h3>
+            <p>
+              OK, but how do you get a UInt8Array from a file?  There are a few different ways to do this.
+              If you want to read files from the user's computer, you could use a FileReader or FileReaderSync, and call <code>readAsArrayBuffer</code>.  Here is a little wrapper for this functionality that allows drag/drop, file selection, and clipboard access: <a href="https://github.com/bgrins/filereader.js/">https://github.com/bgrins/filereader.js/</a>.
+
+              You could also fetch the data from the server, like so:
+            </p>
+<pre>
+var sampleVideoData;
+function retrieveSampleVideo() {
+  var oReq = new XMLHttpRequest();
+  oReq.open("GET", "bigbuckbunny.webm", true);
+  oReq.responseType = "arraybuffer";
+
+  oReq.onload = function (oEvent) {
+    var arrayBuffer = oReq.response;
+    if (arrayBuffer) {
+      sampleVideoData = new Uint8Array(arrayBuffer);
+    }
+  };
+
+  oReq.send(null);
+}
+</pre>
+            <p>
+              And what can I do with the results?  If you want to provide a download link or a preview of the output, you could convert it into a Blob using the <a href="https://developer.mozilla.org/en-US/docs/Web/API/Blob">Blob constructor</a>, and create an objectURL.  Something like this:
+            </p>
+<pre>
+function getDownloadLink(fileData, fileName) {
+  var a = document.createElement('a');
+  a.download = fileName;
+  var blob = new Blob([fileData]);
+  var src = window.URL.createObjectURL(blob);
+  a.href = src;
+  a.textContent = 'Click here to download ' + fileName + "!";
+  return a;
+}
+
+var result = ffmpeg_run(module);
+result.forEach(function(file) {
+  getDownloadLink(file.data, file.name);
+});
+</pre>
+
             <h2 id="build">Build Documentation <a href="#build">[#]</a></h2>
 
             <p>
