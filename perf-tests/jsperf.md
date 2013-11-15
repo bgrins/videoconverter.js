@@ -34,8 +34,10 @@ Test
             print: function () { },
             printErr: function () { },
                 'arguments': ['-i', 'input.png', 'output/output.jpeg'],
-                'fileData': data,
-                'fileName': 'input.png'
+                'files': [{
+                    data: data,
+                    name: 'input.png'
+                }]
         };
         ffmpeg_run(mod);
     }
@@ -55,10 +57,11 @@ Test 2
                 document.querySelector("pre").textContent += "\n" + text;
             },
             'arguments': ['-i', 'input.png', 'output/output.jpeg'],
-            'fileData': data,
-            'fileName': 'input.png'
+            'files': [{
+                data: data,
+                name: 'input.png'
+            }]
         };
-    
         ffmpeg_run(mod);
     }
 

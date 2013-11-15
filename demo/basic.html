@@ -46,9 +46,9 @@ Note: this is done in the main thread.  It should really be done in workers.  Ru
       if (arrayBuffer) {
         var byteArray = new Uint8Array(arrayBuffer);
         var files = run("bigbuckbunny.jpg", byteArray,
-          ['-i', 'bigbuckbunny.jpg', 'output/output.jpeg']);
+          ['-i', 'bigbuckbunny.jpg', 'output.jpeg']);
         files.forEach(function(file) {
-          document.body.appendChild(getImage(file))
+          document.body.appendChild(getImage(file.data))
         })
       }
     };
@@ -66,9 +66,9 @@ Note: this is done in the main thread.  It should really be done in workers.  Ru
       if (arrayBuffer) {
         var byteArray = new Uint8Array(arrayBuffer);
         var buffers = run("bigbuckbunny.webm", byteArray,
-          ['-t', '10', '-i', 'bigbuckbunny.webm', '-strict', '-2', 'output/output.mov']);
+          ['-t', '10', '-i', 'bigbuckbunny.webm', '-strict', '-2', 'output.mov']);
         buffers.forEach(function(file) {
-          document.body.appendChild(getDownloadLink(file, "output.mov"));
+          document.body.appendChild(getDownloadLink(file.data, file.name));
         });
       }
     };
@@ -85,22 +85,17 @@ Note: this is done in the main thread.  It should really be done in workers.  Ru
       printErr: function (text) {
         document.querySelector("pre").textContent += "\n" + text;
       },
-      'arguments': args,
-      'fileData': data,
-      'fileName': filename
+      arguments: args,
+      files: [
+        {
+          data: data,
+          name: filename
+        }
+      ]
     };
 
     var result = ffmpeg_run(mod);
-
-    var buffers = [];
-    if (result && result.object && result.object.contents) {
-      for (var i in result.object.contents) {
-        if (result.object.contents.hasOwnProperty(i)) {
-          buffers.push(new Uint8Array(result.object.contents[i].contents).buffer);
-        }
-      }
-    }
-    console.log(buffers);
-    return buffers;
+    console.log(result);
+    return result;
   }
 </script>

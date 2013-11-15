@@ -2,19 +2,11 @@ importScripts('../build/ffmpeg.js');
 
 var now = Date.now;
 
-function getAllBuffers(result) {
-  var buffers = [];
-  if (result && result.object && result.object.contents) {
-    for (var i in result.object.contents) {
-      if (result.object.contents.hasOwnProperty(i)) {
-        buffers.push({
-          name: i,
-          data: new Uint8Array(result.object.contents[i].contents).buffer
-        });
-      }
-    }
-  }
-  return buffers;
+function print(text) {
+  postMessage({
+    'type' : 'stdout',
+    'data' : text
+  });
 }
 
 onmessage = function(event) {
@@ -28,32 +20,17 @@ onmessage = function(event) {
       'type' : 'start',
     });
 
+    var Module = {
+      print: print,
+      printErr: print,
+      files: message.files || [],
+      arguments: message.arguments || []
+    };
+
     postMessage({
       'type' : 'stdout',
-      'data' : 'Received command: ' + args.join(" ")
+      'data' : 'Received command: ' + Module.args.join(" ")
     });
-
-    var outputFilePath = args[args.length - 1];
-    if (args.length > 2 && outputFilePath && outputFilePath.indexOf(".") > -1) {
-      args[args.length - 1] = "output/" + outputFilePath;
-    }
-
-    var Module = {
-      print: function (text) {
-        postMessage({
-          'type' : 'stdout',
-          'data' : text
-        });
-      },
-      printErr: function (text) {
-        postMessage({
-          'type' : 'stdout',
-          'data' : text
-        });
-      }
-    };
-    Module.files = message.files;
-    Module['arguments'] = args;
 
     var time = now();
     var result = ffmpeg_run(Module);
@@ -66,7 +43,7 @@ onmessage = function(event) {
 
     postMessage({
       'type' : 'done',
-      'data' : getAllBuffers(result)
+      'data' : result
     });
   }
 };

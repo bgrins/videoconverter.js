@@ -115,12 +115,22 @@ h1 span {
   margin-left: 5px;
 }
 
+.warning {
+  background-color: #FEE8E8;
+  border: 1px solid #DDD;
+  font-size: 13px;
+  line-height: 19px;
+  overflow: auto;
+  padding: 6px 10px;
+  border-radius: 3px;
+}
 
 code, pre {
   font-family: Consolas,"Liberation Mono",Courier,monospace;
-  font-size: 12px;
 }
+
 pre {
+  font-size: 12px;
   background-color: #F8F8F8;
   border: 1px solid #DDD;
   font-size: 13px;
@@ -132,8 +142,9 @@ pre {
 pre code {
   color: #333;
 }
+
 code {
-  color: #33e;
+  color: #696;
   font-family: inherit;
 }
 

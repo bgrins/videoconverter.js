@@ -28,18 +28,12 @@ function run(filename, data, args) {
         });
       },
       'arguments': args,
-      'fileData': data,
-      'fileName': filename
+      'files': [{
+        data: data,
+        name: filename
+      }]
     };
 
     var result = ffmpeg_run(mod);
-    var buffers = [];
-    if (result && result.object && result.object.contents) {
-      for (var i in result.object.contents) {
-        if (result.object.contents.hasOwnProperty(i)) {
-          buffers.push(new Uint8Array(result.object.contents[i].contents).buffer);
-        }
-      }
-    }
-    return buffers;
+    return result;
 }

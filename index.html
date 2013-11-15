@@ -91,7 +91,50 @@ Here is a video demonstrating the sample application we made with this library o
               <strong>Want to try it out?</strong>
             </p>
             <p>
-              The usage instructions are still in development.  See the <a href="https://github.com/bgrins/videoconverter.js/blob/master/demo/">demo/</a> directory for a couple usage examples.
+              The usage instructions are still in development.  See the <a href="https://github.com/bgrins/videoconverter.js/blob/master/demo/">demo directory on github</a> for a couple usage examples.
+            </p>
+            <p class="warning">
+              Note: while ffmpeg.js could be loaded directly from a &lt;script&gt; tag, it should be loaded from a <a href="https://developer.mozilla.org/en-US/docs/Web/Guide/Performance/Using_web_workers">Web Worker</a> to prevent blocking the main thread.
+            </p>
+
+            <p>
+              To load <code>ffmpeg.js</code> inside of a web worker, we just need to call <code>importScripts('ffmpeg.js');</code> from inside the worker.  Following is a sample worker. Or, click to view a slightly bigger sample <a href="https://github.com/bgrins/videoconverter.js/blob/master/demo/worker.js">worker implementation</a> used in the <a href="demo/">demo</a>
+            </p>
+
+<pre>
+importScripts('ffmpeg.js');
+
+function print(text) {
+  postMessage({
+    'type' : 'stdout',
+    'data' : text
+  });
+}
+
+onmessage = function(event) {
+  var module = {
+    files: event.data.files || [],
+    arguments: event.data.arguments || [],
+    print: print,
+    printErr: print
+  };
+  postMessage({
+    'type' : 'starting',
+    'data' : module.arguments
+  });
+  var result = ffmpeg_run(module);
+  postMessage({
+    'type' : 'done',
+    'data' : result
+  });
+};
+
+postMessage({
+  'type' : 'ready'
+});
+</pre>
+            <p>
+Then, from your script start up the worker:
             </p>
 
             <h2 id="build">Build It <a href="#build">[#]</a></h2>
