@@ -18,6 +18,7 @@ body {
   line-height: 1.5;
   font-weight: 300;
   color: #4D4D4D;
+  min-width: 630px;
 }
 
 center {
@@ -49,18 +50,19 @@ p, li {
 .header {
   margin: 0 -5.6%;
   padding: 5px 5.6%;
-  border-bottom: solid 1px #74ad5a;
+  box-shadow: 0 0 3px #74ad5a;
   margin-bottom: 4px;
-  background-image: -webkit-repeating-linear-gradient(135deg, rgba(255,255,255,.5), rgba(255,255,255,.5) 1px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.5) 3px);
-  background-image: -moz-repeating-linear-gradient(135deg, rgba(255,255,255,.5), rgba(255,255,255,.5) 1px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.5) 3px);
-  background-image: -o-repeating-linear-gradient(135deg, rgba(255,255,255,.5), rgba(255,255,255,.5) 1px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.5) 3px);
-  background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.5), rgba(255,255,255,.5) 1px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.5) 3px);
+  background-image: -webkit-repeating-linear-gradient(135deg, rgba(255,255,255,.8), rgba(255,255,255,.8) 1px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.8) 3px);
+  background-image: -moz-repeating-linear-gradient(135deg, rgba(255,255,255,.8), rgba(255,255,255,.8) 1px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.8) 3px);
+  background-image: -o-repeating-linear-gradient(135deg, rgba(255,255,255,.8), rgba(255,255,255,.8) 1px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.8) 3px);
+  background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.8), rgba(255,255,255,.8) 1px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.95) 2px, rgba(255,255,255,.8) 3px);
   -webkit-background-size: 4px 4px;
   -moz-background-size: 4px 4px;
   background-size: 4px 4px;
 }
 
 h2 {
+  font-family: Georgia;
   text-transform: uppercase;
   margin: 5px 0;
   font-size: 24px;
@@ -165,7 +167,6 @@ a.big {
   border: 1px solid #3b6e22;
   display: inline-block;
   color: #ffffff;
-  font-family: arial;
   font-size: 20px;
   padding: 8px 12px;
   text-decoration: none;
@@ -232,15 +233,15 @@ a.big:active {
   background: #333;
   color: #fff;
   padding: 10px;
-  padding-top: 12px;
+  padding-bottom: 8px;
   text-decoration: none;
-  transition: top linear .05s;
+  transition: top ease-in-out .05s;
   position: relative;
   top: -2px;
 }
 
 .links a:hover {
-  padding-top: 10px;
+  /*padding-bottom: 10px;*/
   top: 0;
 }
 
