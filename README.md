@@ -6,11 +6,13 @@ This is acheived by converting the popular [FFmpeg](http://ffmpeg.org/) library 
 
 It was originally conceived for a project called [Video Funhouse](http://nodeknockout.com/teams/devcomo) in Node Knockout 2013.
 
-## Demo, Documentation, Build Instructions
+## Demo
+
+To jump straight to a demo, see the terminal demo at http://bgrins.github.io/videoconverter.js/demo or the Video Funhouse demo at http://devcomo.2013.nodeknockout.com/.
+
+## Documentation and Build Instructions
 
 For more information, visit the project homepage at http://bgrins.github.io/videoconverter.js/.
-
-To jump straight to a demo, see http://bgrins.github.io/videoconverter.js/demo or http://devcomo.2013.nodeknockout.com/.
 
 ## Questions and Comments
 
