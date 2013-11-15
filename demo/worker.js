@@ -29,7 +29,7 @@ onmessage = function(event) {
 
     postMessage({
       'type' : 'stdout',
-      'data' : 'Received command: ' + Module.args.join(" ")
+      'data' : 'Received command: ' + Module.arguments.join(" ")
     });
 
     var time = now();
