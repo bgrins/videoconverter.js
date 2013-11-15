@@ -163,9 +163,6 @@ document.addEventListener("DOMContentLoaded", function() {
 
   [].forEach.call(document.querySelectorAll(".sample"), function(link) {
     link.addEventListener("click", function(e) {
-      console.log("HI", this);
-      console.log(this.dataset.command)
-      console.log("HI", this.getAttribute("data-command"));
       inputElement.value = this.getAttribute("data-command");
       runCommand(inputElement.value);
       e.preventDefault();
