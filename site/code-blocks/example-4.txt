@@ -1,0 +1,15 @@
+var sampleVideoData;
+function retrieveSampleVideo() {
+  var oReq = new XMLHttpRequest();
+  oReq.open("GET", "bigbuckbunny.webm", true);
+  oReq.responseType = "arraybuffer";
+
+  oReq.onload = function (oEvent) {
+    var arrayBuffer = oReq.response;
+    if (arrayBuffer) {
+      sampleVideoData = new Uint8Array(arrayBuffer);
+    }
+  };
+
+  oReq.send(null);
+}

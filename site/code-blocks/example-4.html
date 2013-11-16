@@ -1,0 +1,16 @@
+<div class="highlight" style="background: #f8f8f8"><pre style="line-height: 125%"><span style="color: #008000; font-weight: bold">var</span> sampleVideoData;
+<span style="color: #008000; font-weight: bold">function</span> retrieveSampleVideo() {
+  <span style="color: #008000; font-weight: bold">var</span> oReq <span style="color: #666666">=</span> <span style="color: #008000; font-weight: bold">new</span> XMLHttpRequest();
+  oReq.open(<span style="color: #BA2121">&quot;GET&quot;</span>, <span style="color: #BA2121">&quot;bigbuckbunny.webm&quot;</span>, <span style="color: #008000; font-weight: bold">true</span>);
+  oReq.responseType <span style="color: #666666">=</span> <span style="color: #BA2121">&quot;arraybuffer&quot;</span>;
+
+  oReq.onload <span style="color: #666666">=</span> <span style="color: #008000; font-weight: bold">function</span> (oEvent) {
+    <span style="color: #008000; font-weight: bold">var</span> arrayBuffer <span style="color: #666666">=</span> oReq.response;
+    <span style="color: #008000; font-weight: bold">if</span> (arrayBuffer) {
+      sampleVideoData <span style="color: #666666">=</span> <span style="color: #008000; font-weight: bold">new</span> Uint8Array(arrayBuffer);
+    }
+  };
+
+  oReq.send(<span style="color: #008000; font-weight: bold">null</span>);
+}
+</pre></div>
