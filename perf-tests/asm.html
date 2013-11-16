@@ -59,20 +59,20 @@
   var workerASM;
   var iterations = 0;
   var iterationsASM = 0;
-  MAX_ITERATIONS = 10;
+  MAX_ITERATIONS = 5;
   var sampleVideoData;
 
   button.onclick = function() {
-    if (!this.hasAttribute("disabled")) {
-      postHelpASM();
-      this.setAttribute("disabled", "");
+    if (!button.hasAttribute("disabled")) {
+      postHelp();
+      button.setAttribute("disabled", "");
     }
   };
 
   var loaded = 0;
   function workerReady() {
     loaded++;
-    if (loaded == 2) {
+    if (loaded == 3) {
       button.removeAttribute("disabled");
     }
   }
@@ -96,8 +96,8 @@
   function postHelp() {
     worker.postMessage({
       type: "command",
-      //arguments: ["-t", "3", "-i", "input.webm", "-vf", "showinfo", "-strict", "-2", "output.mp4"],
-      arguments: ["-help"],
+      arguments: ["-t", "3", "-i", "input.webm", "-vf", "showinfo", "-strict", "-2", "output.mp4"],
+      // arguments: ["-help"],
       files: [
         { data: sampleVideoData, name: "input.webm" }
       ]
@@ -106,8 +106,8 @@
   function postHelpASM() {
     workerASM.postMessage({
       type: "command",
-      //arguments: ["-t", "3", "-i", "input.webm", "-vf", "showinfo", "-strict", "-2", "output.mp4"],
-      arguments: ["-help"],
+      arguments: ["-t", "3", "-i", "input.webm", "-vf", "showinfo", "-strict", "-2", "output.mp4"],
+      // arguments: ["-help"],
       files: [
         { data: sampleVideoData, name: "input.webm" }
       ]
@@ -129,7 +129,7 @@ function initWorker() {
     } else if (message.type == "done") {
       var buffers = message.data;
       var time = message.time;
-      outputElement.textContent += "Took: " + message.time + "ms to run / " + message.timeBeforeRun + "ms to initialize.\nReceived " + buffers.length + " files.\n";
+      outputElement.textContent += "Took: " + message.time + "ms to run.\nReceived " + buffers.length + " files.\n";
       iterations++;
       if (iterations < MAX_ITERATIONS) {
         postHelp();
@@ -155,7 +155,7 @@ function initWorkerASM() {
     } else if (message.type == "done") {
       var buffers = message.data;
       var time = message.time;
-      outputASMElement.textContent += "Took: " + message.time + "ms to run / " + message.timeBeforeRun + "ms to initialize.\nReceived " + buffers.length + " files.\n";
+      outputASMElement.textContent += "Took: " + message.time + "ms to run.\nReceived " + buffers.length + " files.\n";
       iterationsASM++;
       if (iterationsASM < MAX_ITERATIONS) {
         postHelpASM();
