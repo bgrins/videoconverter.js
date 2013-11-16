@@ -33,8 +33,9 @@
 
         <div class="clearfix">
           <h2>Performance With asm.js</h2>
-            <p>
-              Building with asm.js provides a smaller file size, but does it make the code run faster?
+            <p class="warning">
+              NOTE: This test is a work in progress, and not ready for usage - results cannot be trusted!
+              <!-- Building with asm.js provides a smaller file size, but does it make the code run faster? -->
             </p>
 
             <button disabled id="go">Start Tests</button>
@@ -58,12 +59,12 @@
   var workerASM;
   var iterations = 0;
   var iterationsASM = 0;
-  MAX_ITERATIONS = 5;
+  MAX_ITERATIONS = 10;
   var sampleVideoData;
 
   button.onclick = function() {
-    if (!this.getAttribute("disabled")) {
-      postHelp();
+    if (!this.hasAttribute("disabled")) {
+      postHelpASM();
       this.setAttribute("disabled", "");
     }
   };
@@ -71,7 +72,7 @@
   var loaded = 0;
   function workerReady() {
     loaded++;
-    if (loaded == 3) {
+    if (loaded == 2) {
       button.removeAttribute("disabled");
     }
   }
@@ -95,7 +96,8 @@
   function postHelp() {
     worker.postMessage({
       type: "command",
-      arguments: ["-t", "3", "-i", "input.webm", "-vf", "showinfo", "-strict", "-2", "output.mp4"],
+      //arguments: ["-t", "3", "-i", "input.webm", "-vf", "showinfo", "-strict", "-2", "output.mp4"],
+      arguments: ["-help"],
       files: [
         { data: sampleVideoData, name: "input.webm" }
       ]
@@ -104,7 +106,8 @@
   function postHelpASM() {
     workerASM.postMessage({
       type: "command",
-      arguments: ["-t", "3", "-i", "input.webm", "-vf", "showinfo", "-strict", "-2", "output.mp4"],
+      //arguments: ["-t", "3", "-i", "input.webm", "-vf", "showinfo", "-strict", "-2", "output.mp4"],
+      arguments: ["-help"],
       files: [
         { data: sampleVideoData, name: "input.webm" }
       ]
@@ -126,7 +129,7 @@ function initWorker() {
     } else if (message.type == "done") {
       var buffers = message.data;
       var time = message.time;
-      outputElement.textContent += "Took: " + message.time + " / " + message.timeBeforeRun + ".  Received " + buffers.length + " files.\n";
+      outputElement.textContent += "Took: " + message.time + "ms to run / " + message.timeBeforeRun + "ms to initialize.\nReceived " + buffers.length + " files.\n";
       iterations++;
       if (iterations < MAX_ITERATIONS) {
         postHelp();
@@ -152,11 +155,14 @@ function initWorkerASM() {
     } else if (message.type == "done") {
       var buffers = message.data;
       var time = message.time;
-      outputASMElement.textContent += "Took: " + message.time + " / " + message.timeBeforeRun + ".  Received " + buffers.length + " files.\n";
+      outputASMElement.textContent += "Took: " + message.time + "ms to run / " + message.timeBeforeRun + "ms to initialize.\nReceived " + buffers.length + " files.\n";
       iterationsASM++;
       if (iterationsASM < MAX_ITERATIONS) {
         postHelpASM();
       }
+      // } else {
+      //   postHelp();
+      // }
     }
   };
 }
