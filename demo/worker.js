@@ -15,16 +15,18 @@ onmessage = function(event) {
 
   if (message.type === "command") {
 
-    postMessage({
-      'type' : 'start',
-    });
-
     var Module = {
       print: print,
       printErr: print,
       files: message.files || [],
-      arguments: message.arguments || []
+      arguments: message.arguments || [],
+      noInitialRun: true
     };
+
+    postMessage({
+      'type' : 'start',
+      'data': Module.arguments.join(" ")
+    });
 
     postMessage({
       'type' : 'stdout',
@@ -32,17 +34,22 @@ onmessage = function(event) {
     });
 
     var time = now();
-    var result = ffmpeg_run(Module);
+    ffmpeg_run(Module);
+    var timeBeforeRun = now() - time;
 
-    var totalTime = now() - time;
+    Module.callMain(Module['arguments']);
+
+    var totalTime = now() - time - timeBeforeRun;
     postMessage({
       'type' : 'stdout',
-      'data' : 'Finished processing (took ' + totalTime + 'ms)'
+      'data' : 'Finished processing (took ' + timeBeforeRun + ' / ' + totalTime + 'ms)'
     });
 
     postMessage({
       'type' : 'done',
-      'data' : result
+      'data' : Module['return'],
+      'time' : totalTime,
+      'timeBeforeRun' : timeBeforeRun
     });
   }
 };

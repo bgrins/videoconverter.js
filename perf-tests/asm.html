@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>videoconverter.js - Convert Videos In Your Web Browser</title>
+    <meta name="description" content="Video Converter is a port of the FFmpeg project that allows audio/video conversion and processing in JavaScript.">
+    <meta name="author" content="Brian Grinstead, Aaron Marasco, and contributors">
+    <link rel="shortcut icon" href="../site/favicon.ico">
+    <link href="../site/site.css" rel="stylesheet">
+    <style type="text/css">
+      pre {
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+    </style>
+  </head>
+<body>
+
+  <div class="container-fluid">
+    <div class='content'>
+      <div class='inner-content'>
+        <div class="header clearfix">
+          <div class="pull-left">
+          <H1><a href='../'><img src='../site/logo.png' width="30" /><span>videoconverter.js</span></a>
+          </H1>
+          </div>
+          <div class="pull-right links">
+            <a href='/demo'>demo</a>
+            <a href='../#docs'>docs</a>
+            <a href='http://github.com/bgrins/videoconverter.js'>source code on github</a>
+          </div>
+        </div>
+
+        <div class="clearfix">
+          <h2>Performance With asm.js</h2>
+            <p>
+              Building with asm.js provides a smaller file size, but does it make the code run faster?
+            </p>
+
+            <button disabled id="go">Start Tests</button>
+
+            <h3>Normal Worker</h3>
+            <pre id="output">Loading worker #1</pre>
+
+            <h3>Asm.js Worker</h3>
+            <pre id="output-asm">Loading worker #2</pre>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  var outputElement = document.querySelector("#output");
+  var outputASMElement = document.querySelector("#output-asm");
+  var button = document.querySelector("#go");
+  var worker;
+  var workerASM;
+  var iterations = 0;
+  var iterationsASM = 0;
+  MAX_ITERATIONS = 5;
+  var sampleVideoData;
+
+  button.onclick = function() {
+    if (!this.getAttribute("disabled")) {
+      postHelp();
+      this.setAttribute("disabled", "");
+    }
+  };
+
+  var loaded = 0;
+  function workerReady() {
+    loaded++;
+    if (loaded == 3) {
+      button.removeAttribute("disabled");
+    }
+  }
+
+  function retrieveSampleVideo() {
+    var oReq = new XMLHttpRequest();
+    oReq.open("GET", "../demo/bigbuckbunny.webm", true);
+    oReq.responseType = "arraybuffer";
+
+    oReq.onload = function (oEvent) {
+      var arrayBuffer = oReq.response;
+      if (arrayBuffer) {
+        sampleVideoData = new Uint8Array(arrayBuffer);
+        workerReady();
+      }
+    };
+
+    oReq.send(null);
+  }
+
+  function postHelp() {
+    worker.postMessage({
+      type: "command",
+      arguments: ["-t", "3", "-i", "input.webm", "-vf", "showinfo", "-strict", "-2", "output.mp4"],
+      files: [
+        { data: sampleVideoData, name: "input.webm" }
+      ]
+    });
+  }
+  function postHelpASM() {
+    workerASM.postMessage({
+      type: "command",
+      arguments: ["-t", "3", "-i", "input.webm", "-vf", "showinfo", "-strict", "-2", "output.mp4"],
+      files: [
+        { data: sampleVideoData, name: "input.webm" }
+      ]
+    });
+  }
+
+function initWorker() {
+  worker = new Worker("../demo/worker.js");
+  worker.onmessage = function (event) {
+    var message = event.data;
+    if (message.type == "ready") {
+      workerReady();
+      outputElement.textContent = "Worker loaded (plain).\n";
+    } else if (message.type == "stdout") {
+      console.log(message.data);
+      outputElement.textContent += "."
+    } else if (message.type == "start") {
+      outputElement.textContent += "Worker has received command " + message.data + "\n";
+    } else if (message.type == "done") {
+      var buffers = message.data;
+      var time = message.time;
+      outputElement.textContent += "Took: " + message.time + " / " + message.timeBeforeRun + ".  Received " + buffers.length + " files.\n";
+      iterations++;
+      if (iterations < MAX_ITERATIONS) {
+        postHelp();
+      } else {
+        postHelpASM();
+      }
+    }
+  };
+}
+
+function initWorkerASM() {
+  workerASM = new Worker("../demo/worker-asm.js");
+  workerASM.onmessage = function (event) {
+    var message = event.data;
+    if (message.type == "ready") {
+      workerReady();
+      outputASMElement.textContent = "Worker loaded (asm).\n";
+    } else if (message.type == "stdout") {
+      console.log(message.data);
+      outputASMElement.textContent += "."
+    } else if (message.type == "start") {
+      outputASMElement.textContent += "Worker has received command " + message.data + "\n";
+    } else if (message.type == "done") {
+      var buffers = message.data;
+      var time = message.time;
+      outputASMElement.textContent += "Took: " + message.time + " / " + message.timeBeforeRun + ".  Received " + buffers.length + " files.\n";
+      iterationsASM++;
+      if (iterationsASM < MAX_ITERATIONS) {
+        postHelpASM();
+      }
+    }
+  };
+}
+
+initWorkerASM();
+initWorker();
+retrieveSampleVideo();
+  </script>
+</body>
+</html>
