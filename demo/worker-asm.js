@@ -1,3 +1,7 @@
+/*
+  This script is still experimental, still working on updating asm.js support.
+*/
+
 importScripts('../build/ffmpeg_asm.js');
 
 var now = Date.now;
@@ -15,17 +19,18 @@ onmessage = function(event) {
 
   if (message.type === "command") {
 
-    postMessage({
-      'type' : 'start',
-    });
-
     var Module = {
       print: print,
       printErr: print,
       files: message.files || [],
       arguments: message.arguments || [],
-      TOTAL_MEMORY: 67108864
+      TOTAL_MEMORY: 67108864 // Can play around with this option - must be a power of 2.
     };
+
+    postMessage({
+      'type' : 'start',
+      'data' : Module.arguments.join(" ")
+    });
 
     postMessage({
       'type' : 'stdout',
@@ -43,7 +48,8 @@ onmessage = function(event) {
 
     postMessage({
       'type' : 'done',
-      'data' : result
+      'data' : result,
+      'time' : totalTime
     });
   }
 };
