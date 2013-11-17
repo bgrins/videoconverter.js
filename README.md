@@ -19,7 +19,7 @@ For more information about building and using the project, visit the project hom
 
 ## Questions and Comments
 
-Feel free to ping [@bgrins](https://github.com/bgrins/bgrins) or [@aaronm67](https://github.com/bgrins/aaronm67).
+Feel free to ping [@bgrins](https://twitter.com/bgrins) or [@aaronm67](https://twitter.com/aaronm67).
 
 ## Contributing
 
