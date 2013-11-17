@@ -2,7 +2,7 @@
 
 videoconverter.js is a library that allows you to convert and manipulate videos inside of your web browser.
 
-This is acheived by converting the popular [FFmpeg](http://ffmpeg.org/) library into JavaScript, using [Emscripten](https://github.com/kripken/emscripten).
+This is achieved by converting the popular [FFmpeg](http://ffmpeg.org/) library into JavaScript, using [Emscripten](https://github.com/kripken/emscripten).
 
 It was originally conceived for a project called [Video Funhouse](http://nodeknockout.com/teams/devcomo) in Node Knockout 2013.
 
