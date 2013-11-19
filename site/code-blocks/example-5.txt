@@ -1,0 +1,14 @@
+function getDownloadLink(fileData, fileName) {
+  var a = document.createElement('a');
+  a.download = fileName;
+  var blob = new Blob([fileData]);
+  var src = window.URL.createObjectURL(blob);
+  a.href = src;
+  a.textContent = 'Click here to download ' + fileName + "!";
+  return a;
+}
+
+var result = ffmpeg_run(module);
+result.forEach(function(file) {
+  getDownloadLink(file.data, file.name);
+});

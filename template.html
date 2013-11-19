@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>videoconverter.js - Convert Videos In Your Web Browser</title>
+    <meta name="description" content="Video Converter is a port of the FFmpeg project that allows audio/video conversion and processing in JavaScript.">
+    <meta name="author" content="Brian Grinstead, Aaron Marasco, and contributors">
+    <link rel="shortcut icon" href="site/favicon.ico">
+    <link href="site/site.css" rel="stylesheet">
+  </head>
+<body>
+
+  <div class="container-fluid">
+    <div class='content'>
+      <div class='inner-content'>
+        <div class="header clearfix">
+          <div class="pull-left">
+          <H1><a href='./'><img src='site/logo.png' width="30" /><span>videoconverter.js</span></a>
+          </H1>
+          </div>
+          <div class="pull-right links">
+            <a href='demo/'>demo</a>
+            <a href='#docs'>docs</a>
+            <a href='http://github.com/bgrins/videoconverter.js'>source code on github</a>
+          </div>
+        </div>
+
+        <div class="clearfix">
+            <p class="tagline">
+videoconverter.js is a program that lets you <strong>process videos in your browser</strong>.
+            </p>
+            <p>
+            <hr />
+              <center>
+<a class="big" href="demo/">View a Demonstration</a>
+<a class="big" href="http://devcomo.2013.nodeknockout.com">View a Sample Application</a><br />
+            or <a href='http://github.com/bgrins/videoconverter.js'>view code on github</a>
+              </center>
+            <hr />
+            </p>
+            <h2 id="about">About <a href="#about">[#]</a></h2>
+            <p>
+Videoconverter.js was originally conceived and implemented for a project in Node Knockout 2013 called <a href="http://2013.nodeknockout.com/teams/devcomo">Video Funhouse</a>.
+            </p>
+            <p>
+The idea for the application was to try and convert any video file into another video format, while allowing filters to be applied to the video – <strong>all inside of the browser, without uploading anything</strong>.  And to build it in a single weekend.
+            </p>
+            <p>
+This is a huge task, and we knew that existing libraries like <a href="http://ffmpeg.org/">FFmpeg</a> would do a great job.  But, FFmpeg is not written in JavaScript.  Luckily, there is a project called <a href="https://github.com/kripken/emscripten">Emscripten</a>, which is an LLVM to JavaScript compiler, so we were able to compile FFmpeg into JavaScript.
+            </p>
+            <p>
+Here is a video demonstrating the sample application we made with this library over the weekend:
+            </p>
+
+<center>
+<iframe src="//www.youtube.com/embed/TR_RGeRBroI" allowfullscreen="" frameborder="0" height="315" width="560"></iframe>
+</center>
+
+            <h2 id="faq">FAQ <a href="#faq">[#]</a></h2>
+            <h3 id="why">Why?</h3>
+            <p>
+              Why would you compile FFmpeg into JavaScript? We were curious if it would work, and it seemed like a fun project.
+            <p>
+
+            <h3>Who?</h3>
+            <p>
+            Most of the grunt work has been done by <a href="https://twitter.com/bgrins">@bgrins</a> and <a href="https://twitter.com/aaronm67">@aaronm67</a>.
+            </p>
+
+            <h3>How Big is the JavaScript File?</h3>
+            <p>
+              The <a href="https://github.com/bgrins/videoconverter.js/blob/master/build/ffmpeg.js">ffmpeg.js</a> file is around <code>24 MB</code> or so.  It ends up being around <code>6MB transferred</code> if it is gzipped.  The original version before optimizations was around <code>50MB</code>.
+            </p>
+
+            <h3>Should I Use This?</h2>
+            <p>
+              Feel free to use this program, but keep in mind the following things:
+            </p>
+            <ul>
+              <li>
+                FFmpeg has <a href="http://www.ffmpeg.org/legal.html">license terms</a> that you must abide by.  The default build in this project is LGPL 2.1, but including different codecs or build parameters when <a href="#build">building it yourself</a> can change this.
+              </li>
+              <li>
+                It is quite a large JavaScript file, and it will take a long time to load and evaluate.
+              </li>
+              <li>
+                We haven't yet thoroughly tested the performance - use it at your own risk.
+              </li>
+            </ul>
+
+            <h2 id="uses">Pontential Uses <a href="#uses">[#]</a></h2>
+
+            <h3>Audio / Video Editing and Conversion</h3>
+            <p>
+            This is what we are doing in the browser with <a href="http://devcomo.2013.nodeknockout.com/">http://devcomo.2013.nodeknockout.com/</a>.  Obviously, this could be expanded and optimized. It is quite likely to bump up against performance bottlenecks - I <a href="http://www.briangrinstead.com/blog/video-funhouse">wrote about some of the issues we bumped into</a> if you are interested in more information.
+            </p>
+            <p>
+            Also, it may be possible to make this run on node, and distribute this as an npm module, to make setting up video conversions on a server or desktop much easier.
+            </p>
+
+            <h3>Benchmarking</h3>
+            <p>
+            It would be interesting to build a benchmark to compare performance of such a large application across different browsers, node.js, and native performance.
+            </p>
+
+            <h3>Processing Additional Codecs</h3>
+            <p>
+            This isn't yet compiled with support for additional codecs like zlib, x264, libvpx, etc. It should be possible to do.
+            </p>
+
+            <h2 id="contributing">Contributing <a href="#contributing">[#]</a></h2>
+            <p>
+            Want to help with this project?  If you are interested, ping <a href="https://twitter.com/bgrins">@bgrins</a> or <a href="https://twitter.com/aaronm67">@aaronm67</a> on twitter or open an issue / pull request at <a href="https://github.com/bgrins/videoconverter.js">https://github.com/bgrins/videoconverter.js</a>.
+            </p>
+            <p>
+            Here are some ideas of things we'd like to do, and could use some help with:
+            </p>
+            <ul>
+              <li>
+            Have some experience with benchmarks or performance testing?  We would like to benchmark FFmpeg performance in browser / node / native.
+              </li>
+              <li>
+            Know a bunch about <a href="https://github.com/kripken/emscripten">Emscripten</a> / <a href="http://asmjs.org/">asm.js</a>, or want to learn more?  There should be ways to tweak the <a href="https://github.com/bgrins/videoconverter.js/blob/master/build/build_lgpl.sh">build script</a> and squeeze out some extra performance or trim down the size.
+              </li>
+              <li>
+            Good at building programs and linking libraries together?  It would be cool to build in support for libraries like zlib, x264, and libvpx.
+              </li>
+            </ul>
+
+            <h2 id="docs">Usage Documentation <a href="#docs">[#]</a></h2>
+            <p class="note">
+              To see the code used in the terminal demo on this site, see <a href="https://github.com/bgrins/videoconverter.js/blob/master/demo/terminal.js">terminal.js</a> and <a href="https://github.com/bgrins/videoconverter.js/blob/master/demo/worker.js">worker.js</a> in the repository.
+            </p>
+            <p>
+              The only function exposed from the library is <code>ffmpeg_run</code>.  It can be described by the following interface:
+            </p>
+
+<!-- example-1 -->
+<pre id="example-1"></pre>
+<!-- /example-1 -->
+
+            <h3>Calling from a Worker</h3>
+            <p class="warning">
+              Note: while ffmpeg.js could be loaded directly from a &lt;script&gt; tag, it should be loaded from a <a href="https://developer.mozilla.org/en-US/docs/Web/Guide/Performance/Using_web_workers">Web Worker</a> to prevent blocking the main thread.
+            </p>
+
+            <p>
+              To load ffmpeg.js inside of a web worker, we just need to call <code>importScripts('ffmpeg.js');</code> from inside the worker.  Following is a sample worker. Or, click to view a slightly bigger sample <a href="https://github.com/bgrins/videoconverter.js/blob/master/demo/worker.js">worker implementation</a> used in the <a href="demo/">demo</a>
+            </p>
+
+<!-- example-2 -->
+<pre id="example-2"></pre>
+<!-- /example-2 -->
+            <p>
+              Then, from your page start up the worker:
+            </p>
+
+<!-- example-3 -->
+<pre id="example-3"></pre>
+<!-- /example-3 -->
+
+            <h3>Converting to and from UInt8Array</h3>
+            <p>
+              OK, but how do you get a UInt8Array from a file?  There are a few different ways to do this.
+              If you want to read files from the user's computer, you could use a FileReader or FileReaderSync, and call <code>readAsArrayBuffer</code>.  Here is a little wrapper for this functionality that allows drag/drop, file selection, and clipboard access: <a href="https://github.com/bgrins/filereader.js/">https://github.com/bgrins/filereader.js/</a>.
+
+              You could also fetch the data from the server, like so:
+            </p>
+
+<!-- example-4 -->
+<pre id="example-4"></pre>
+<!-- /example-4 -->
+            <p>
+              And what can I do with the results?  If you want to provide a download link or a preview of the output, you could convert it into a Blob using the <a href="https://developer.mozilla.org/en-US/docs/Web/API/Blob">Blob constructor</a>, and create an objectURL.  Something like this:
+            </p>
+
+<!-- example-5 -->
+<pre id="example-5"></pre>
+<!-- /example-5 -->
+
+            <h2 id="build">Build Documentation <a href="#build">[#]</a></h2>
+
+            <p>
+              Want to build the ffmpeg.js file for yourself?  First, make sure you have Emscripten set up:
+            </p>
+
+<pre>
+git clone git@github.com:kripken/emscripten.git
+</pre>
+
+            <p>
+              Depending on your system may need to also get the SDK to make sure Emscripten will work.  The have <a href="https://github.com/kripken/emscripten/wiki/Tutorial">documentation on their site</a> about getting this to work.
+            </p>
+
+            <p>
+              Once this is all set up and <code>emcc</code> is on your path, you should be able to run:
+            </p>
+
+<pre>
+git clone git@github.com:bgrins/videoconverter.js.git
+cd videoconverter.js/build
+./build_lgpl.sh
+</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type='text/javascript' src='site/site.js'></script>
+</body>
+</html>

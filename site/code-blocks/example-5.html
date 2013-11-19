@@ -1,0 +1,15 @@
+<div class="highlight" style="background: #f8f8f8"><pre style="line-height: 125%"><span style="color: #008000; font-weight: bold">function</span> getDownloadLink(fileData, fileName) {
+  <span style="color: #008000; font-weight: bold">var</span> a <span style="color: #666666">=</span> <span style="color: #008000">document</span>.createElement(<span style="color: #BA2121">&#39;a&#39;</span>);
+  a.download <span style="color: #666666">=</span> fileName;
+  <span style="color: #008000; font-weight: bold">var</span> blob <span style="color: #666666">=</span> <span style="color: #008000; font-weight: bold">new</span> Blob([fileData]);
+  <span style="color: #008000; font-weight: bold">var</span> src <span style="color: #666666">=</span> <span style="color: #008000">window</span>.URL.createObjectURL(blob);
+  a.href <span style="color: #666666">=</span> src;
+  a.textContent <span style="color: #666666">=</span> <span style="color: #BA2121">&#39;Click here to download &#39;</span> <span style="color: #666666">+</span> fileName <span style="color: #666666">+</span> <span style="color: #BA2121">&quot;!&quot;</span>;
+  <span style="color: #008000; font-weight: bold">return</span> a;
+}
+
+<span style="color: #008000; font-weight: bold">var</span> result <span style="color: #666666">=</span> ffmpeg_run(module);
+result.forEach(<span style="color: #008000; font-weight: bold">function</span>(file) {
+  getDownloadLink(file.data, file.name);
+});
+</pre></div>

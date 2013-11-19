@@ -1,0 +1,15 @@
+var worker = new Worker("worker.js");
+worker.onmessage = function (event) {
+  var message = event.data;
+  if (message.type == "ready") {
+    outputElement.textContent = "Loaded";
+    worker.postMessage({
+      type: 'command',
+      arguments: ['-help']
+    })
+  } else if (message.type == "stdout") {
+    outputElement.textContent += message.data + "\n";
+  } else if (message.type == "start") {
+    outputElement.textContent = "Worker has received command\n";
+  }
+};

@@ -1,0 +1,16 @@
+<div class="highlight" style="background: #f8f8f8"><pre style="line-height: 125%"><span style="color: #008000; font-weight: bold">var</span> worker <span style="color: #666666">=</span> <span style="color: #008000; font-weight: bold">new</span> Worker(<span style="color: #BA2121">&quot;worker.js&quot;</span>);
+worker.onmessage <span style="color: #666666">=</span> <span style="color: #008000; font-weight: bold">function</span> (event) {
+  <span style="color: #008000; font-weight: bold">var</span> message <span style="color: #666666">=</span> event.data;
+  <span style="color: #008000; font-weight: bold">if</span> (message.type <span style="color: #666666">==</span> <span style="color: #BA2121">&quot;ready&quot;</span>) {
+    outputElement.textContent <span style="color: #666666">=</span> <span style="color: #BA2121">&quot;Loaded&quot;</span>;
+    worker.postMessage({
+      type<span style="color: #666666">:</span> <span style="color: #BA2121">&#39;command&#39;</span>,
+      arguments<span style="color: #666666">:</span> [<span style="color: #BA2121">&#39;-help&#39;</span>]
+    })
+  } <span style="color: #008000; font-weight: bold">else</span> <span style="color: #008000; font-weight: bold">if</span> (message.type <span style="color: #666666">==</span> <span style="color: #BA2121">&quot;stdout&quot;</span>) {
+    outputElement.textContent <span style="color: #666666">+=</span> message.data <span style="color: #666666">+</span> <span style="color: #BA2121">&quot;\n&quot;</span>;
+  } <span style="color: #008000; font-weight: bold">else</span> <span style="color: #008000; font-weight: bold">if</span> (message.type <span style="color: #666666">==</span> <span style="color: #BA2121">&quot;start&quot;</span>) {
+    outputElement.textContent <span style="color: #666666">=</span> <span style="color: #BA2121">&quot;Worker has received command\n&quot;</span>;
+  }
+};
+</pre></div>

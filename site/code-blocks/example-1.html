@@ -1,0 +1,15 @@
+<div class="highlight" style="background: #f8f8f8"><pre style="line-height: 125%"><span style="color: #008000; font-weight: bold">var</span> results <span style="color: #666666">=</span> ffmpeg_run({
+  arguments<span style="color: #666666">:</span> [string],
+  files<span style="color: #666666">:</span> [
+    {
+      data<span style="color: #666666">:</span> UInt8Array,
+      name<span style="color: #666666">:</span> string
+    }
+  ]
+});
+
+<span style="color: #408080; font-style: italic">// results is an Array of { data: UInt8Array, name: string }</span>
+results.forEach(<span style="color: #008000; font-weight: bold">function</span>(file) {
+  console.log(<span style="color: #BA2121">&quot;File recieved&quot;</span>, file.name, file.data);
+});
+</pre></div>
