@@ -20,6 +20,8 @@ onmessage = function(event) {
       printErr: print,
       files: message.files || [],
       arguments: message.arguments || []
+      // Can play around with this option - must be a power of 2
+      // TOTAL_MEMORY: 268435456
     };
 
     postMessage({
