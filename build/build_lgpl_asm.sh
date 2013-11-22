@@ -1,4 +1,4 @@
-# Current build uses emscripten at commit 42fdcd5e0f7410d34d57fbf883c4e8039ec4d824
+# Current build uses emscripten at commit df11c6f1fd1636a355b83a1c48b3a890596e6a32
 
 echo "Beginning Build:"
 
@@ -8,7 +8,7 @@ emconfigure ./configure --cc="emcc" --enable-cross-compile --target-os=none --ar
 make clean
 make
 cp ffmpeg ffmpeg.bc
-emcc -s VERBOSE=1 -s TOTAL_MEMORY=33554432 -O2 -v ffmpeg.bc -o ../ffmpeg_asm.js --pre-js ../ffmpeg_pre.js --post-js ../ffmpeg_post.js
+emcc -s OUTLINING_LIMIT=100000 -s VERBOSE=1 -s TOTAL_MEMORY=33554432 -O2 -v ffmpeg.bc -o ../ffmpeg_asm.js --pre-js ../ffmpeg_pre.js --post-js ../ffmpeg_post.js
 
 cd ../
 

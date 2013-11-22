@@ -1,4 +1,4 @@
-# Current build uses emscripten at commit 42fdcd5e0f7410d34d57fbf883c4e8039ec4d824
+# Current build uses emscripten at commit df11c6f1fd1636a355b83a1c48b3a890596e6a32
 
 echo "Beginning Build:"
 
