@@ -40,6 +40,18 @@
 
             <button disabled id="go">Start Tests</button>
 
+            <div class="pull-right">
+              <label>
+                Worker memory:
+                <select id="total-memory">
+                  <option selected value="33554432">32MB</option>
+                  <option value="67108864">64MB</option>
+                  <option value="134217728">128MB</option>
+                  <option value="268435456">256MB</option>
+                </select>
+              </label>
+            </div>
+
             <h3>Normal Worker</h3>
             <pre id="output">Loading worker #1</pre>
 
@@ -64,7 +76,7 @@
 
   button.onclick = function() {
     if (!button.hasAttribute("disabled")) {
-      postHelp();
+      postCommand();
       button.setAttribute("disabled", "");
     }
   };
@@ -75,6 +87,10 @@
     if (loaded == 3) {
       button.removeAttribute("disabled");
     }
+  }
+
+  function getTotalMemory() {
+    return document.querySelector("#total-memory").value;
   }
 
   function retrieveSampleVideo() {
@@ -93,24 +109,26 @@
     oReq.send(null);
   }
 
-  function postHelp() {
+  function postCommand() {
     worker.postMessage({
       type: "command",
       arguments: ["-t", "3", "-i", "input.webm", "-vf", "showinfo", "-strict", "-2", "output.mp4"],
       // arguments: ["-help"],
       files: [
         { data: sampleVideoData, name: "input.webm" }
-      ]
+      ],
+      TOTAL_MEMORY: parseInt(getTotalMemory())
     });
   }
-  function postHelpASM() {
+  function postCommandASM() {
     workerASM.postMessage({
       type: "command",
       arguments: ["-t", "3", "-i", "input.webm", "-vf", "showinfo", "-strict", "-2", "output.mp4"],
       // arguments: ["-help"],
       files: [
         { data: sampleVideoData, name: "input.webm" }
-      ]
+      ],
+      TOTAL_MEMORY: parseInt(getTotalMemory())
     });
   }
 
@@ -132,9 +150,9 @@ function initWorker() {
       outputElement.textContent += "Took: " + message.time + "ms to run.\nReceived " + buffers.length + " files.\n";
       iterations++;
       if (iterations < MAX_ITERATIONS) {
-        postHelp();
+        postCommand();
       } else {
-        postHelpASM();
+        postCommandASM();
       }
     }
   };
@@ -158,7 +176,7 @@ function initWorkerASM() {
       outputASMElement.textContent += "Took: " + message.time + "ms to run.\nReceived " + buffers.length + " files.\n";
       iterationsASM++;
       if (iterationsASM < MAX_ITERATIONS) {
-        postHelpASM();
+        postCommandASM();
       }
       // } else {
       //   postHelp();

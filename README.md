@@ -11,7 +11,7 @@ It was originally conceived for a project called [Video Funhouse](http://nodekno
 Want to jump straight to a demo?
 
 * The terminal demo is here: http://bgrins.github.io/videoconverter.js/demo
-* The Video Funhouse sample application is here: http://devcomo.2013.nodeknockout.com/
+* The Video Funhouse sample application is here: http://devcomo.2013.nodeknockout.com/.  **Note: the server from the competition has been shut off.  We are working on getting another version up and running.  The source code is available here: https://github.com/nicolegrinstead/video-funhouse**
 
 ## Documentation and Build Instructions
 
