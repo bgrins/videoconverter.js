@@ -1,7 +1,3 @@
-/*
-  This script is still experimental, still working on updating asm.js support.
-*/
-
 importScripts('../build/ffmpeg_asm.js');
 
 var now = Date.now;
