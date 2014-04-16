@@ -15,7 +15,7 @@ onmessage = function(event) {
     printErr: print
   };
   postMessage({
-    'type' : 'starting',
+    'type' : 'start',
     'data' : module.arguments
   });
   var result = ffmpeg_run(module);
