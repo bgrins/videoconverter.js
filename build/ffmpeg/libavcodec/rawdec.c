@@ -41,6 +41,7 @@ typedef struct RawVideoContext {
     int flip;
     int is_2_4_bpp; // 2 or 4 bpp raw in avi/mov
     int is_yuv2;
+    int is_lt_16bpp; // 16bpp pixfmt and bits_per_coded_sample < 16
     int tff;
 } RawVideoContext;
 
@@ -81,17 +82,6 @@ static const PixelFormatTag pix_fmt_bps_mov[] = {
     { AV_PIX_FMT_MONOWHITE,33 },
     { AV_PIX_FMT_NONE,      0 },
 };
-
-enum AVPixelFormat avpriv_find_pix_fmt(const PixelFormatTag *tags,
-                                       unsigned int fourcc)
-{
-    while (tags->pix_fmt >= 0) {
-        if (tags->fourcc == fourcc)
-            return tags->pix_fmt;
-        tags++;
-    }
-    return AV_PIX_FMT_NONE;
-}
 
 #if LIBAVCODEC_VERSION_MAJOR < 55
 enum AVPixelFormat ff_find_pix_fmt(const PixelFormatTag *tags, unsigned int fourcc)
@@ -142,6 +132,7 @@ static av_cold int raw_init_decoder(AVCodecContext *avctx)
                                                  FFALIGN(avctx->width, 16),
                                                  avctx->height);
     } else {
+        context->is_lt_16bpp = av_get_bits_per_pixel(desc) == 16 && avctx->bits_per_coded_sample && avctx->bits_per_coded_sample < 16;
         context->frame_size = avpicture_get_size(avctx->pix_fmt, avctx->width,
                                                  avctx->height);
     }
@@ -175,7 +166,7 @@ static int raw_decode(AVCodecContext *avctx, void *data, int *got_frame,
     int buf_size                   = avpkt->size;
     int linesize_align             = 4;
     int res, len;
-    int need_copy                  = !avpkt->buf || context->is_2_4_bpp || context->is_yuv2;
+    int need_copy                  = !avpkt->buf || context->is_2_4_bpp || context->is_yuv2 || context->is_lt_16bpp;
 
     AVFrame   *frame   = data;
     AVPicture *picture = data;
@@ -222,6 +213,17 @@ static int raw_decode(AVCodecContext *avctx, void *data, int *got_frame,
                 dst[4 * i + 3] = buf[i]      & 3;
             }
             linesize_align = 16;
+        }
+        buf = dst;
+    } else if (context->is_lt_16bpp) {
+        int i;
+        uint8_t *dst = frame->buf[0]->data;
+        if (desc->flags & AV_PIX_FMT_FLAG_BE) {
+            for (i = 0; i + 1 < buf_size; i += 2)
+                AV_WB16(dst + i, AV_RB16(buf + i) << (16 - avctx->bits_per_coded_sample));
+        } else {
+            for (i = 0; i + 1 < buf_size; i += 2)
+                AV_WL16(dst + i, AV_RL16(buf + i) << (16 - avctx->bits_per_coded_sample));
         }
         buf = dst;
     } else if (need_copy) {

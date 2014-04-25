@@ -51,12 +51,12 @@ static const AVOption options[]={
 {"in_sample_rate"       , "set input sample rate"       , OFFSET( in_sample_rate), AV_OPT_TYPE_INT  , {.i64=0                     }, 0      , INT_MAX   , PARAM},
 {"osr"                  , "set output sample rate"      , OFFSET(out_sample_rate), AV_OPT_TYPE_INT  , {.i64=0                     }, 0      , INT_MAX   , PARAM},
 {"out_sample_rate"      , "set output sample rate"      , OFFSET(out_sample_rate), AV_OPT_TYPE_INT  , {.i64=0                     }, 0      , INT_MAX   , PARAM},
-{"isf"                  , "set input sample format"     , OFFSET( in_sample_fmt ), AV_OPT_TYPE_SAMPLE_FMT , {.i64=AV_SAMPLE_FMT_NONE}, -1   , AV_SAMPLE_FMT_NB-1, PARAM},
-{"in_sample_fmt"        , "set input sample format"     , OFFSET( in_sample_fmt ), AV_OPT_TYPE_SAMPLE_FMT , {.i64=AV_SAMPLE_FMT_NONE}, -1   , AV_SAMPLE_FMT_NB-1, PARAM},
-{"osf"                  , "set output sample format"    , OFFSET(out_sample_fmt ), AV_OPT_TYPE_SAMPLE_FMT , {.i64=AV_SAMPLE_FMT_NONE}, -1   , AV_SAMPLE_FMT_NB-1, PARAM},
-{"out_sample_fmt"       , "set output sample format"    , OFFSET(out_sample_fmt ), AV_OPT_TYPE_SAMPLE_FMT , {.i64=AV_SAMPLE_FMT_NONE}, -1   , AV_SAMPLE_FMT_NB-1, PARAM},
-{"tsf"                  , "set internal sample format"  , OFFSET(int_sample_fmt ), AV_OPT_TYPE_SAMPLE_FMT , {.i64=AV_SAMPLE_FMT_NONE}, -1   , AV_SAMPLE_FMT_NB-1, PARAM},
-{"internal_sample_fmt"  , "set internal sample format"  , OFFSET(int_sample_fmt ), AV_OPT_TYPE_SAMPLE_FMT , {.i64=AV_SAMPLE_FMT_NONE}, -1   , AV_SAMPLE_FMT_NB-1, PARAM},
+{"isf"                  , "set input sample format"     , OFFSET( in_sample_fmt ), AV_OPT_TYPE_SAMPLE_FMT , {.i64=AV_SAMPLE_FMT_NONE}, -1   , INT_MAX, PARAM},
+{"in_sample_fmt"        , "set input sample format"     , OFFSET( in_sample_fmt ), AV_OPT_TYPE_SAMPLE_FMT , {.i64=AV_SAMPLE_FMT_NONE}, -1   , INT_MAX, PARAM},
+{"osf"                  , "set output sample format"    , OFFSET(out_sample_fmt ), AV_OPT_TYPE_SAMPLE_FMT , {.i64=AV_SAMPLE_FMT_NONE}, -1   , INT_MAX, PARAM},
+{"out_sample_fmt"       , "set output sample format"    , OFFSET(out_sample_fmt ), AV_OPT_TYPE_SAMPLE_FMT , {.i64=AV_SAMPLE_FMT_NONE}, -1   , INT_MAX, PARAM},
+{"tsf"                  , "set internal sample format"  , OFFSET(int_sample_fmt ), AV_OPT_TYPE_SAMPLE_FMT , {.i64=AV_SAMPLE_FMT_NONE}, -1   , INT_MAX, PARAM},
+{"internal_sample_fmt"  , "set internal sample format"  , OFFSET(int_sample_fmt ), AV_OPT_TYPE_SAMPLE_FMT , {.i64=AV_SAMPLE_FMT_NONE}, -1   , INT_MAX, PARAM},
 {"icl"                  , "set input channel layout"    , OFFSET( in_ch_layout  ), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64=0                     }, 0      , INT64_MAX , PARAM, "channel_layout"},
 {"in_channel_layout"    , "set input channel layout"    , OFFSET( in_ch_layout  ), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64=0                     }, 0      , INT64_MAX , PARAM, "channel_layout"},
 {"ocl"                  , "set output channel layout"   , OFFSET(out_ch_layout  ), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64=0                     }, 0      , INT64_MAX , PARAM, "channel_layout"},
@@ -218,33 +218,12 @@ static void free_temp(AudioData *a){
     memset(a, 0, sizeof(*a));
 }
 
-av_cold void swr_free(SwrContext **ss){
-    SwrContext *s= *ss;
-    if(s){
-        free_temp(&s->postin);
-        free_temp(&s->midbuf);
-        free_temp(&s->preout);
-        free_temp(&s->in_buffer);
-        free_temp(&s->silence);
-        free_temp(&s->drop_temp);
-        free_temp(&s->dither.noise);
-        free_temp(&s->dither.temp);
-        swri_audio_convert_free(&s-> in_convert);
-        swri_audio_convert_free(&s->out_convert);
-        swri_audio_convert_free(&s->full_convert);
-        if (s->resampler)
-            s->resampler->free(&s->resample);
-        swri_rematrix_free(s);
-    }
-
-    av_freep(ss);
-}
-
-av_cold int swr_init(struct SwrContext *s){
-    int ret;
+static void clear_context(SwrContext *s){
     s->in_buffer_index= 0;
     s->in_buffer_count= 0;
     s->resample_in_constraint= 0;
+    memset(s->in.ch, 0, sizeof(s->in.ch));
+    memset(s->out.ch, 0, sizeof(s->out.ch));
     free_temp(&s->postin);
     free_temp(&s->midbuf);
     free_temp(&s->preout);
@@ -253,14 +232,29 @@ av_cold int swr_init(struct SwrContext *s){
     free_temp(&s->drop_temp);
     free_temp(&s->dither.noise);
     free_temp(&s->dither.temp);
-    memset(s->in.ch, 0, sizeof(s->in.ch));
-    memset(s->out.ch, 0, sizeof(s->out.ch));
     swri_audio_convert_free(&s-> in_convert);
     swri_audio_convert_free(&s->out_convert);
     swri_audio_convert_free(&s->full_convert);
     swri_rematrix_free(s);
 
     s->flushed = 0;
+}
+
+av_cold void swr_free(SwrContext **ss){
+    SwrContext *s= *ss;
+    if(s){
+        clear_context(s);
+        if (s->resampler)
+            s->resampler->free(&s->resample);
+    }
+
+    av_freep(ss);
+}
+
+av_cold int swr_init(struct SwrContext *s){
+    int ret;
+
+    clear_context(s);
 
     if(s-> in_sample_fmt >= AV_SAMPLE_FMT_NB){
         av_log(s, AV_LOG_ERROR, "Requested input sample format %d is invalid\n", s->in_sample_fmt);
@@ -534,6 +528,7 @@ static int resample(SwrContext *s, AudioData *out_param, int out_count,
     AudioData in, out, tmp;
     int ret_sum=0;
     int border=0;
+    int padless = ARCH_X86 && s->engine == SWR_ENGINE_SWR ? 7 : 0;
 
     av_assert1(s->in_buffer.ch_count == in_param->ch_count);
     av_assert1(s->in_buffer.planar   == in_param->planar);
@@ -564,9 +559,9 @@ static int resample(SwrContext *s, AudioData *out_param, int out_count,
             }
         }
 
-        if((s->flushed || in_count) && !s->in_buffer_count){
+        if((s->flushed || in_count > padless) && !s->in_buffer_count){
             s->in_buffer_index=0;
-            ret= s->resampler->multiple_resample(s->resample, &out, out_count, &in, in_count, &consumed);
+            ret= s->resampler->multiple_resample(s->resample, &out, out_count, &in, FFMAX(in_count-padless, 0), &consumed);
             out_count -= ret;
             ret_sum += ret;
             buf_set(&out, &out, ret);
@@ -598,6 +593,10 @@ static int resample(SwrContext *s, AudioData *out_param, int out_count,
             s->resample_in_constraint= 0;
             if(s->in_buffer_count != count || in_count)
                 continue;
+            if (padless) {
+                padless = 0;
+                continue;
+            }
         }
         break;
     }while(1);
@@ -734,10 +733,19 @@ static int swr_convert_internal(struct SwrContext *s, AudioData *out, int out_co
     return out_count;
 }
 
+int swr_is_initialized(struct SwrContext *s) {
+    return !!s->in_buffer.ch_count;
+}
+
 int swr_convert(struct SwrContext *s, uint8_t *out_arg[SWR_CH_MAX], int out_count,
                                 const uint8_t *in_arg [SWR_CH_MAX], int  in_count){
     AudioData * in= &s->in;
     AudioData *out= &s->out;
+
+    if (!swr_is_initialized(s)) {
+        av_log(s, AV_LOG_ERROR, "Context has not been initialized\n");
+        return AVERROR(EINVAL);
+    }
 
     while(s->drop_output > 0){
         int ret;

@@ -29,6 +29,7 @@
 #define UNCHECKED_BITSTREAM_READER 1
 
 #include "libavutil/attributes.h"
+#include "libavutil/timer.h"
 #include "config.h"
 #include "cabac.h"
 #include "cabac_functions.h"
@@ -1619,6 +1620,9 @@ decode_cabac_residual_internal(H264Context *h, int16_t *block,
     cc.range     = h->cabac.range;
     cc.low       = h->cabac.low;
     cc.bytestream= h->cabac.bytestream;
+#if !UNCHECKED_BITSTREAM_READER
+    cc.bytestream_end = h->cabac.bytestream_end;
+#endif
 #else
 #define CC &h->cabac
 #endif

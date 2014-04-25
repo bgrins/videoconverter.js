@@ -33,6 +33,7 @@ const AVCodecTag ff_mp4_obj_type[] = {
     { AV_CODEC_ID_MOV_TEXT    , 0x08 },
     { AV_CODEC_ID_MPEG4       , 0x20 },
     { AV_CODEC_ID_H264        , 0x21 },
+    { AV_CODEC_ID_HEVC        , 0x23 },
     { AV_CODEC_ID_AAC         , 0x40 },
     { AV_CODEC_ID_MP4ALS      , 0x40 }, /* 14496-3 ALS */
     { AV_CODEC_ID_MPEG2VIDEO  , 0x61 }, /* MPEG2 Main */
@@ -151,8 +152,8 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
 
     { AV_CODEC_ID_RAWVIDEO, MKTAG('W', 'R', 'A', 'W') },
 
-    { AV_CODEC_ID_HEVC, MKTAG('h', 'v', 'c', '1') }, /* HEVC/H.265 which indicates parameter sets shall not be in ES */
     { AV_CODEC_ID_HEVC, MKTAG('h', 'e', 'v', '1') }, /* HEVC/H.265 which indicates parameter sets may be in ES */
+    { AV_CODEC_ID_HEVC, MKTAG('h', 'v', 'c', '1') }, /* HEVC/H.265 which indicates parameter sets shall not be in ES */
 
     { AV_CODEC_ID_H264, MKTAG('a', 'v', 'c', '1') }, /* AVC-1/H.264 */
     { AV_CODEC_ID_H264, MKTAG('a', 'i', '5', 'p') }, /* AVC-Intra  50M 720p24/30/60 */
@@ -218,6 +219,7 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
     { AV_CODEC_ID_MPEG2VIDEO, MKTAG('x', 'd', 'h', 'd') }, /* XDCAM HD 540p */
     { AV_CODEC_ID_MPEG2VIDEO, MKTAG('x', 'd', 'h', '2') }, /* XDCAM HD422 540p */
     { AV_CODEC_ID_MPEG2VIDEO, MKTAG('A', 'V', 'm', 'p') }, /* AVID IMX PAL */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('m', 'p', '2', 'v') }, /* FCP5 */
 
     { AV_CODEC_ID_JPEG2000, MKTAG('m', 'j', 'p', '2') }, /* JPEG 2000 produced by FCP */
 
@@ -438,6 +440,7 @@ static const AVCodecTag mp4_audio_types[] = {
 int ff_mp4_read_dec_config_descr(AVFormatContext *fc, AVStream *st, AVIOContext *pb)
 {
     int len, tag;
+    int ret;
     int object_type_id = avio_r8(pb);
     avio_r8(pb); /* stream type */
     avio_rb24(pb); /* buffer size db */
@@ -457,11 +460,10 @@ int ff_mp4_read_dec_config_descr(AVFormatContext *fc, AVStream *st, AVIOContext 
         if (!len || (uint64_t)len > (1<<30))
             return -1;
         av_free(st->codec->extradata);
-        if (ff_alloc_extradata(st->codec, len))
-            return AVERROR(ENOMEM);
-        avio_read(pb, st->codec->extradata, len);
+        if ((ret = ff_get_extradata(st->codec, pb, len)) < 0)
+            return ret;
         if (st->codec->codec_id == AV_CODEC_ID_AAC) {
-            MPEG4AudioConfig cfg;
+            MPEG4AudioConfig cfg = {0};
             avpriv_mpeg4audio_get_config(&cfg, st->codec->extradata,
                                          st->codec->extradata_size * 8, 1);
             st->codec->channels = cfg.channels;
@@ -574,3 +576,12 @@ void ff_mov_write_chan(AVIOContext *pb, int64_t channel_layout)
     avio_wb32(pb, 0);              // mNumberChannelDescriptions
 }
 
+const struct AVCodecTag *avformat_get_mov_video_tags(void)
+{
+    return ff_codec_movvideo_tags;
+}
+
+const struct AVCodecTag *avformat_get_mov_audio_tags(void)
+{
+    return ff_codec_movaudio_tags;
+}

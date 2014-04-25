@@ -603,10 +603,14 @@ static void decode_array_0000(APEContext *ctx, GetBitContext *gb,
         rice->ksum += out[i];
     }
     rice->k = av_log2(rice->ksum / 10) + 1;
+    if (rice->k >= 24)
+        return;
     for (; i < 64; i++) {
         out[i] = get_rice_ook(&ctx->gb, rice->k);
         rice->ksum += out[i];
         rice->k = av_log2(rice->ksum / ((i + 1) * 2)) + 1;
+        if (rice->k >= 24)
+            return;
     }
     ksummax = 1 << rice->k + 7;
     ksummin = rice->k ? (1 << rice->k + 6) : 0;
@@ -1434,7 +1438,7 @@ static int ape_decode_frame(AVCodecContext *avctx, void *data,
         }
         if (s->fileversion < 3950) // previous versions overread two bytes
             buf_size += 2;
-        av_fast_malloc(&s->data, &s->data_size, buf_size);
+        av_fast_padded_malloc(&s->data, &s->data_size, buf_size);
         if (!s->data)
             return AVERROR(ENOMEM);
         s->dsp.bswap_buf((uint32_t*)s->data, (const uint32_t*)buf, buf_size >> 2);

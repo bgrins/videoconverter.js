@@ -19,7 +19,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <stdint.h>
+
 #include "avc.h"
+#include "hevc.h"
 #include "avformat.h"
 #include "avio_internal.h"
 #include "avlanguage.h"
@@ -194,6 +197,19 @@ static void put_ebml_uint(AVIOContext *pb, unsigned int elementid, uint64_t val)
 {
     int i, bytes = 1;
     uint64_t tmp = val;
+    while (tmp>>=8) bytes++;
+
+    put_ebml_id(pb, elementid);
+    put_ebml_num(pb, bytes, 0);
+    for (i = bytes - 1; i >= 0; i--)
+        avio_w8(pb, (uint8_t)(val >> i*8));
+}
+
+static void put_ebml_sint(AVIOContext *pb, unsigned int elementid, int64_t val)
+{
+    int i, bytes = 1;
+    uint64_t tmp = 2*(val < 0 ? val^-1 : val);
+
     while (tmp>>=8) bytes++;
 
     put_ebml_id(pb, elementid);
@@ -517,6 +533,8 @@ static int mkv_write_codecprivate(AVFormatContext *s, AVIOContext *pb, AVCodecCo
             ret = put_wv_codecpriv(dyn_cp, codec);
         else if (codec->codec_id == AV_CODEC_ID_H264)
             ret = ff_isom_write_avcc(dyn_cp, codec->extradata, codec->extradata_size);
+        else if (codec->codec_id == AV_CODEC_ID_HEVC)
+            ret = ff_isom_write_hvcc(dyn_cp, codec->extradata, codec->extradata_size, 0);
         else if (codec->codec_id == AV_CODEC_ID_ALAC) {
             if (codec->extradata_size < 36) {
                 av_log(s, AV_LOG_ERROR,
@@ -533,9 +551,23 @@ static int mkv_write_codecprivate(AVFormatContext *s, AVIOContext *pb, AVCodecCo
         if (qt_id) {
             if (!codec->codec_tag)
                 codec->codec_tag = ff_codec_get_tag(ff_codec_movvideo_tags, codec->codec_id);
-            if (codec->extradata_size)
+            if (codec->extradata_size) {
+                if (   ff_codec_get_id(ff_codec_movvideo_tags, codec->codec_tag) == codec->codec_id
+                    && ff_codec_get_id(ff_codec_movvideo_tags, AV_RL32(codec->extradata+4)) != codec->codec_id
+                ) {
+                    int i;
+                    avio_wb32(dyn_cp, 0x5a + codec->extradata_size);
+                    avio_wl32(dyn_cp, codec->codec_tag);
+                    for(i=0; i<0x5a-8; i++)
+                        avio_w8(dyn_cp, 0);
+                }
                 avio_write(dyn_cp, codec->extradata, codec->extradata_size);
+            }
         } else {
+            if (!ff_codec_get_tag(ff_codec_bmp_tags, codec->codec_id))
+                av_log(s, AV_LOG_WARNING, "codec %s is not supported by this format\n",
+                       avcodec_get_name(codec->codec_id));
+
             if (!codec->codec_tag)
                 codec->codec_tag = ff_codec_get_tag(ff_codec_bmp_tags, codec->codec_id);
             if (!codec->codec_tag) {
@@ -544,7 +576,7 @@ static int mkv_write_codecprivate(AVFormatContext *s, AVIOContext *pb, AVCodecCo
                 ret = AVERROR(EINVAL);
             }
 
-            ff_put_bmp_header(dyn_cp, codec, ff_codec_bmp_tags, 0);
+            ff_put_bmp_header(dyn_cp, codec, ff_codec_bmp_tags, 0, 0);
         }
 
     } else if (codec->codec_type == AVMEDIA_TYPE_AUDIO) {
@@ -601,7 +633,7 @@ static int mkv_write_tracks(AVFormatContext *s)
             continue;
         }
 
-        if (!bit_depth)
+        if (!bit_depth && codec->codec_id != AV_CODEC_ID_ADPCM_G726)
             bit_depth = av_get_bytes_per_sample(codec->sample_fmt) << 3;
         if (!bit_depth)
             bit_depth = codec->bits_per_coded_sample;
@@ -913,7 +945,9 @@ static int mkv_write_tag(AVFormatContext *s, AVDictionary *m, unsigned int eleme
     end_ebml_master(s->pb, targets);
 
     while ((t = av_dict_get(m, "", t, AV_DICT_IGNORE_SUFFIX)))
-        if (av_strcasecmp(t->key, "title") && av_strcasecmp(t->key, "stereo_mode"))
+        if (av_strcasecmp(t->key, "title") &&
+            av_strcasecmp(t->key, "stereo_mode") &&
+            av_strcasecmp(t->key, "encoding_tool"))
             mkv_write_simpletag(s->pb, t);
 
     end_ebml_master(s->pb, tag);
@@ -1118,7 +1152,10 @@ static int mkv_write_header(AVFormatContext *s)
             segment_uid[i] = av_lfg_get(&lfg);
 
         put_ebml_string(pb, MATROSKA_ID_MUXINGAPP , LIBAVFORMAT_IDENT);
-        put_ebml_string(pb, MATROSKA_ID_WRITINGAPP, LIBAVFORMAT_IDENT);
+        if ((tag = av_dict_get(s->metadata, "encoding_tool", NULL, 0)))
+            put_ebml_string(pb, MATROSKA_ID_WRITINGAPP, tag->value);
+        else
+            put_ebml_string(pb, MATROSKA_ID_WRITINGAPP, LIBAVFORMAT_IDENT);
         put_ebml_binary(pb, MATROSKA_ID_SEGMENTUID, segment_uid, 16);
     } else {
         const char *ident = "Lavf";
@@ -1324,7 +1361,8 @@ static void mkv_write_block(AVFormatContext *s, AVIOContext *pb,
     uint8_t *data = NULL, *side_data = NULL;
     int offset = 0, size = pkt->size, side_data_size = 0;
     int64_t ts = mkv->tracks[pkt->stream_index].write_dts ? pkt->dts : pkt->pts;
-    uint64_t additional_id = 0, discard_padding = 0;
+    uint64_t additional_id = 0;
+    int64_t discard_padding = 0;
     ebml_master block_group, block_additions, block_more;
 
     av_log(s, AV_LOG_DEBUG, "Writing block at offset %" PRIu64 ", size %d, "
@@ -1333,6 +1371,10 @@ static void mkv_write_block(AVFormatContext *s, AVIOContext *pb,
     if (codec->codec_id == AV_CODEC_ID_H264 && codec->extradata_size > 0 &&
         (AV_RB24(codec->extradata) == 1 || AV_RB32(codec->extradata) == 1))
         ff_avc_parse_nal_units_buf(pkt->data, &data, &size);
+    else if (codec->codec_id == AV_CODEC_ID_HEVC && codec->extradata_size > 6 &&
+             (AV_RB24(codec->extradata) == 1 || AV_RB32(codec->extradata) == 1))
+        /* extradata is Annex B, assume the bitstream is too and convert it */
+        ff_hevc_annexb2mp4_buf(pkt->data, &data, &size, 0, NULL);
     else if (codec->codec_id == AV_CODEC_ID_WAVPACK) {
         int ret = mkv_strip_wavpack(pkt->data, &data, &size);
         if (ret < 0) {
@@ -1383,7 +1425,7 @@ static void mkv_write_block(AVFormatContext *s, AVIOContext *pb,
         av_free(data);
 
     if (discard_padding) {
-        put_ebml_uint(pb, MATROSKA_ID_DISCARDPADDING, discard_padding);
+        put_ebml_sint(pb, MATROSKA_ID_DISCARDPADDING, discard_padding);
     }
 
     if (side_data_size && additional_id == 1) {

@@ -1,0 +1,41 @@
+diff --git a/nestegg/halloc/src/halloc.c b/nestegg/halloc/src/halloc.c
+index 5758fc0..837b3ff 100644
+--- a/nestegg/halloc/src/halloc.c
++++ b/nestegg/halloc/src/halloc.c
+@@ -15,7 +15,7 @@
+ #include <stdlib.h>  /* realloc */
+ #include <string.h>  /* memset & co */
+ 
+-#include "halloc.h"
++#include "third_party/nestegg/halloc/halloc.h"
+ #include "align.h"
+ #include "hlist.h"
+ 
+diff --git a/nestegg/include/nestegg/nestegg.h b/nestegg/include/nestegg/nestegg.h
+index ff13728..c18d1d3 100644
+--- a/nestegg/include/nestegg/nestegg.h
++++ b/nestegg/include/nestegg/nestegg.h
+@@ -7,7 +7,7 @@
+ #if !defined(NESTEGG_671cac2a_365d_ed69_d7a3_4491d3538d79)
+ #define NESTEGG_671cac2a_365d_ed69_d7a3_4491d3538d79
+ 
+-#include <nestegg/nestegg-stdint.h>
++#include "vpx/vpx_integer.h"
+ 
+ #if defined(__cplusplus)
+ extern "C" {
+diff --git a/nestegg/src/nestegg.c b/nestegg/src/nestegg.c
+index daf1eed..4fb10e7 100644
+--- a/nestegg/src/nestegg.c
++++ b/nestegg/src/nestegg.c
+@@ -8,8 +8,8 @@
+ #include <stdlib.h>
+ #include <string.h>
+ 
+-#include "halloc.h"
+-#include "nestegg/nestegg.h"
++#include "third_party/nestegg/halloc/halloc.h"
++#include "third_party/nestegg/include/nestegg/nestegg.h"
+ 
+ /* EBML Elements */
+ #define ID_EBML                 0x1a45dfa3

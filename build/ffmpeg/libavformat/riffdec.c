@@ -29,19 +29,14 @@
 #include "avio_internal.h"
 #include "riff.h"
 
-const AVCodecGuid ff_codec_wav_guids[] = {
-    { AV_CODEC_ID_AC3,      { 0x2C, 0x80, 0x6D, 0xE0, 0x46, 0xDB, 0xCF, 0x11, 0xB4, 0xD1, 0x00, 0x80, 0x5F, 0x6C, 0xBB, 0xEA } },
-    { AV_CODEC_ID_ATRAC3P,  { 0xBF, 0xAA, 0x23, 0xE9, 0x58, 0xCB, 0x71, 0x44, 0xA1, 0x19, 0xFF, 0xFA, 0x01, 0xE4, 0xCE, 0x62 } },
-    { AV_CODEC_ID_EAC3,     { 0xAF, 0x87, 0xFB, 0xA7, 0x02, 0x2D, 0xFB, 0x42, 0xA4, 0xD4, 0x05, 0xCD, 0x93, 0x84, 0x3B, 0xDD } },
-    { AV_CODEC_ID_MP2,      { 0x2B, 0x80, 0x6D, 0xE0, 0x46, 0xDB, 0xCF, 0x11, 0xB4, 0xD1, 0x00, 0x80, 0x5F, 0x6C, 0xBB, 0xEA } },
-    { AV_CODEC_ID_NONE }
-};
-
-void ff_get_guid(AVIOContext *s, ff_asf_guid *g)
+int ff_get_guid(AVIOContext *s, ff_asf_guid *g)
 {
     av_assert0(sizeof(*g) == 16); //compiler will optimize this out
-    if (avio_read(s, *g, sizeof(*g)) < (int)sizeof(*g))
+    if (avio_read(s, *g, sizeof(*g)) < (int)sizeof(*g)) {
         memset(*g, 0, sizeof(*g));
+        return AVERROR_INVALIDDATA;
+    }
+    return 0;
 }
 
 enum AVCodecID ff_codec_guid_get_id(const AVCodecGuid *guids, ff_asf_guid guid)
@@ -117,9 +112,8 @@ int ff_get_wav_header(AVIOContext *pb, AVCodecContext *codec, int size)
         }
         if (cbSize > 0) {
             av_free(codec->extradata);
-            if (ff_alloc_extradata(codec, cbSize))
+            if (ff_get_extradata(codec, pb, cbSize) < 0)
                 return AVERROR(ENOMEM);
-            avio_read(pb, codec->extradata, codec->extradata_size);
             size -= cbSize;
         }
 

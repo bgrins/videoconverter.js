@@ -82,7 +82,6 @@ static int get_qPy_pred(HEVCContext *s, int xC, int yC,
     int xQgBase              = xBase - (xBase & MinCuQpDeltaSizeMask);
     int yQgBase              = yBase - (yBase & MinCuQpDeltaSizeMask);
     int min_cb_width         = s->sps->min_cb_width;
-    int min_cb_height        = s->sps->min_cb_height;
     int x_cb                 = xQgBase >> s->sps->log2_min_cb_size;
     int y_cb                 = yQgBase >> s->sps->log2_min_cb_size;
     int availableA           = (xBase   & ctb_size_mask) &&
@@ -92,50 +91,11 @@ static int get_qPy_pred(HEVCContext *s, int xC, int yC,
     int qPy_pred, qPy_a, qPy_b;
 
     // qPy_pred
-    if (lc->first_qp_group) {
+    if (lc->first_qp_group || (!xQgBase && !yQgBase)) {
         lc->first_qp_group = !lc->tu.is_cu_qp_delta_coded;
         qPy_pred = s->sh.slice_qp;
     } else {
-        qPy_pred = lc->qp_y;
-        if (log2_cb_size < s->sps->log2_ctb_size -
-                           s->pps->diff_cu_qp_delta_depth) {
-            static const int offsetX[8][8] = {
-                { -1, 1, 3, 1, 7, 1, 3, 1 },
-                {  0, 0, 0, 0, 0, 0, 0, 0 },
-                {  1, 3, 1, 3, 1, 3, 1, 3 },
-                {  2, 2, 2, 2, 2, 2, 2, 2 },
-                {  3, 5, 7, 5, 3, 5, 7, 5 },
-                {  4, 4, 4, 4, 4, 4, 4, 4 },
-                {  5, 7, 5, 7, 5, 7, 5, 7 },
-                {  6, 6, 6, 6, 6, 6, 6, 6 }
-            };
-            static const int offsetY[8][8] = {
-                { 7, 0, 1, 2, 3, 4, 5, 6 },
-                { 0, 1, 2, 3, 4, 5, 6, 7 },
-                { 1, 0, 3, 2, 5, 4, 7, 6 },
-                { 0, 1, 2, 3, 4, 5, 6, 7 },
-                { 3, 0, 1, 2, 7, 4, 5, 6 },
-                { 0, 1, 2, 3, 4, 5, 6, 7 },
-                { 1, 0, 3, 2, 5, 4, 7, 6 },
-                { 0, 1, 2, 3, 4, 5, 6, 7 }
-            };
-            int xC0b = (xC - (xC & ctb_size_mask)) >> s->sps->log2_min_cb_size;
-            int yC0b = (yC - (yC & ctb_size_mask)) >> s->sps->log2_min_cb_size;
-            int idxX = (xQgBase  & ctb_size_mask)  >> s->sps->log2_min_cb_size;
-            int idxY = (yQgBase  & ctb_size_mask)  >> s->sps->log2_min_cb_size;
-            int idx_mask = ctb_size_mask >> s->sps->log2_min_cb_size;
-            int x, y;
-
-            x = FFMIN(xC0b +  offsetX[idxX][idxY],             min_cb_width  - 1);
-            y = FFMIN(yC0b + (offsetY[idxX][idxY] & idx_mask), min_cb_height - 1);
-
-            if (xC0b == (lc->start_of_tiles_x >> s->sps->log2_min_cb_size) &&
-                offsetX[idxX][idxY] == -1) {
-                x = (lc->end_of_tiles_x >> s->sps->log2_min_cb_size) - 1;
-                y = yC0b - 1;
-            }
-            qPy_pred = s->qp_y_tab[y * min_cb_width + x];
-        }
+        qPy_pred = lc->qPy_pred;
     }
 
     // qPy_a
@@ -150,6 +110,9 @@ static int get_qPy_pred(HEVCContext *s, int xC, int yC,
     else
         qPy_b = s->qp_y_tab[x_cb + (y_cb - 1) * min_cb_width];
 
+    av_assert2(qPy_a >= -s->sps->qp_bd_offset && qPy_a < 52);
+    av_assert2(qPy_b >= -s->sps->qp_bd_offset && qPy_b < 52);
+
     return (qPy_a + qPy_b + 1) >> 1;
 }
 
@@ -160,8 +123,8 @@ void ff_hevc_set_qPy(HEVCContext *s, int xC, int yC,
 
     if (s->HEVClc->tu.cu_qp_delta != 0) {
         int off = s->sps->qp_bd_offset;
-        s->HEVClc->qp_y = ((qp_y + s->HEVClc->tu.cu_qp_delta + 52 + 2 * off) %
-                          (52 + off)) - off;
+        s->HEVClc->qp_y = FFUMOD(qp_y + s->HEVClc->tu.cu_qp_delta + 52 + 2 * off,
+                                 52 + off) - off;
     } else
         s->HEVClc->qp_y = qp_y;
 }
@@ -320,11 +283,15 @@ static void sao_filter_CTB(HEVCContext *s, int x, int y)
 static int get_pcm(HEVCContext *s, int x, int y)
 {
     int log2_min_pu_size = s->sps->log2_min_pu_size;
-    int x_pu             = x >> log2_min_pu_size;
-    int y_pu             = y >> log2_min_pu_size;
+    int x_pu, y_pu;
 
-    if (x < 0 || x_pu >= s->sps->min_pu_width ||
-        y < 0 || y_pu >= s->sps->min_pu_height)
+    if (x < 0 || y < 0)
+        return 2;
+
+    x_pu = x >> log2_min_pu_size;
+    y_pu = y >> log2_min_pu_size;
+
+    if (x_pu >= s->sps->min_pu_width || y_pu >= s->sps->min_pu_height)
         return 2;
     return s->is_pcm[y_pu * s->sps->min_pu_width + x_pu];
 }
@@ -380,8 +347,8 @@ static void deblocking_filter_CTB(HEVCContext *s, int x0, int y0)
                 const int qp0 = (get_qPy(s, x - 1, y)     + get_qPy(s, x, y)     + 1) >> 1;
                 const int qp1 = (get_qPy(s, x - 1, y + 4) + get_qPy(s, x, y + 4) + 1) >> 1;
 
-                beta[0] = betatable[av_clip(qp0 + (beta_offset >> 1 << 1), 0, MAX_QP)];
-                beta[1] = betatable[av_clip(qp1 + (beta_offset >> 1 << 1), 0, MAX_QP)];
+                beta[0] = betatable[av_clip(qp0 + beta_offset, 0, MAX_QP)];
+                beta[1] = betatable[av_clip(qp1 + beta_offset, 0, MAX_QP)];
                 tc[0]   = bs0 ? TC_CALC(qp0, bs0) : 0;
                 tc[1]   = bs1 ? TC_CALC(qp1, bs1) : 0;
                 src     = &s->frame->data[LUMA][y * s->frame->linesize[LUMA] + (x << s->sps->pixel_shift)];
@@ -445,8 +412,8 @@ static void deblocking_filter_CTB(HEVCContext *s, int x0, int y0)
                 tc_offset   = x >= x0 ? cur_tc_offset : left_tc_offset;
                 beta_offset = x >= x0 ? cur_beta_offset : left_beta_offset;
 
-                beta[0] = betatable[av_clip(qp0 + (beta_offset >> 1 << 1), 0, MAX_QP)];
-                beta[1] = betatable[av_clip(qp1 + (beta_offset >> 1 << 1), 0, MAX_QP)];
+                beta[0] = betatable[av_clip(qp0 + beta_offset, 0, MAX_QP)];
+                beta[1] = betatable[av_clip(qp1 + beta_offset, 0, MAX_QP)];
                 tc[0]   = bs0 ? TC_CALC(qp0, bs0) : 0;
                 tc[1]   = bs1 ? TC_CALC(qp1, bs1) : 0;
                 src     = &s->frame->data[LUMA][y * s->frame->linesize[LUMA] + (x << s->sps->pixel_shift)];

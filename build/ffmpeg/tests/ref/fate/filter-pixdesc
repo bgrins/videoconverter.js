@@ -26,8 +26,8 @@ gbrp14le            937ff1dd9f498b39f9e882316e371fbf
 gbrp9be             c76ab5850c9bc72bbbf36caa6d1c5ac7
 gbrp9le             5ad363dc9570187ad3e3f2344fbb30cf
 gray                2ee2ea2340d0ecf2dfa6f90f87384799
-gray16be            389f4e5a8ab413b3af32767b59ed7f9e
-gray16le            a1f912941247e45b394b9cf4f0e81130
+gray16be            a61507aec1088f5692036e1aabdb4f41
+gray16le            171fbdd46e3737bc865d0185a0006e1c
 monob               309b5785a36bd988d17e15d88f4ffad1
 monow               8809a02bc69b58d1114b09ca79ebffad
 nv12                75e90c54d858b993e99f4ee6d2a2a38f
@@ -48,8 +48,8 @@ rgba                53796fa4c392a1b2659595b6a284f8c4
 rgba64be            c05fbb1ada1b48fb1eb192fc200af2b6
 rgba64le            1b826cc613666f545274e8a7799d69f1
 uyvy422             3f411f947e3ac8f842c88e717d68bd9a
-xyz12be             71f608adceed8e8997aa463203b1a648
-xyz12le             dc524e3726ba1df0d2f406db3a2c08aa
+xyz12be             7fb449368615139d47192c4543b5d125
+xyz12le             bfa1cde86dece70348e48f6293a7c2ef
 yuv410p             7dcf3f4770c8b494290ceacd2c2ce6db
 yuv411p             9461b188dab6f8b90d9a27e353a89f58
 yuv420p             61fffd2d8425759a33ae07e718d0242d

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012 Clément Bœsch
+ * Copyright (c) 2012-2013 Clément Bœsch
  * Copyright (c) 2013 Rudolf Polzer <divverent@xonotic.org>
  *
  * This file is part of FFmpeg.
@@ -37,6 +37,7 @@
 enum DisplayMode  { COMBINED, SEPARATE, NB_MODES };
 enum DisplayScale { LINEAR, SQRT, CBRT, LOG, NB_SCALES };
 enum ColorMode    { CHANNEL, INTENSITY, NB_CLMODES };
+enum WindowFunc   { WFUNC_NONE, WFUNC_HANN, WFUNC_HAMMING, WFUNC_BLACKMAN, NB_WFUNC };
 
 typedef struct {
     const AVClass *class;
@@ -57,6 +58,7 @@ typedef struct {
     int filled;                 ///< number of samples (per channel) filled in current rdft_buffer
     int consumed;               ///< number of samples (per channel) consumed from the input frame
     float *window_func_lut;     ///< Window function LUT
+    enum WindowFunc win_func;
     float *combine_buffer;      ///< color combining buffer (3 * h items)
 } ShowSpectrumContext;
 
@@ -68,17 +70,21 @@ static const AVOption showspectrum_options[] = {
     { "s",    "set video size", OFFSET(w), AV_OPT_TYPE_IMAGE_SIZE, {.str = "640x512"}, 0, 0, FLAGS },
     { "slide", "set sliding mode", OFFSET(sliding), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, FLAGS },
     { "mode", "set channel display mode", OFFSET(mode), AV_OPT_TYPE_INT, {.i64=COMBINED}, COMBINED, NB_MODES-1, FLAGS, "mode" },
-    { "combined", "combined mode", 0, AV_OPT_TYPE_CONST, {.i64=COMBINED}, 0, 0, FLAGS, "mode" },
-    { "separate", "separate mode", 0, AV_OPT_TYPE_CONST, {.i64=SEPARATE}, 0, 0, FLAGS, "mode" },
+        { "combined", "combined mode", 0, AV_OPT_TYPE_CONST, {.i64=COMBINED}, 0, 0, FLAGS, "mode" },
+        { "separate", "separate mode", 0, AV_OPT_TYPE_CONST, {.i64=SEPARATE}, 0, 0, FLAGS, "mode" },
     { "color", "set channel coloring", OFFSET(color_mode), AV_OPT_TYPE_INT, {.i64=CHANNEL}, CHANNEL, NB_CLMODES-1, FLAGS, "color" },
-    { "channel",   "separate color for each channel", 0, AV_OPT_TYPE_CONST, {.i64=CHANNEL},   0, 0, FLAGS, "color" },
-    { "intensity", "intensity based coloring",        0, AV_OPT_TYPE_CONST, {.i64=INTENSITY}, 0, 0, FLAGS, "color" },
+        { "channel",   "separate color for each channel", 0, AV_OPT_TYPE_CONST, {.i64=CHANNEL},   0, 0, FLAGS, "color" },
+        { "intensity", "intensity based coloring",        0, AV_OPT_TYPE_CONST, {.i64=INTENSITY}, 0, 0, FLAGS, "color" },
     { "scale", "set display scale", OFFSET(scale), AV_OPT_TYPE_INT, {.i64=SQRT}, LINEAR, NB_SCALES-1, FLAGS, "scale" },
-    { "sqrt", "square root", 0, AV_OPT_TYPE_CONST, {.i64=SQRT},   0, 0, FLAGS, "scale" },
-    { "cbrt", "cubic root",  0, AV_OPT_TYPE_CONST, {.i64=CBRT},   0, 0, FLAGS, "scale" },
-    { "log",  "logarithmic", 0, AV_OPT_TYPE_CONST, {.i64=LOG},    0, 0, FLAGS, "scale" },
-    { "lin",  "linear",      0, AV_OPT_TYPE_CONST, {.i64=LINEAR}, 0, 0, FLAGS, "scale" },
+        { "sqrt", "square root", 0, AV_OPT_TYPE_CONST, {.i64=SQRT},   0, 0, FLAGS, "scale" },
+        { "cbrt", "cubic root",  0, AV_OPT_TYPE_CONST, {.i64=CBRT},   0, 0, FLAGS, "scale" },
+        { "log",  "logarithmic", 0, AV_OPT_TYPE_CONST, {.i64=LOG},    0, 0, FLAGS, "scale" },
+        { "lin",  "linear",      0, AV_OPT_TYPE_CONST, {.i64=LINEAR}, 0, 0, FLAGS, "scale" },
     { "saturation", "color saturation multiplier", OFFSET(saturation), AV_OPT_TYPE_FLOAT, {.dbl = 1}, -10, 10, FLAGS },
+    { "win_func", "set window function", OFFSET(win_func), AV_OPT_TYPE_INT, {.i64 = WFUNC_HANN}, 0, NB_WFUNC-1, FLAGS, "win_func" },
+        { "hann",     "Hann window",     0, AV_OPT_TYPE_CONST, {.i64 = WFUNC_HANN},     0, 0, FLAGS, "win_func" },
+        { "hamming",  "Hamming window",  0, AV_OPT_TYPE_CONST, {.i64 = WFUNC_HAMMING},  0, 0, FLAGS, "win_func" },
+        { "blackman", "Blackman window", 0, AV_OPT_TYPE_CONST, {.i64 = WFUNC_BLACKMAN}, 0, 0, FLAGS, "win_func" },
     { NULL }
 };
 
@@ -195,14 +201,33 @@ static int config_output(AVFilterLink *outlink)
         }
         s->filled = 0;
 
-        /* pre-calc windowing function (hann here) */
+        /* pre-calc windowing function */
         s->window_func_lut =
             av_realloc_f(s->window_func_lut, win_size,
                          sizeof(*s->window_func_lut));
         if (!s->window_func_lut)
             return AVERROR(ENOMEM);
-        for (i = 0; i < win_size; i++)
-            s->window_func_lut[i] = .5f * (1 - cos(2*M_PI*i / (win_size-1)));
+        switch (s->win_func) {
+        case WFUNC_NONE:
+            for (i = 0; i < win_size; i++)
+                s->window_func_lut[i] = 1.;
+            break;
+        case WFUNC_HANN:
+            for (i = 0; i < win_size; i++)
+                s->window_func_lut[i] = .5f * (1 - cos(2*M_PI*i / (win_size-1)));
+            break;
+        case WFUNC_HAMMING:
+            for (i = 0; i < win_size; i++)
+                s->window_func_lut[i] = .54f - .46f * cos(2*M_PI*i / (win_size-1));
+            break;
+        case WFUNC_BLACKMAN: {
+            for (i = 0; i < win_size; i++)
+                s->window_func_lut[i] = .42f - .5f*cos(2*M_PI*i / (win_size-1)) + .08f*cos(4*M_PI*i / (win_size-1));
+            break;
+        }
+        default:
+            av_assert0(0);
+        }
 
         /* prepare the initial picref buffer (black frame) */
         av_frame_free(&s->outpicref);

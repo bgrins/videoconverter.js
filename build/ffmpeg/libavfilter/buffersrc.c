@@ -58,7 +58,6 @@ typedef struct {
     /* audio only */
     int sample_rate;
     enum AVSampleFormat sample_fmt;
-    char               *sample_fmt_str;
     int channels;
     uint64_t channel_layout;
     char    *channel_layout_str;
@@ -121,7 +120,7 @@ static int av_buffersrc_add_frame_internal(AVFilterContext *ctx,
 {
     BufferSourceContext *s = ctx->priv;
     AVFrame *copy;
-    int ret;
+    int refcounted, ret;
 
     s->nb_failed_requests = 0;
 
@@ -130,6 +129,8 @@ static int av_buffersrc_add_frame_internal(AVFilterContext *ctx,
         return 0;
     } else if (s->eof)
         return AVERROR(EINVAL);
+
+    refcounted = !!frame->buf[0];
 
     if (!(flags & AV_BUFFERSRC_FLAG_NO_CHECK_FORMAT)) {
 
@@ -158,10 +159,20 @@ static int av_buffersrc_add_frame_internal(AVFilterContext *ctx,
 
     if (!(copy = av_frame_alloc()))
         return AVERROR(ENOMEM);
-    av_frame_move_ref(copy, frame);
+
+    if (refcounted) {
+        av_frame_move_ref(copy, frame);
+    } else {
+        ret = av_frame_ref(copy, frame);
+        if (ret < 0) {
+            av_frame_free(&copy);
+            return ret;
+        }
+    }
 
     if ((ret = av_fifo_generic_write(s->fifo, &copy, sizeof(copy), NULL)) < 0) {
-        av_frame_move_ref(frame, copy);
+        if (refcounted)
+            av_frame_move_ref(frame, copy);
         av_frame_free(&copy);
         return ret;
     }
@@ -326,7 +337,7 @@ static const AVOption buffer_options[] = {
     { "width",         NULL,                     OFFSET(w),                AV_OPT_TYPE_INT,      { .i64 = 0 }, 0, INT_MAX, V },
     { "video_size",    NULL,                     OFFSET(w),                AV_OPT_TYPE_IMAGE_SIZE,                .flags = V },
     { "height",        NULL,                     OFFSET(h),                AV_OPT_TYPE_INT,      { .i64 = 0 }, 0, INT_MAX, V },
-    { "pix_fmt",       NULL,                     OFFSET(pix_fmt),          AV_OPT_TYPE_PIXEL_FMT,                 .flags = V },
+    { "pix_fmt",       NULL,                     OFFSET(pix_fmt),          AV_OPT_TYPE_PIXEL_FMT, { .i64 = AV_PIX_FMT_NONE }, .min = AV_PIX_FMT_NONE, .max = INT_MAX, .flags = V },
 #if FF_API_OLD_FILTER_OPTS
     /* those 4 are for compatibility with the old option passing system where each filter
      * did its own parsing */
@@ -348,7 +359,7 @@ AVFILTER_DEFINE_CLASS(buffer);
 static const AVOption abuffer_options[] = {
     { "time_base",      NULL, OFFSET(time_base),           AV_OPT_TYPE_RATIONAL, { .dbl = 0 }, 0, INT_MAX, A },
     { "sample_rate",    NULL, OFFSET(sample_rate),         AV_OPT_TYPE_INT,      { .i64 = 0 }, 0, INT_MAX, A },
-    { "sample_fmt",     NULL, OFFSET(sample_fmt_str),      AV_OPT_TYPE_STRING,             .flags = A },
+    { "sample_fmt",     NULL, OFFSET(sample_fmt),          AV_OPT_TYPE_SAMPLE_FMT, { .i64 = AV_SAMPLE_FMT_NONE }, .min = AV_SAMPLE_FMT_NONE, .max = INT_MAX, .flags = A },
     { "channel_layout", NULL, OFFSET(channel_layout_str),  AV_OPT_TYPE_STRING,             .flags = A },
     { "channels",       NULL, OFFSET(channels),            AV_OPT_TYPE_INT,      { .i64 = 0 }, 0, INT_MAX, A },
     { NULL },
@@ -361,10 +372,8 @@ static av_cold int init_audio(AVFilterContext *ctx)
     BufferSourceContext *s = ctx->priv;
     int ret = 0;
 
-    s->sample_fmt = av_get_sample_fmt(s->sample_fmt_str);
     if (s->sample_fmt == AV_SAMPLE_FMT_NONE) {
-        av_log(ctx, AV_LOG_ERROR, "Invalid sample format %s\n",
-               s->sample_fmt_str);
+        av_log(ctx, AV_LOG_ERROR, "Sample format was not set or was invalid\n");
         return AVERROR(EINVAL);
     }
 
@@ -402,7 +411,7 @@ static av_cold int init_audio(AVFilterContext *ctx)
 
     av_log(ctx, AV_LOG_VERBOSE,
            "tb:%d/%d samplefmt:%s samplerate:%d chlayout:%s\n",
-           s->time_base.num, s->time_base.den, s->sample_fmt_str,
+           s->time_base.num, s->time_base.den, av_get_sample_fmt_name(s->sample_fmt),
            s->sample_rate, s->channel_layout_str);
     s->warning_limit = 100;
 

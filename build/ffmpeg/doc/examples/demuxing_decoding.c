@@ -26,7 +26,7 @@
  *
  * Show how to use the libavformat and libavcodec API to demux and
  * decode audio and video data.
- * @example doc/examples/demuxing_decoding.c
+ * @example demuxing_decoding.c
  */
 
 #include <libavutil/imgutils.h>
@@ -76,7 +76,7 @@ static int decode_packet(int *got_frame, int cached)
         /* decode video frame */
         ret = avcodec_decode_video2(video_dec_ctx, frame, got_frame, &pkt);
         if (ret < 0) {
-            fprintf(stderr, "Error decoding video frame\n");
+            fprintf(stderr, "Error decoding video frame (%s)\n", av_err2str(ret));
             return ret;
         }
 
@@ -99,7 +99,7 @@ static int decode_packet(int *got_frame, int cached)
         /* decode audio frame */
         ret = avcodec_decode_audio4(audio_dec_ctx, frame, got_frame, &pkt);
         if (ret < 0) {
-            fprintf(stderr, "Error decoding audio frame\n");
+            fprintf(stderr, "Error decoding audio frame (%s)\n", av_err2str(ret));
             return ret;
         }
         /* Some audio decoders decode only part of the packet, and have to be
@@ -159,7 +159,7 @@ static int open_codec_context(int *stream_idx,
         if (!dec) {
             fprintf(stderr, "Failed to find %s codec\n",
                     av_get_media_type_string(type));
-            return ret;
+            return AVERROR(EINVAL);
         }
 
         /* Init the decoders, with or without reference counting */
@@ -369,10 +369,8 @@ int main (int argc, char **argv)
     }
 
 end:
-    if (video_dec_ctx)
-        avcodec_close(video_dec_ctx);
-    if (audio_dec_ctx)
-        avcodec_close(audio_dec_ctx);
+    avcodec_close(video_dec_ctx);
+    avcodec_close(audio_dec_ctx);
     avformat_close_input(&fmt_ctx);
     if (video_dst_file)
         fclose(video_dst_file);

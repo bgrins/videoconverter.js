@@ -344,7 +344,7 @@ static int get_siz(Jpeg2000DecoderContext *s)
             break;
         }
     }
-    if (s->avctx->pix_fmt == AV_PIX_FMT_NONE) {
+    if (i == possible_fmts_nb) {
         av_log(s->avctx, AV_LOG_ERROR,
                "Unknown pix_fmt, profile: %d, colour_space: %d, "
                "components: %d, precision: %d, "
@@ -354,6 +354,7 @@ static int get_siz(Jpeg2000DecoderContext *s)
                ncomponents > 2 ? s->cdy[1] : 0,
                ncomponents > 2 ? s->cdx[2] : 0,
                ncomponents > 2 ? s->cdy[2] : 0);
+        return AVERROR_PATCHWELCOME;
     }
     s->avctx->bits_per_raw_sample = s->precision;
     return 0;
@@ -539,6 +540,8 @@ static int get_qcd(Jpeg2000DecoderContext *s, int n, Jpeg2000QuantStyle *q,
 {
     Jpeg2000QuantStyle tmp;
     int compno, ret;
+
+    memset(&tmp, 0, sizeof(tmp));
 
     if ((ret = get_qcx(s, n, &tmp)) < 0)
         return ret;
@@ -889,6 +892,10 @@ static int jpeg2000_decode_packets(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile
                         prcx   = ff_jpeg2000_ceildivpow2(x, reducedresno) >> rlevel->log2_prec_width;
                         prcy   = ff_jpeg2000_ceildivpow2(y, reducedresno) >> rlevel->log2_prec_height;
                         precno = prcx + rlevel->num_precincts_x * prcy;
+
+                        if (prcx >= rlevel->num_precincts_x || prcy >= rlevel->num_precincts_y)
+                            return AVERROR_PATCHWELCOME;
+
                         for (layno = 0; layno < tile->codsty[0].nlayers; layno++) {
                             if ((ret = jpeg2000_decode_packet(s, codsty, rlevel,
                                                               precno, layno,
@@ -1206,8 +1213,11 @@ static void mct_decode(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile)
 static int jpeg2000_decode_tile(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile,
                                 AVFrame *picture)
 {
+    const AVPixFmtDescriptor *pixdesc = av_pix_fmt_desc_get(s->avctx->pix_fmt);
     int compno, reslevelno, bandno;
     int x, y;
+    int planar    = !!(pixdesc->flags & AV_PIX_FMT_FLAG_PLANAR);
+    int pixelsize = planar ? 1 : pixdesc->nb_components;
 
     uint8_t *line;
     Jpeg2000T1Context t1;
@@ -1281,8 +1291,6 @@ static int jpeg2000_decode_tile(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile,
             int32_t *i_datap = comp->i_data;
             int cbps = s->cbps[compno];
             int w = tile->comp[compno].coord[0][1] - s->image_offset_x;
-            int planar = !!picture->data[2];
-            int pixelsize = planar ? 1 : s->ncomponents;
             int plane = 0;
 
             if (planar)
@@ -1328,8 +1336,6 @@ static int jpeg2000_decode_tile(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile,
             uint16_t *linel;
             int cbps = s->cbps[compno];
             int w = tile->comp[compno].coord[0][1] - s->image_offset_x;
-            int planar = !!picture->data[2];
-            int pixelsize = planar ? 1 : s->ncomponents;
             int plane = 0;
 
             if (planar)

@@ -34,7 +34,6 @@
 #include <stdint.h>
 
 DECLARE_ALIGNED(32, float,  ff_aac_kbd_long_1024)[1024];
-DECLARE_ALIGNED(32, float,  ff_aac_kbd_long_512 )[512];
 DECLARE_ALIGNED(32, float,  ff_aac_kbd_short_128)[128];
 
 const uint8_t ff_aac_num_swb_1024[] = {
@@ -1235,6 +1234,10 @@ const uint16_t * const ff_swb_offset_128[] = {
  */
 const uint8_t ff_tns_max_bands_1024[] = {
     31, 31, 34, 40, 42, 51, 46, 46, 42, 42, 42, 39, 39
+};
+
+const uint8_t ff_tns_max_bands_512[] = {
+    0, 0, 0, 31, 32, 37, 31, 31, 0, 0, 0, 0, 0
 };
 
 const uint8_t ff_tns_max_bands_128[] = {

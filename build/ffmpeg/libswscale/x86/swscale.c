@@ -71,7 +71,7 @@ DECLARE_ALIGNED(8, const uint64_t, ff_w1111)        = 0x0001000100010001ULL;
 #if HAVE_MMX_INLINE
 #undef RENAME
 #define COMPILE_TEMPLATE_MMXEXT 0
-#define RENAME(a) a ## _MMX
+#define RENAME(a) a ## _mmx
 #include "swscale_template.c"
 #endif
 
@@ -80,7 +80,7 @@ DECLARE_ALIGNED(8, const uint64_t, ff_w1111)        = 0x0001000100010001ULL;
 #undef RENAME
 #undef COMPILE_TEMPLATE_MMXEXT
 #define COMPILE_TEMPLATE_MMXEXT 1
-#define RENAME(a) a ## _MMXEXT
+#define RENAME(a) a ## _mmxext
 #include "swscale_template.c"
 #endif
 
@@ -206,7 +206,7 @@ static void yuv2yuvX_sse3(const int16_t *filter, int filterSize,
                            const uint8_t *dither, int offset)
 {
     if(((int)dest) & 15){
-        return yuv2yuvX_MMXEXT(filter, filterSize, src, dest, dstW, dither, offset);
+        return yuv2yuvX_mmxext(filter, filterSize, src, dest, dstW, dither, offset);
     }
     if (offset) {
         __asm__ volatile("movq       (%0), %%xmm3\n\t"
@@ -266,7 +266,8 @@ static void yuv2yuvX_sse3(const int16_t *filter, int filterSize,
         "jb                                  1b             \n\t"\
         :: "g" (filter),
            "r" (dest-offset), "g" ((x86_reg)(dstW+offset)), "m" (offset)
-        : "%"REG_d, "%"REG_S, "%"REG_c
+        : XMM_CLOBBERS("%xmm0" , "%xmm1" , "%xmm2" , "%xmm3" , "%xmm4" , "%xmm5" , "%xmm7" ,)
+         "%"REG_d, "%"REG_S, "%"REG_c
     );
 }
 #endif
@@ -382,12 +383,12 @@ av_cold void ff_sws_init_swscale_x86(SwsContext *c)
     int cpu_flags = av_get_cpu_flags();
 
 #if HAVE_MMX_INLINE
-    if (cpu_flags & AV_CPU_FLAG_MMX)
-        sws_init_swscale_MMX(c);
+    if (INLINE_MMX(cpu_flags))
+        sws_init_swscale_mmx(c);
 #endif
 #if HAVE_MMXEXT_INLINE
-    if (cpu_flags & AV_CPU_FLAG_MMXEXT)
-        sws_init_swscale_MMXEXT(c);
+    if (INLINE_MMXEXT(cpu_flags))
+        sws_init_swscale_mmxext(c);
     if (cpu_flags & AV_CPU_FLAG_SSE3){
         if(c->use_mmx_vfilter && !(c->flags & SWS_ACCURATE_RND))
             c->yuv2planeX = yuv2yuvX_sse3;

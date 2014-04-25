@@ -1,0 +1,8 @@
+Build instructions for libnestegg
+=================================
+
+0. Change directory into the source directory.
+1. Run |autoreconf --install| to generate configure.
+2. Run |./configure| to configure the build.
+3. Run |make| to build.
+4. Run |make check| to run the test suite.

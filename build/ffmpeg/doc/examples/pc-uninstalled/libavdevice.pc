@@ -1,0 +1,12 @@
+prefix=
+exec_prefix=
+libdir=${pcfiledir}/../../../libavdevice
+includedir=${pcfiledir}/../../..
+
+Name: libavdevice
+Description: FFmpeg device handling library
+Version: 55.10.100
+Requires: libavformat = 55.33.100
+Conflicts:
+Libs: -L${libdir} -Wl,-rpath,${libdir} -lavdevice -liconv -lvpx -lvpx -lvpx -lvpx -lm -lz
+Cflags: -I${includedir}

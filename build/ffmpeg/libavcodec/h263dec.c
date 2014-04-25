@@ -112,7 +112,7 @@ av_cold int ff_h263_decode_init(AVCodecContext *avctx)
         return AVERROR(ENOSYS);
     }
     s->codec_id    = avctx->codec->id;
-    avctx->hwaccel = ff_find_hwaccel(avctx->codec->id, avctx->pix_fmt);
+    avctx->hwaccel = ff_find_hwaccel(avctx);
 
     if (avctx->stream_codec_tag == AV_RL32("l263") && avctx->extradata_size == 56 && avctx->extradata[0] == 1)
         s->ehc_mode = 1;
@@ -193,7 +193,7 @@ static int decode_slice(MpegEncContext *s)
         const int qscale = s->qscale;
 
         if (CONFIG_MPEG4_DECODER && s->codec_id == AV_CODEC_ID_MPEG4)
-            if ((ret = ff_mpeg4_decode_partitions(s)) < 0)
+            if ((ret = ff_mpeg4_decode_partitions(s->avctx->priv_data)) < 0)
                 return ret;
 
         /* restore variables which were modified */
@@ -233,7 +233,6 @@ static int decode_slice(MpegEncContext *s)
 
             s->mv_dir  = MV_DIR_FORWARD;
             s->mv_type = MV_TYPE_16X16;
-//            s->mb_skipped = 0;
             av_dlog(s, "%d %d %06X\n",
                     ret, get_bits_count(&s->gb), show_bits(&s->gb, 24));
             ret = s->decode_mb(s, s->block);
@@ -300,7 +299,6 @@ static int decode_slice(MpegEncContext *s)
         (s->workaround_bugs & FF_BUG_AUTODETECT) &&
         get_bits_left(&s->gb) >= 0               &&
         get_bits_left(&s->gb) < 137              &&
-        // !s->resync_marker                     &&
         !s->data_partitioning) {
         const int bits_count = get_bits_count(&s->gb);
         const int bits_left  = s->gb.size_in_bits - bits_count;
@@ -322,8 +320,7 @@ static int decode_slice(MpegEncContext *s)
     }
 
     if (s->workaround_bugs & FF_BUG_AUTODETECT) {
-        if (s->padding_bug_score > -2 && !s->data_partitioning
-            /* && (s->divx_version >= 0 || !s->resync_marker) */)
+        if (s->padding_bug_score > -2 && !s->data_partitioning)
             s->workaround_bugs |= FF_BUG_NO_PADDING;
         else
             s->workaround_bugs &= ~FF_BUG_NO_PADDING;
@@ -459,14 +456,14 @@ retry:
         ret = ff_wmv2_decode_picture_header(s);
     } else if (CONFIG_MSMPEG4_DECODER && s->msmpeg4_version) {
         ret = ff_msmpeg4_decode_picture_header(s);
-    } else if (CONFIG_MPEG4_DECODER && s->h263_pred) {
+    } else if (CONFIG_MPEG4_DECODER && avctx->codec_id == AV_CODEC_ID_MPEG4) {
         if (s->avctx->extradata_size && s->picture_number == 0) {
             GetBitContext gb;
 
             if (init_get_bits8(&gb, s->avctx->extradata, s->avctx->extradata_size) >= 0 )
-                ff_mpeg4_decode_picture_header(s, &gb);
+                ff_mpeg4_decode_picture_header(avctx->priv_data, &gb);
         }
-        ret = ff_mpeg4_decode_picture_header(s, &s->gb);
+        ret = ff_mpeg4_decode_picture_header(avctx->priv_data, &s->gb);
     } else if (CONFIG_H263I_DECODER && s->codec_id == AV_CODEC_ID_H263I) {
         ret = ff_intel_h263_decode_picture_header(s);
     } else if (CONFIG_FLV_DECODER && s->h263_flv) {
@@ -494,132 +491,10 @@ retry:
 
     avctx->has_b_frames = !s->low_delay;
 
-    if (s->xvid_build == -1 && s->divx_version == -1 && s->lavc_build == -1) {
-        if (s->stream_codec_tag == AV_RL32("XVID") ||
-            s->codec_tag        == AV_RL32("XVID") ||
-            s->codec_tag        == AV_RL32("XVIX") ||
-            s->codec_tag        == AV_RL32("RMP4") ||
-            s->codec_tag        == AV_RL32("ZMP4") ||
-            s->codec_tag        == AV_RL32("SIPP"))
-            s->xvid_build = 0;
-#if 0
-        if (s->codec_tag == AV_RL32("DIVX") && s->vo_type == 0 &&
-            s->vol_control_parameters == 1 &&
-            s->padding_bug_score > 0 && s->low_delay) // XVID with modified fourcc
-            s->xvid_build = 0;
-#endif
+    if (CONFIG_MPEG4_DECODER && avctx->codec_id == AV_CODEC_ID_MPEG4) {
+        if (ff_mpeg4_workaround_bugs(avctx) == 1)
+            goto retry;
     }
-
-    if (s->xvid_build == -1 && s->divx_version == -1 && s->lavc_build == -1)
-        if (s->codec_tag == AV_RL32("DIVX") && s->vo_type == 0 &&
-            s->vol_control_parameters == 0)
-            s->divx_version = 400;  // divx 4
-
-    if (s->xvid_build >= 0 && s->divx_version >= 0) {
-        s->divx_version =
-        s->divx_build   = -1;
-    }
-
-    if (s->workaround_bugs & FF_BUG_AUTODETECT) {
-        if (s->codec_tag == AV_RL32("XVIX"))
-            s->workaround_bugs |= FF_BUG_XVID_ILACE;
-
-        if (s->codec_tag == AV_RL32("UMP4"))
-            s->workaround_bugs |= FF_BUG_UMP4;
-
-        if (s->divx_version >= 500 && s->divx_build < 1814)
-            s->workaround_bugs |= FF_BUG_QPEL_CHROMA;
-
-        if (s->divx_version > 502 && s->divx_build < 1814)
-            s->workaround_bugs |= FF_BUG_QPEL_CHROMA2;
-
-        if (s->xvid_build <= 3U)
-            s->padding_bug_score = 256 * 256 * 256 * 64;
-
-        if (s->xvid_build <= 1U)
-            s->workaround_bugs |= FF_BUG_QPEL_CHROMA;
-
-        if (s->xvid_build <= 12U)
-            s->workaround_bugs |= FF_BUG_EDGE;
-
-        if (s->xvid_build <= 32U)
-            s->workaround_bugs |= FF_BUG_DC_CLIP;
-
-#define SET_QPEL_FUNC(postfix1, postfix2)                           \
-    s->dsp.put_        ## postfix1 = ff_put_        ## postfix2;    \
-    s->dsp.put_no_rnd_ ## postfix1 = ff_put_no_rnd_ ## postfix2;    \
-    s->dsp.avg_        ## postfix1 = ff_avg_        ## postfix2;
-
-        if (s->lavc_build < 4653U)
-            s->workaround_bugs |= FF_BUG_STD_QPEL;
-
-        if (s->lavc_build < 4655U)
-            s->workaround_bugs |= FF_BUG_DIRECT_BLOCKSIZE;
-
-        if (s->lavc_build < 4670U)
-            s->workaround_bugs |= FF_BUG_EDGE;
-
-        if (s->lavc_build <= 4712U)
-            s->workaround_bugs |= FF_BUG_DC_CLIP;
-
-        if (s->divx_version >= 0)
-            s->workaround_bugs |= FF_BUG_DIRECT_BLOCKSIZE;
-        if (s->divx_version == 501 && s->divx_build == 20020416)
-            s->padding_bug_score = 256 * 256 * 256 * 64;
-
-        if (s->divx_version < 500U)
-            s->workaround_bugs |= FF_BUG_EDGE;
-
-        if (s->divx_version >= 0)
-            s->workaround_bugs |= FF_BUG_HPEL_CHROMA;
-#if 0
-        if (s->divx_version == 500)
-            s->padding_bug_score = 256 * 256 * 256 * 64;
-
-        /* very ugly XVID padding bug detection FIXME/XXX solve this differently
-         * Let us hope this at least works. */
-        if (s->resync_marker == 0 && s->data_partitioning == 0        &&
-            s->divx_version == -1 && s->codec_id == AV_CODEC_ID_MPEG4 &&
-            s->vo_type == 0)
-            s->workaround_bugs |= FF_BUG_NO_PADDING;
-
-        // FIXME not sure about the version num but a 4609 file seems ok
-        if (s->lavc_build < 4609U)
-            s->workaround_bugs |= FF_BUG_NO_PADDING;
-#endif
-    }
-
-    if (s->workaround_bugs & FF_BUG_STD_QPEL) {
-        SET_QPEL_FUNC(qpel_pixels_tab[0][5], qpel16_mc11_old_c)
-        SET_QPEL_FUNC(qpel_pixels_tab[0][7], qpel16_mc31_old_c)
-        SET_QPEL_FUNC(qpel_pixels_tab[0][9], qpel16_mc12_old_c)
-        SET_QPEL_FUNC(qpel_pixels_tab[0][11], qpel16_mc32_old_c)
-        SET_QPEL_FUNC(qpel_pixels_tab[0][13], qpel16_mc13_old_c)
-        SET_QPEL_FUNC(qpel_pixels_tab[0][15], qpel16_mc33_old_c)
-
-        SET_QPEL_FUNC(qpel_pixels_tab[1][5], qpel8_mc11_old_c)
-        SET_QPEL_FUNC(qpel_pixels_tab[1][7], qpel8_mc31_old_c)
-        SET_QPEL_FUNC(qpel_pixels_tab[1][9], qpel8_mc12_old_c)
-        SET_QPEL_FUNC(qpel_pixels_tab[1][11], qpel8_mc32_old_c)
-        SET_QPEL_FUNC(qpel_pixels_tab[1][13], qpel8_mc13_old_c)
-        SET_QPEL_FUNC(qpel_pixels_tab[1][15], qpel8_mc33_old_c)
-    }
-
-    if (avctx->debug & FF_DEBUG_BUGS)
-        av_log(s->avctx, AV_LOG_DEBUG,
-               "bugs: %X lavc_build:%d xvid_build:%d divx_version:%d divx_build:%d %s\n",
-               s->workaround_bugs, s->lavc_build, s->xvid_build,
-               s->divx_version, s->divx_build, s->divx_packed ? "p" : "");
-
-#if HAVE_MMX
-    if (s->codec_id == AV_CODEC_ID_MPEG4 && s->xvid_build >= 0 &&
-        avctx->idct_algo == FF_IDCT_AUTO &&
-        (av_get_cpu_flags() & AV_CPU_FLAG_MMX)) {
-        avctx->idct_algo = FF_IDCT_XVIDMMX;
-        ff_dct_common_init(s);
-        goto retry;
-    }
-#endif
 
     /* After H263 & mpeg4 header decode we have the height, width,
      * and other parameters. So then we could init the picture.
@@ -748,37 +623,8 @@ frame_end:
 
     ff_MPV_frame_end(s);
 
-    /* divx 5.01+ bitstream reorder stuff */
-    /* Since this clobbers the input buffer and hwaccel codecs still need the
-     * data during hwaccel->end_frame we should not do this any earlier */
-    if (s->codec_id == AV_CODEC_ID_MPEG4 && s->divx_packed) {
-        int current_pos     = s->gb.buffer == s->bitstream_buffer ? 0 : (get_bits_count(&s->gb) >> 3);
-        int startcode_found = 0;
-
-        if (buf_size - current_pos > 7) {
-            int i;
-            for (i = current_pos; i < buf_size - 4; i++)
-                if (buf[i]     == 0 &&
-                    buf[i + 1] == 0 &&
-                    buf[i + 2] == 1 &&
-                    buf[i + 3] == 0xB6) {
-                    startcode_found = !(buf[i + 4] & 0x40);
-                    break;
-                }
-        }
-
-        if (startcode_found) {
-            av_fast_malloc(&s->bitstream_buffer,
-                           &s->allocated_bitstream_buffer_size,
-                           buf_size - current_pos +
-                           FF_INPUT_BUFFER_PADDING_SIZE);
-            if (!s->bitstream_buffer)
-                return AVERROR(ENOMEM);
-            memcpy(s->bitstream_buffer, buf + current_pos,
-                   buf_size - current_pos);
-            s->bitstream_buffer_size = buf_size - current_pos;
-        }
-    }
+    if (CONFIG_MPEG4_DECODER && avctx->codec_id == AV_CODEC_ID_MPEG4)
+        ff_mpeg4_frame_end(avctx, buf, buf_size);
 
     if (!s->divx_packed && avctx->hwaccel)
         ff_thread_finish_setup(avctx);

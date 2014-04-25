@@ -75,9 +75,6 @@ static const uint8_t color[16 + AV_CLASS_CATEGORY_NB] = {
 
 static int16_t background, attr_orig;
 static HANDLE con;
-#define set_color(x)  SetConsoleTextAttribute(con, background | color[x])
-#define set_256color set_color
-#define reset_color() SetConsoleTextAttribute(con, attr_orig)
 #else
 
 static const uint32_t color[16 + AV_CLASS_CATEGORY_NB] = {
@@ -101,14 +98,14 @@ static const uint32_t color[16 + AV_CLASS_CATEGORY_NB] = {
     [16+AV_CLASS_CATEGORY_SWRESAMPLER     ] = 147 << 8 | 0x14,
 };
 
-#define set_color(x)  fprintf(stderr, "\033[%d;3%dm", (color[x] >> 4) & 15, color[x] & 15)
-#define set_256color(x) fprintf(stderr, "\033[48;5;%dm\033[38;5;%dm", (color[x] >> 16) & 0xff, (color[x] >> 8) & 0xff)
-#define reset_color() fprintf(stderr, "\033[0m")
 #endif
 static int use_color = -1;
 
 static void colored_fputs(int level, const char *str)
 {
+    if (!*str)
+        return;
+
     if (use_color < 0) {
 #if HAVE_SETCONSOLETEXTATTRIBUTE
         CONSOLE_SCREEN_BUFFER_INFO con_info;
@@ -132,14 +129,29 @@ static void colored_fputs(int level, const char *str)
 #endif
     }
 
-    if (use_color == 1) {
-        set_color(level);
-    } else if (use_color == 256)
-        set_256color(level);
+#if HAVE_SETCONSOLETEXTATTRIBUTE
+    if (use_color && level != AV_LOG_INFO/8)
+        SetConsoleTextAttribute(con, background | color[level]);
     fputs(str, stderr);
-    if (use_color) {
-        reset_color();
-    }
+    if (use_color && level != AV_LOG_INFO/8)
+        SetConsoleTextAttribute(con, attr_orig);
+#else
+    if (use_color == 1 && level != AV_LOG_INFO/8) {
+        fprintf(stderr,
+                "\033[%d;3%dm%s\033[0m",
+                (color[level] >> 4) & 15,
+                color[level] & 15,
+                str);
+    } else if (use_color == 256 && level != AV_LOG_INFO/8) {
+        fprintf(stderr,
+                "\033[48;5;%dm\033[38;5;%dm%s\033[0m",
+                (color[level] >> 16) & 0xff,
+                (color[level] >> 8) & 0xff,
+                str);
+    } else
+        fputs(str, stderr);
+#endif
+
 }
 
 const char *av_default_item_name(void *ptr)
@@ -173,10 +185,10 @@ static int get_category(void *ptr){
     return avc->category + 16;
 }
 
-static void format_line(void *ptr, int level, const char *fmt, va_list vl,
+static void format_line(void *avcl, int level, const char *fmt, va_list vl,
                         AVBPrint part[3], int *print_prefix, int type[2])
 {
-    AVClass* avc = ptr ? *(AVClass **) ptr : NULL;
+    AVClass* avc = avcl ? *(AVClass **) avcl : NULL;
     av_bprint_init(part+0, 0, 1);
     av_bprint_init(part+1, 0, 1);
     av_bprint_init(part+2, 0, 65536);
@@ -184,7 +196,7 @@ static void format_line(void *ptr, int level, const char *fmt, va_list vl,
     if(type) type[0] = type[1] = AV_CLASS_CATEGORY_NA + 16;
     if (*print_prefix && avc) {
         if (avc->parent_log_context_offset) {
-            AVClass** parent = *(AVClass ***) (((uint8_t *) ptr) +
+            AVClass** parent = *(AVClass ***) (((uint8_t *) avcl) +
                                    avc->parent_log_context_offset);
             if (parent && *parent) {
                 av_bprintf(part+0, "[%s @ %p] ",
@@ -193,14 +205,14 @@ static void format_line(void *ptr, int level, const char *fmt, va_list vl,
             }
         }
         av_bprintf(part+1, "[%s @ %p] ",
-                 avc->item_name(ptr), ptr);
-        if(type) type[1] = get_category(ptr);
+                 avc->item_name(avcl), avcl);
+        if(type) type[1] = get_category(avcl);
     }
 
     av_vbprintf(part+2, fmt, vl);
 
     if(*part[0].str || *part[1].str || *part[2].str) {
-        char lastc = part[2].len ? part[2].str[part[2].len - 1] : 0;
+        char lastc = part[2].len && part[2].len <= part[2].size ? part[2].str[part[2].len - 1] : 0;
         *print_prefix = lastc == '\n' || lastc == '\r';
     }
 }

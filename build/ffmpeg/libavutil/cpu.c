@@ -16,6 +16,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <stdint.h>
+
 #include "cpu.h"
 #include "cpu_internal.h"
 #include "config.h"
@@ -54,9 +56,14 @@ int av_get_cpu_flags(void)
     if (checked)
         return flags;
 
-    if (ARCH_ARM) flags = ff_get_cpu_flags_arm();
-    if (ARCH_PPC) flags = ff_get_cpu_flags_ppc();
-    if (ARCH_X86) flags = ff_get_cpu_flags_x86();
+    if (ARCH_AARCH64)
+        flags = ff_get_cpu_flags_aarch64();
+    if (ARCH_ARM)
+        flags = ff_get_cpu_flags_arm();
+    if (ARCH_PPC)
+        flags = ff_get_cpu_flags_ppc();
+    if (ARCH_X86)
+        flags = ff_get_cpu_flags_x86();
 
     checked = 1;
     return flags;
@@ -84,8 +91,11 @@ int av_parse_cpu_flags(const char *s)
 #define CPUFLAG_SSE42    (AV_CPU_FLAG_SSE42    | CPUFLAG_SSE4)
 #define CPUFLAG_AVX      (AV_CPU_FLAG_AVX      | CPUFLAG_SSE42)
 #define CPUFLAG_XOP      (AV_CPU_FLAG_XOP      | CPUFLAG_AVX)
+#define CPUFLAG_FMA3     (AV_CPU_FLAG_FMA3     | CPUFLAG_AVX)
 #define CPUFLAG_FMA4     (AV_CPU_FLAG_FMA4     | CPUFLAG_AVX)
 #define CPUFLAG_AVX2     (AV_CPU_FLAG_AVX2     | CPUFLAG_AVX)
+#define CPUFLAG_BMI1     (AV_CPU_FLAG_BMI1)
+#define CPUFLAG_BMI2     (AV_CPU_FLAG_BMI2     | CPUFLAG_BMI1)
     static const AVOption cpuflags_opts[] = {
         { "flags"   , NULL, 0, AV_OPT_TYPE_FLAGS, { .i64 = 0 }, INT64_MIN, INT64_MAX, .unit = "flags" },
 #if   ARCH_PPC
@@ -104,8 +114,11 @@ int av_parse_cpu_flags(const char *s)
         { "sse4.2"  , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_SSE42        },    .unit = "flags" },
         { "avx"     , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_AVX          },    .unit = "flags" },
         { "xop"     , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_XOP          },    .unit = "flags" },
+        { "fma3"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_FMA3         },    .unit = "flags" },
         { "fma4"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_FMA4         },    .unit = "flags" },
         { "avx2"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_AVX2         },    .unit = "flags" },
+        { "bmi1"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_BMI1         },    .unit = "flags" },
+        { "bmi2"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_BMI2         },    .unit = "flags" },
         { "3dnow"   , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_3DNOW        },    .unit = "flags" },
         { "3dnowext", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_3DNOWEXT     },    .unit = "flags" },
         { "cmov",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_CMOV     },    .unit = "flags" },
@@ -116,6 +129,9 @@ int av_parse_cpu_flags(const char *s)
         { "vfp",      NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_VFP      },    .unit = "flags" },
         { "vfpv3",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_VFPV3    },    .unit = "flags" },
         { "neon",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_NEON     },    .unit = "flags" },
+#elif ARCH_AARCH64
+        { "neon",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_NEON     },    .unit = "flags" },
+        { "vfp",      NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_VFP      },    .unit = "flags" },
 #endif
         { NULL },
     };
@@ -156,7 +172,11 @@ int av_parse_cpu_caps(unsigned *flags, const char *s)
         { "sse4.2"  , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_SSE42    },    .unit = "flags" },
         { "avx"     , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_AVX      },    .unit = "flags" },
         { "xop"     , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_XOP      },    .unit = "flags" },
+        { "fma3"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_FMA3     },    .unit = "flags" },
         { "fma4"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_FMA4     },    .unit = "flags" },
+        { "avx2"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_AVX2     },    .unit = "flags" },
+        { "bmi1"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_BMI1     },    .unit = "flags" },
+        { "bmi2"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_BMI2     },    .unit = "flags" },
         { "3dnow"   , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_3DNOW    },    .unit = "flags" },
         { "3dnowext", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_3DNOWEXT },    .unit = "flags" },
         { "cmov",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_CMOV     },    .unit = "flags" },
@@ -242,7 +262,10 @@ static const struct {
     int flag;
     const char *name;
 } cpu_flag_tab[] = {
-#if   ARCH_ARM
+#if   ARCH_AARCH64
+    { AV_CPU_FLAG_NEON,      "neon"       },
+    { AV_CPU_FLAG_VFP,       "vfp"        },
+#elif ARCH_ARM
     { AV_CPU_FLAG_ARMV5TE,   "armv5te"    },
     { AV_CPU_FLAG_ARMV6,     "armv6"      },
     { AV_CPU_FLAG_ARMV6T2,   "armv6t2"    },
@@ -265,11 +288,14 @@ static const struct {
     { AV_CPU_FLAG_SSE42,     "sse4.2"     },
     { AV_CPU_FLAG_AVX,       "avx"        },
     { AV_CPU_FLAG_XOP,       "xop"        },
+    { AV_CPU_FLAG_FMA3,      "fma3"       },
     { AV_CPU_FLAG_FMA4,      "fma4"       },
     { AV_CPU_FLAG_3DNOW,     "3dnow"      },
     { AV_CPU_FLAG_3DNOWEXT,  "3dnowext"   },
     { AV_CPU_FLAG_CMOV,      "cmov"       },
     { AV_CPU_FLAG_AVX2,      "avx2"       },
+    { AV_CPU_FLAG_BMI1,      "bmi1"       },
+    { AV_CPU_FLAG_BMI2,      "bmi2"       },
 #endif
     { 0 }
 };

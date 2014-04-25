@@ -37,6 +37,7 @@ static const AVCodecTag flv_video_codec_ids[] = {
     { AV_CODEC_ID_FLASHSV,  FLV_CODECID_SCREEN },
     { AV_CODEC_ID_FLASHSV2, FLV_CODECID_SCREEN2 },
     { AV_CODEC_ID_VP6F,     FLV_CODECID_VP6 },
+    { AV_CODEC_ID_VP6,      FLV_CODECID_VP6 },
     { AV_CODEC_ID_VP6A,     FLV_CODECID_VP6A },
     { AV_CODEC_ID_H264,     FLV_CODECID_H264 },
     { AV_CODEC_ID_NONE,     0 }
@@ -232,6 +233,9 @@ static int flv_write_header(AVFormatContext *s)
             audio_enc = enc;
             if (get_audio_flags(s, enc) < 0)
                 return AVERROR_INVALIDDATA;
+            if (enc->codec_id == AV_CODEC_ID_PCM_S16BE)
+                av_log(s, AV_LOG_WARNING,
+                       "16-bit big-endian audio in flv is valid but most likely unplayable (hardware dependent); use s16le\n");
             break;
         case AVMEDIA_TYPE_DATA:
             if (enc->codec_id != AV_CODEC_ID_TEXT) {
@@ -460,7 +464,7 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
     int flags = -1, flags_size, ret;
 
     if (enc->codec_id == AV_CODEC_ID_VP6F || enc->codec_id == AV_CODEC_ID_VP6A ||
-        enc->codec_id == AV_CODEC_ID_AAC)
+        enc->codec_id == AV_CODEC_ID_VP6  || enc->codec_id == AV_CODEC_ID_AAC)
         flags_size = 2;
     else if (enc->codec_id == AV_CODEC_ID_H264 || enc->codec_id == AV_CODEC_ID_MPEG4)
         flags_size = 5;
@@ -538,7 +542,7 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
 
     if (enc->codec_type == AVMEDIA_TYPE_DATA) {
         int data_size;
-        int metadata_size_pos = avio_tell(pb);
+        int64_t metadata_size_pos = avio_tell(pb);
         avio_w8(pb, AMF_DATA_TYPE_STRING);
         put_amf_string(pb, "onTextData");
         avio_w8(pb, AMF_DATA_TYPE_MIXEDARRAY);
@@ -560,6 +564,8 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
     } else {
         av_assert1(flags>=0);
         avio_w8(pb,flags);
+        if (enc->codec_id == AV_CODEC_ID_VP6)
+            avio_w8(pb,0);
         if (enc->codec_id == AV_CODEC_ID_VP6F || enc->codec_id == AV_CODEC_ID_VP6A) {
             if (enc->extradata_size)
                 avio_w8(pb, enc->extradata[0]);

@@ -65,13 +65,13 @@
 #elif BIT_DEPTH == 10 || BIT_DEPTH == 12
 
 #if BIT_DEPTH == 10
-#define W1 90901
-#define W2 85627
-#define W3 77062
-#define W4 65535
-#define W5 51491
-#define W6 35468
-#define W7 18081
+#define W1 (22725*4)  // 90901
+#define W2 (21407*4) //  85627
+#define W3 (19265*4) //  77062
+#define W4 (16384*4) //  65535
+#define W5 (12873*4) //  51491
+#define W6 ( 8867*4) //  35468
+#define W7 ( 4520*4) //  18081
 
 #define ROW_SHIFT 15
 #define COL_SHIFT 20
@@ -107,10 +107,10 @@ static inline void FUNC(idctRowCondDC)(int16_t *row, int extra_shift)
 #define ROW0_MASK (0xffffLL << 48 * HAVE_BIGENDIAN)
     if (((((uint64_t *)row)[0] & ~ROW0_MASK) | ((uint64_t *)row)[1]) == 0) {
         uint64_t temp;
-        if (DC_SHIFT - extra_shift > 0) {
+        if (DC_SHIFT - extra_shift >= 0) {
             temp = (row[0] << (DC_SHIFT - extra_shift)) & 0xffff;
         } else {
-            temp = (row[0] >> (extra_shift - DC_SHIFT)) & 0xffff;
+            temp = ((row[0] + (1<<(extra_shift - DC_SHIFT-1))) >> (extra_shift - DC_SHIFT)) & 0xffff;
         }
         temp += temp << 16;
         temp += temp << 32;
@@ -124,10 +124,10 @@ static inline void FUNC(idctRowCondDC)(int16_t *row, int extra_shift)
           ((uint32_t*)row)[3] |
           row[1])) {
         uint32_t temp;
-        if (DC_SHIFT - extra_shift > 0) {
+        if (DC_SHIFT - extra_shift >= 0) {
             temp = (row[0] << (DC_SHIFT - extra_shift)) & 0xffff;
         } else {
-            temp = (row[0] >> (extra_shift - DC_SHIFT)) & 0xffff;
+            temp = ((row[0] + (1<<(extra_shift - DC_SHIFT-1))) >> (extra_shift - DC_SHIFT)) & 0xffff;
         }
         temp += temp << 16;
         ((uint32_t*)row)[0]=((uint32_t*)row)[1] =
@@ -136,7 +136,7 @@ static inline void FUNC(idctRowCondDC)(int16_t *row, int extra_shift)
     }
 #endif
 
-    a0 = (W4 * row[0]) + (1 << (ROW_SHIFT - 1));
+    a0 = (W4 * row[0]) + (1 << (ROW_SHIFT + extra_shift - 1));
     a1 = a0;
     a2 = a0;
     a3 = a0;

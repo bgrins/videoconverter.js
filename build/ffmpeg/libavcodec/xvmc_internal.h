@@ -23,11 +23,9 @@
 
 #include "avcodec.h"
 #include "mpegvideo.h"
+#include "version.h"
 
 void ff_xvmc_init_block(MpegEncContext *s);
 void ff_xvmc_pack_pblocks(MpegEncContext *s, int cbp);
-int  ff_xvmc_field_start(MpegEncContext*s, AVCodecContext *avctx);
-void ff_xvmc_field_end(MpegEncContext *s);
-void ff_xvmc_decode_mb(MpegEncContext *s);
 
 #endif /* AVCODEC_XVMC_INTERNAL_H */

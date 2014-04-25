@@ -22,6 +22,22 @@ A description of the currently available output devices follows.
 
 ALSA (Advanced Linux Sound Architecture) output device.
 
+@subsection Examples
+
+@itemize
+@item
+Play a file on default ALSA device:
+@example
+ffmpeg -i INPUT -f alsa default
+@end example
+
+@item
+Play a file on soundcard 1, audio device 7:
+@example
+ffmpeg -i INPUT -f alsa hw:1,7
+@end example
+@end itemize
+
 @section caca
 
 CACA output device.
@@ -104,6 +120,68 @@ ffmpeg -i INPUT -pix_fmt rgb24 -f caca -list_dither colors -
 @end example
 @end itemize
 
+@section decklink
+
+The decklink output device provides playback capabilities for Blackmagic
+DeckLink devices.
+
+To enable this output device, you need the Blackmagic DeckLink SDK and you
+need to configure with the appropriate @code{--extra-cflags}
+and @code{--extra-ldflags}.
+On Windows, you need to run the IDL files through @command{widl}.
+
+DeckLink is very picky about the formats it supports. Pixel format is always
+uyvy422, framerate and video size must be determined for your device with
+@command{-list_formats 1}. Audio sample rate is always 48 kHz.
+
+@subsection Options
+
+@table @option
+
+@item list_devices
+If set to @option{true}, print a list of devices and exit.
+Defaults to @option{false}.
+
+@item list_formats
+If set to @option{true}, print a list of supported formats and exit.
+Defaults to @option{false}.
+
+@item preroll
+Amount of time to preroll video in seconds.
+Defaults to @option{0.5}.
+
+@end table
+
+@subsection Examples
+
+@itemize
+
+@item
+List output devices:
+@example
+ffmpeg -i test.avi -f decklink -list_devices 1 dummy
+@end example
+
+@item
+List supported formats:
+@example
+ffmpeg -i test.avi -f decklink -list_formats 1 'DeckLink Mini Monitor'
+@end example
+
+@item
+Play video clip:
+@example
+ffmpeg -i test.avi -f decklink -pix_fmt uyvy422 'DeckLink Mini Monitor'
+@end example
+
+@item
+Play video clip with non-standard framerate or video size:
+@example
+ffmpeg -i test.avi -f decklink -pix_fmt uyvy422 -s 720x486 -r 24000/1001 'DeckLink Mini Monitor'
+@end example
+
+@end itemize
+
 @section fbdev
 
 Linux framebuffer output device.
@@ -132,6 +210,41 @@ ffmpeg -re -i INPUT -vcodec rawvideo -pix_fmt bgra -f fbdev /dev/fb0
 @end example
 
 See also @url{http://linux-fbdev.sourceforge.net/}, and fbset(1).
+
+@section opengl
+OpenGL output device.
+
+To enable this output device you need to configure FFmpeg with @code{--enable-opengl}.
+
+This output device allows one to render to OpenGL context.
+Context may be provided by application or default SDL window is created.
+
+When device renders to external context, application must implement handlers for following messages:
+@code{AV_CTL_MESSAGE_CREATE_WINDOW_BUFFER} - create OpenGL context on current thread.
+@code{AV_CTL_MESSAGE_PREPARE_WINDOW_BUFFER} - make OpenGL context current.
+@code{AV_CTL_MESSAGE_DISPLAY_WINDOW_BUFFER} - swap buffers.
+@code{AV_CTL_MESSAGE_DESTROY_WINDOW_BUFFER} - destroy OpenGL context.
+Application is also required to inform a device about current resolution by sending @code{AV_DEVICE_WINDOW_RESIZED} message.
+
+@subsection Options
+@table @option
+
+@item background
+Set background color. Black is a default.
+@item no_window
+Disables default SDL window when set to non-zero value.
+Application must provide OpenGL context and both @code{window_size_cb} and @code{window_swap_buffers_cb} callbacks when set.
+@item window_title
+Set the SDL window title, if not specified default to the filename specified for the output device.
+Ignored when @option{no_window} is set.
+
+@end table
+
+@subsection Examples
+Play a file on SDL window using OpenGL rendering:
+@example
+ffmpeg  -i INPUT -f opengl "window title"
+@end example
 
 @section oss
 
@@ -164,6 +277,19 @@ by default it is set to the specified output name.
 Specify the device to use. Default device is used when not provided.
 List of output devices can be obtained with command @command{pactl list sinks}.
 
+@item buffer_size
+@item buffer_duration
+Control the size and duration of the PulseAudio buffer. A small buffer
+gives more control, but requires more frequent updates.
+
+@option{buffer_size} specifies size in bytes while
+@option{buffer_duration} specifies duration in milliseconds.
+
+When both options are provided then the highest value is used
+(duration is recalculated to bytes using stream parameters). If they
+are set to 0 (which is default), the device will use the default
+PulseAudio duration value. By default PulseAudio set buffer duration
+to around 2 seconds.
 @end table
 
 @subsection Examples
@@ -206,7 +332,17 @@ downscaled according to the aspect ratio.
 
 @item window_fullscreen
 Set fullscreen mode when non-zero value is provided.
-Zero is a default.
+Default value is zero.
+@end table
+
+@subsection Interactive commands
+
+The window created by the device can be controlled through the
+following interactive commands.
+
+@table @key
+@item q, ESC
+Quit the device immediately.
 @end table
 
 @subsection Examples

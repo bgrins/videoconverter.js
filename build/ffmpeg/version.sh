@@ -1,5 +1,7 @@
 #!/bin/sh
 
+# Usage: version.sh <ffmpeg-root-dir> <output-version.h> <extra-version>
+
 # check for git short hash
 if ! test "$revision"; then
     revision=$(cd "$1" && git describe --tags --match N 2> /dev/null)
@@ -40,9 +42,17 @@ if [ -z "$2" ]; then
 fi
 
 NEW_REVISION="#define FFMPEG_VERSION \"$version\""
-OLD_REVISION=$(cat version.h 2> /dev/null)
+OLD_REVISION=$(cat "$2" 2> /dev/null | head -3 | tail -1)
 
-# Update version.h only on revision changes to avoid spurious rebuilds
+# String used for preprocessor guard
+GUARD=$(echo "$2" | sed 's/\//_/' | sed 's/\./_/' | tr '[:lower:]' '[:upper:]' | sed 's/LIB//')
+
+# Update version header only on revision changes to avoid spurious rebuilds
 if test "$NEW_REVISION" != "$OLD_REVISION"; then
-    echo "$NEW_REVISION" > "$2"
+    cat << EOF > "$2"
+#ifndef $GUARD
+#define $GUARD
+$NEW_REVISION
+#endif /* $GUARD */
+EOF
 fi

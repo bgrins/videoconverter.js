@@ -1,4 +1,4 @@
-#! /usr/bin/perl
+#!/usr/bin/env perl
 
 #   Copyright (C) 1999, 2000, 2001 Free Software Foundation, Inc.
 
@@ -327,6 +327,9 @@ die "No filename or title\n" unless defined $fn && defined $tl;
 $chapters{NAME} = "$fn \- $tl\n";
 $chapters{FOOTNOTES} .= "=back\n" if exists $chapters{FOOTNOTES};
 
+# always use utf8
+print "=encoding utf8\n\n";
+
 unshift @chapters_sequence, "NAME";
 for $chapter (@chapters_sequence) {
     if (exists $chapters{$chapter}) {
@@ -377,8 +380,8 @@ sub postprocess
     s/\(?\@xref\{(?:[^\}]*)\}(?:[^.<]|(?:<[^<>]*>))*\.\)?//g;
     s/\s+\(\@pxref\{(?:[^\}]*)\}\)//g;
     s/;\s+\@pxref\{(?:[^\}]*)\}//g;
-    s/\@ref\{(?:[^,\}]*,)(?:[^,\}]*,)([^,\}]*).*\}/$1/g;
-    s/\@ref\{([^\}]*)\}/$1/g;
+    s/\@ref\{(?:[^,\}]*,)(?:[^,\}]*,)([^,\}]*).*\}/B<$1>/g;
+    s/\@ref\{([^\}]*)\}/B<$1>/g;
     s/\@noindent\s*//g;
     s/\@refill//g;
     s/\@gol//g;
