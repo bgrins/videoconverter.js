@@ -10,6 +10,16 @@ build/ffmpeg/config.fate
 build/ffmpeg/config.h
 build/ffmpeg/config.log
 build/ffmpeg/config.mak
+build/ffmpeg/ffprobe
+build/ffmpeg/ffmpeg
+build/ffmpeg/ffprobe_g
+build/ffmpeg/libavcodec/libavcodec.a
+build/ffmpeg/libavdevice/libavdevice.a
+build/ffmpeg/libavfilter/libavfilter.a
+build/ffmpeg/libavformat/libavformat.a
+build/ffmpeg/libavutil/libavutil.a
+build/ffmpeg/libswresample/libswresample.a
+build/ffmpeg/libswscale/libswscale.a
 build/ffmpeg/libavcodec/libavcodec.pc
 build/ffmpeg/libavdevice/libavdevice.pc
 build/ffmpeg/libavfilter/libavfilter.pc
@@ -20,3 +30,7 @@ build/ffmpeg/libpostproc/libpostproc.pc
 build/ffmpeg/libswresample/libswresample.pc
 build/ffmpeg/libswscale/libswscale.pc
 build/zlib/libz.a
+build/zlib/example
+build/zlib/example64
+build/zlib/minigzip
+build/zlib/minigzip64

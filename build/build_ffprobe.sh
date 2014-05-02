@@ -3,11 +3,15 @@ echo "Beginning Build:"
 
 cd ffmpeg
 
-emconfigure ./configure --cc="emcc" --disable-ffplay --disable-ffmpeg --disable-ffserver --disable-asm --enable-pic --disable-doc --disable-devices --disable-pthreads --disable-w32threads --disable-network --enable-small --disable-hwaccels --disable-parsers --disable-bsfs --disable-debug --disable-zlib
-make clean;
-emmake make;
-emcc -O2 -s VERBOSE=1 -s ASM_JS=0 -s ALLOW_MEMORY_GROWTH=1 -v libavutil/*.o libavcodec/*.o libavformat/*.o libavdevice/*.o libswresample/*.o libavfilter/*.o libswscale/*.o *.o -o ../ffmpeg.js --pre-js ../ffmpeg_pre.js --post-js ../ffmpeg_post.js
+emconfigure ./configure --cc="emcc" --prefix=$(pwd)/../dist --extra-cflags="-I$(pwd)/../dist/include"  --enable-cross-compile --target-os=none --arch=x86_32 --cpu=generic \
+    --disable-ffplay --disable-ffmpeg --disable-ffserver --disable-asm --disable-doc --disable-devices --disable-pthreads --disable-w32threads --disable-network \
+    --disable-hwaccels --disable-parsers --disable-bsfs --disable-debug --disable-protocols --disable-indevs --disable-outdevs --enable-protocol=file \
+    --enable-nonfree --enable-gpl
 
+make clean
+make
+cp ffprobe ffprobe.bc
+emcc -s OUTLINING_LIMIT=100000 -s VERBOSE=1 -s TOTAL_MEMORY=33554432 -O0 -v ffprobe.bc -o ../ffprobe.js --pre-js ../ffmpeg_pre.js --post-js ../ffmpeg_post.js
 cd ../
 
 echo "Finished Build"
