@@ -1,4 +1,4 @@
-importScripts('../build/ffmpeg_asm.js');
+importScripts('../build/ffmpeg_all.js');
 
 var now = Date.now;
 
@@ -20,7 +20,7 @@ onmessage = function(event) {
       printErr: print,
       files: message.files || [],
       arguments: message.arguments || [],
-      TOTAL_MEMORY: message.TOTAL_MEMORY || false
+      TOTAL_MEMORY: 268435456
       // Can play around with this option - must be a power of 2
       // TOTAL_MEMORY: 268435456
     };
