@@ -1,4 +1,4 @@
-importScripts('../build/ffmpeg_all.js');
+importScripts('../build/ffmpeg-all-codecs.js');
 
 var now = Date.now;
 
