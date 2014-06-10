@@ -117,17 +117,25 @@ ffmpeg -i "data:image/gif;base64,R0lGODdhCAAIAMIEAAAAAAAA//8AAP//AP/////////////
 
 File access protocol.
 
-Allow to read from or read to a file.
+Allow to read from or write to a file.
+
+A file URL can have the form:
+@example
+file:@var{filename}
+@end example
+
+where @var{filename} is the path of the file to read.
+
+An URL that does not have a protocol prefix will be assumed to be a
+file URL. Depending on the build, an URL that looks like a Windows
+path with the drive letter at the beginning will also be assumed to be
+a file URL (usually not the case in builds for unix-like systems).
 
 For example to read from a file @file{input.mpeg} with @command{ffmpeg}
 use the command:
 @example
 ffmpeg -i file:input.mpeg output.mpeg
 @end example
-
-The ff* tools default to the file protocol, that is a resource
-specified with the name "FILE.mpeg" is interpreted as the URL
-"file:FILE.mpeg".
 
 This protocol accepts the following options:
 
@@ -205,7 +213,7 @@ m3u8 files.
 
 HTTP (Hyper Text Transfer Protocol).
 
-This protocol accepts the following options.
+This protocol accepts the following options:
 
 @table @option
 @item seekable
@@ -215,24 +223,25 @@ if set to -1 it will try to autodetect if it is seekable. Default
 value is -1.
 
 @item chunked_post
-If set to 1 use chunked transfer-encoding for posts, default is 1.
+If set to 1 use chunked Transfer-Encoding for posts, default is 1.
+
+@item content_type
+Set a specific content type for the POST messages.
 
 @item headers
 Set custom HTTP headers, can override built in default headers. The
 value must be a string encoding the headers.
 
-@item content_type
-Force a content type.
-
-@item user-agent
-Override User-Agent header. If not specified the protocol will use a
-string describing the libavformat build.
-
 @item multiple_requests
-Use persistent connections if set to 1. By default it is 0.
+Use persistent connections if set to 1, default is 0.
 
 @item post_data
 Set custom HTTP post data.
+
+@item user-agent
+@item user_agent
+Override the User-Agent header. If not specified the protocol will use a
+string describing the libavformat build. ("Lavf/<version>")
 
 @item timeout
 Set timeout of socket I/O operations used by the underlying low level
@@ -240,7 +249,7 @@ operation. By default it is set to -1, which means that the timeout is
 not specified.
 
 @item mime_type
-Set MIME type.
+Export the MIME type.
 
 @item icy
 If set to 1 request ICY (SHOUTcast) metadata from the server. If the server
@@ -249,17 +258,25 @@ the @option{icy_metadata_headers} and @option{icy_metadata_packet} options.
 The default is 0.
 
 @item icy_metadata_headers
-If the server supports ICY metadata, this contains the ICY specific HTTP reply
-headers, separated with newline characters.
+If the server supports ICY metadata, this contains the ICY-specific HTTP reply
+headers, separated by newline characters.
 
 @item icy_metadata_packet
 If the server supports ICY metadata, and @option{icy} was set to 1, this
-contains the last non-empty metadata packet sent by the server.
+contains the last non-empty metadata packet sent by the server. It should be
+polled in regular intervals by applications interested in mid-stream metadata
+updates.
 
 @item cookies
 Set the cookies to be sent in future requests. The format of each cookie is the
 same as the value of a Set-Cookie HTTP response field. Multiple cookies can be
 delimited by a newline character.
+
+@item offset
+Set initial byte offset.
+
+@item end_offset
+Try to limit the request to bytes preceding this offset.
 @end table
 
 @subsection HTTP Cookies
@@ -544,6 +561,10 @@ is not specified.
 Truncate existing files on write, if set to 1. A value of 0 prevents
 truncating. Default value is 1.
 
+@item private_key
+Specify the path of the file containing private key to use during authorization.
+By default libssh searches for keys in the @file{~/.ssh/} directory.
+
 @end table
 
 Example: Play a file stored on remote server.
@@ -661,6 +682,8 @@ set to the the local RTP port value plus 1.
 
 @section rtsp
 
+Real-Time Streaming Protocol.
+
 RTSP is not technically a protocol handler in libavformat, it is a demuxer
 and muxer. The demuxer supports both normal RTSP (with data transferred
 over RTP; this is used by e.g. Apple and Microsoft) and Real-RTSP (with
@@ -675,14 +698,22 @@ The required syntax for a RTSP url is:
 rtsp://@var{hostname}[:@var{port}]/@var{path}
 @end example
 
-The following options (set on the @command{ffmpeg}/@command{ffplay} command
-line, or set in code via @code{AVOption}s or in @code{avformat_open_input}),
-are supported:
+Options can be set on the @command{ffmpeg}/@command{ffplay} command
+line, or set in code via @code{AVOption}s or in
+@code{avformat_open_input}.
 
-Flags for @code{rtsp_transport}:
+The following options are supported.
 
 @table @option
+@item initial_pause
+Do not start playing the stream immediately if set to 1. Default value
+is 0.
 
+@item rtsp_transport
+Set RTSP trasport protocols.
+
+It accepts the following values:
+@table @samp
 @item udp
 Use UDP as lower transport protocol.
 
@@ -700,15 +731,54 @@ passing proxies.
 
 Multiple lower transport protocols may be specified, in that case they are
 tried one at a time (if the setup of one fails, the next one is tried).
-For the muxer, only the @code{tcp} and @code{udp} options are supported.
+For the muxer, only the @samp{tcp} and @samp{udp} options are supported.
 
-Flags for @code{rtsp_flags}:
+@item rtsp_flags
+Set RTSP flags.
 
-@table @option
+The following values are accepted:
+@table @samp
 @item filter_src
 Accept packets only from negotiated peer address and port.
 @item listen
 Act as a server, listening for an incoming connection.
+@end table
+
+Default value is @samp{none}.
+
+@item allowed_media_types
+Set media types to accept from the server.
+
+The following flags are accepted:
+@table @samp
+@item video
+@item audio
+@item data
+@end table
+
+By default it accepts all media types.
+
+@item min_port
+Set minimum local UDP port. Default value is 5000.
+
+@item max_port
+Set maximum local UDP port. Default value is 65000.
+
+@item timeout
+Set maximum timeout (in seconds) to wait for incoming connections.
+
+A value of -1 mean infinite (default). This option implies the
+@option{rtsp_flags} set to @samp{listen}.
+
+@item reorder_queue_size
+Set number of packets to buffer for handling of reordered packets.
+
+@item stimeout
+Set socket TCP I/O timeout in micro seconds.
+
+@item user-agent
+Override User-Agent header. If not specified, it default to the
+libavformat identifier string.
 @end table
 
 When receiving data over UDP, the demuxer tries to reorder received packets
@@ -721,36 +791,36 @@ streams to display can be chosen with @code{-vst} @var{n} and
 @code{-ast} @var{n} for video and audio respectively, and can be switched
 on the fly by pressing @code{v} and @code{a}.
 
-Example command lines:
+@subsection Examples
 
-To watch a stream over UDP, with a max reordering delay of 0.5 seconds:
+The following examples all make use of the @command{ffplay} and
+@command{ffmpeg} tools.
 
+@itemize
+@item
+Watch a stream over UDP, with a max reordering delay of 0.5 seconds:
 @example
 ffplay -max_delay 500000 -rtsp_transport udp rtsp://server/video.mp4
 @end example
 
-To watch a stream tunneled over HTTP:
-
+@item
+Watch a stream tunneled over HTTP:
 @example
 ffplay -rtsp_transport http rtsp://server/video.mp4
 @end example
 
-To send a stream in realtime to a RTSP server, for others to watch:
-
+@item
+Send a stream in realtime to a RTSP server, for others to watch:
 @example
 ffmpeg -re -i @var{input} -f rtsp -muxdelay 0.1 rtsp://server/live.sdp
 @end example
 
-To receive a stream in realtime:
-
+@item
+Receive a stream in realtime:
 @example
 ffmpeg -rtsp_flags listen -i rtsp://ownaddress/live.sdp @var{output}
 @end example
-
-@table @option
-@item stimeout
-Socket IO timeout in micro seconds.
-@end table
+@end itemize
 
 @section sap
 
@@ -897,22 +967,31 @@ The required syntax for a TCP url is:
 tcp://@var{hostname}:@var{port}[?@var{options}]
 @end example
 
-@table @option
+@var{options} contains a list of &-separated options of the form
+@var{key}=@var{val}.
 
-@item listen
-Listen for an incoming connection
+The list of supported options follows.
+
+@table @option
+@item listen=@var{1|0}
+Listen for an incoming connection. Default value is 0.
 
 @item timeout=@var{microseconds}
-In read mode: if no data arrived in more than this time interval, raise error.
-In write mode: if socket cannot be written in more than this time interval, raise error.
-This also sets timeout on TCP connection establishing.
+Set raise error timeout, expressed in microseconds.
 
+This option is only relevant in read mode: if no data arrived in more
+than this time interval, raise error.
+
+@item listen_timeout=@var{microseconds}
+Set listen timeout, expressed in microseconds.
+@end table
+
+The following example shows how to setup a listening TCP connection
+with @command{ffmpeg}, which is then accessed with @command{ffplay}:
 @example
 ffmpeg -i @var{input} -f @var{format} tcp://@var{hostname}:@var{port}?listen
 ffplay tcp://@var{hostname}:@var{port}
 @end example
-
-@end table
 
 @section tls
 
@@ -979,7 +1058,7 @@ ffplay tls://@var{hostname}:@var{port}
 
 User Datagram Protocol.
 
-The required syntax for a UDP url is:
+The required syntax for an UDP URL is:
 @example
 udp://@var{hostname}:@var{port}[?@var{options}]
 @end example
@@ -994,7 +1073,6 @@ UDP socket buffer overruns. The @var{fifo_size} and
 The list of supported options follows.
 
 @table @option
-
 @item buffer_size=@var{size}
 Set the UDP socket buffer size in bytes. This is used both for the
 receiving and the sending buffer size.
@@ -1044,25 +1122,34 @@ Survive in case of UDP receiving circular buffer overrun. Default
 value is 0.
 
 @item timeout=@var{microseconds}
-In read mode: if no data arrived in more than this time interval, raise error.
+Set raise error timeout, expressed in microseconds.
+
+This option is only relevant in read mode: if no data arrived in more
+than this time interval, raise error.
 @end table
 
-Some usage examples of the UDP protocol with @command{ffmpeg} follow.
+@subsection Examples
 
-To stream over UDP to a remote endpoint:
+@itemize
+@item
+Use @command{ffmpeg} to stream over UDP to a remote endpoint:
 @example
 ffmpeg -i @var{input} -f @var{format} udp://@var{hostname}:@var{port}
 @end example
 
-To stream in mpegts format over UDP using 188 sized UDP packets, using a large input buffer:
+@item
+Use @command{ffmpeg} to stream in mpegts format over UDP using 188
+sized UDP packets, using a large input buffer:
 @example
 ffmpeg -i @var{input} -f mpegts udp://@var{hostname}:@var{port}?pkt_size=188&buffer_size=65535
 @end example
 
-To receive over UDP from a remote endpoint:
+@item
+Use @command{ffmpeg} to receive over UDP from a remote endpoint:
 @example
-ffmpeg -i udp://[@var{multicast-address}]:@var{port}
+ffmpeg -i udp://[@var{multicast-address}]:@var{port} ...
 @end example
+@end itemize
 
 @section unix
 

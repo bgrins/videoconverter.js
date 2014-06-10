@@ -1,0 +1,208 @@
+/*!\page usage Usage
+
+    The vpx multi-format codec SDK provides a unified interface amongst its
+    supported codecs. This abstraction allows applications using this SDK to
+    easily support multiple video formats with minimal code duplication or
+    "special casing." This section describes the interface common to all codecs.
+    For codec-specific details, see the \ref codecs page.
+
+    The following sections are common to all codecs:
+    - \ref usage_types
+    - \ref usage_features
+    - \ref usage_init
+    - \ref usage_errors
+
+    Fore more information on decoder and encoder specific usage, see the
+    following pages:
+    \if decoder
+    - \subpage usage_decode
+    \endif
+    \if decoder
+    - \subpage usage_encode
+    \endif
+
+    \section usage_types Important Data Types
+    There are two important data structures to consider in this interface.
+
+    \subsection usage_ctxs Contexts
+    A context is a storage area allocated by the calling application that the
+    codec may write into to store details about a single instance of that codec.
+    Most of the context is implementation specific, and thus opaque to the
+    application. The context structure as seen by the application is of fixed
+    size, and thus can be allocated with automatic storage or dynamically
+    on the heap.
+
+    Most operations require an initialized codec context. Codec context
+    instances are codec specific. That is, the codec to be used for the encoded
+    video must be known at initialization time. See #vpx_codec_ctx_t for further
+    information.
+
+    \subsection usage_ifaces Interfaces
+    A codec interface is an opaque structure that controls how function calls
+    into the generic interface are dispatched to their codec-specific
+    implementations. Applications \ref MUSTNOT attempt to examine or override
+    this storage, as it contains internal implementation details likely to
+    change from release to release.
+
+    Each supported codec will expose an interface structure to the application
+    as an <code>extern</code> reference to a structure of the incomplete type
+    #vpx_codec_iface_t.
+
+    \section usage_features Features
+    Several "features" are defined that are optionally implemented by codec
+    algorithms. Indeed, the same algorithm may support different features on
+    different platforms. The purpose of defining these features is that when
+    they are implemented, they conform to a common interface. The features, or
+    capabilities, of an algorithm can be queried from it's interface by using
+    the vpx_codec_get_caps() method. Attempts to invoke features not supported
+    by an algorithm will generally result in #VPX_CODEC_INCAPABLE.
+
+    Currently defined features available in both encoders and decoders include:
+    - \subpage usage_xma
+
+    \if decoder
+    Currently defined decoder features include:
+    - \ref usage_cb
+    - \ref usage_postproc
+    \endif
+
+    \section usage_init Initialization
+    To initialize a codec instance, the address of the codec context
+    and interface structures are passed to an initialization function. Depending
+    on the \ref usage_features that the codec supports, the codec could be
+    initialized in different modes. Most notably, the application may choose to
+    use \ref usage_xma mode to gain fine grained control over how and where
+    memory is allocated for the codec.
+
+    To prevent cases of confusion where the ABI of the library changes,
+    the ABI is versioned. The ABI version number must be passed at
+    initialization time to ensure the application is using a header file that
+    matches the library. The current ABI version number is stored in the
+    preprocessor macros #VPX_CODEC_ABI_VERSION, #VPX_ENCODER_ABI_VERSION, and
+    #VPX_DECODER_ABI_VERSION. For convenience, each initialization function has
+    a wrapper macro that inserts the correct version number. These macros are
+    named like the initialization methods, but without the _ver suffix.
+
+
+    The available initialization methods are:
+    \if encoder - #vpx_codec_enc_init (calls vpx_codec_enc_init_ver()) \endif
+    \if multi-encoder - #vpx_codec_enc_init_multi (calls vpx_codec_enc_init_multi_ver()) \endif
+    \if decoder - #vpx_codec_dec_init (calls vpx_codec_dec_init_ver()) \endif
+
+
+
+    \section usage_errors Error Handling
+    Almost all codec functions return an error status of type #vpx_codec_err_t.
+    The semantics of how each error condition should be processed is clearly
+    defined in the definitions of each enumerated value. Error values can be
+    converted into ASCII strings with the vpx_codec_error() and
+    vpx_codec_err_to_string() methods. The difference between these two methods is
+    that vpx_codec_error() returns the error state from an initialized context,
+    whereas vpx_codec_err_to_string() can be used in cases where an error occurs
+    outside any context. The enumerated value returned from the last call can be
+    retrieved from the <code>err</code> member of the decoder context as well.
+    Finally, more detailed error information may be able to be obtained by using
+    the vpx_codec_error_detail() method. Not all errors produce detailed error
+    information.
+
+    In addition to error information, the codec library's build configuration
+    is available at runtime on some platforms. This information can be returned
+    by calling vpx_codec_build_config(), and is formatted as a base64 coded string
+    (comprised of characters in the set [a-z_a-Z0-9+/]). This information is not
+    useful to an application at runtime, but may be of use to vpx for support.
+
+
+    \section usage_deadline Deadline
+    Both the encoding and decoding functions have a <code>deadline</code>
+    parameter. This parameter indicates the amount of time, in microseconds
+    (us), that the application wants the codec to spend processing before
+    returning. This is a soft deadline -- that is, the semantics of the
+    requested operation take precedence over meeting the deadline. If, for
+    example, an application sets a <code>deadline</code> of 1000us, and the
+    frame takes 2000us to decode, the call to vpx_codec_decode() will return
+    after 2000us. In this case the deadline is not met, but the semantics of the
+    function are preserved. If, for the same frame, an application instead sets
+    a <code>deadline</code> of 5000us, the decoder will see that it has 3000us
+    remaining in its time slice when decoding completes. It could then choose to
+    run a set of \ref usage_postproc filters, and perhaps would return after
+    4000us (instead of the allocated 5000us). In this case the deadline is met,
+    and the semantics of the call are preserved, as before.
+
+    The special value <code>0</code> is reserved to represent an infinite
+    deadline. In this case, the codec will perform as much processing as
+    possible to yield the highest quality frame.
+
+    By convention, the value <code>1</code> is used to mean "return as fast as
+    possible."
+
+*/
+
+
+/*! \page usage_xma External Memory Allocation
+    Applications that wish to have fine grained control over how and where
+    decoders allocate memory \ref MAY make use of the eXternal Memory Allocation
+    (XMA) interface. Not all codecs support the XMA \ref usage_features.
+
+    To use a decoder in XMA mode, the decoder \ref MUST be initialized with the
+    vpx_codec_xma_init_ver() function. The amount of memory a decoder needs to
+    allocate is heavily dependent on the size of the encoded video frames. The
+    size of the video must be known before requesting the decoder's memory map.
+    This stream information can be obtained with the vpx_codec_peek_stream_info()
+    function, which does not require a constructed decoder context. If the exact
+    stream is not known, a stream info structure can be created that reflects
+    the maximum size that the decoder instance is required to support.
+
+    Once the decoder instance has been initialized and the stream information
+    determined, the application calls the vpx_codec_get_mem_map() iterator
+    repeatedly to get a list of the memory segments requested by the decoder.
+    The iterator value should be initialized to NULL to request the first
+    element, and the function will return #VPX_CODEC_LIST_END to signal the end of
+    the list.
+
+    After each segment is identified, it must be passed to the codec through the
+    vpx_codec_set_mem_map() function. Segments \ref MUST be passed in the same
+    order as they are returned from vpx_codec_get_mem_map(), but there is no
+    requirement that vpx_codec_get_mem_map() must finish iterating before
+    vpx_codec_set_mem_map() is called. For instance, some applications may choose
+    to get a list of all requests, construct an optimal heap, and then set all
+    maps at once with one call. Other applications may set one map at a time,
+    allocating it immediately after it is returned from vpx_codec_get_mem_map().
+
+    After all segments have been set using vpx_codec_set_mem_map(), the codec may
+    be used as it would be in normal internal allocation mode.
+
+    \section usage_xma_seg_id Segment Identifiers
+    Each requested segment is identified by an identifier unique to
+    that decoder type. Some of these identifiers are private, while others are
+    enumerated for application use. Identifiers not enumerated publicly are
+    subject to change. Identifiers are non-consecutive.
+
+    \section usage_xma_seg_szalign Segment Size and Alignment
+    The sz (size) and align (alignment) parameters describe the required size
+    and alignment of the requested segment. Alignment will always be a power of
+    two. Applications \ref MUST honor the alignment requested. Failure to do so
+    could result in program crashes or may incur a speed penalty.
+
+    \section usage_xma_seg_flags Segment Flags
+    The flags member of the segment structure indicates any requirements or
+    desires of the codec for the particular segment. The #VPX_CODEC_MEM_ZERO flag
+    indicates that the segment \ref MUST be zeroed by the application prior to
+    passing it to the application. The #VPX_CODEC_MEM_WRONLY flag indicates that
+    the segment will only be written into by the decoder, not read. If this flag
+    is not set, the application \ref MUST insure that the memory segment is
+    readable. On some platforms, framebuffer memory is writable but not
+    readable, for example. The #VPX_CODEC_MEM_FAST flag indicates that the segment
+    will be frequently accessed, and that it should be placed into fast memory,
+    if any is available. The application \ref MAY choose to place other segments
+    in fast memory as well, but the most critical segments will be identified by
+    this flag.
+
+    \section usage_xma_seg_basedtor Segment Base Address and Destructor
+    For each requested memory segment, the application must determine the
+    address of a memory segment that meets the requirements of the codec. This
+    address is set in the <code>base</code> member of the #vpx_codec_mmap
+    structure. If the application requires processing when the segment is no
+    longer used by the codec (for instance to deallocate it or close an
+    associated file descriptor) the <code>dtor</code> and <code>priv</code>
+    members can be set.
+*/

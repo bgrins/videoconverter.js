@@ -30,6 +30,8 @@
 #define AVCODEC_MJPEGDEC_H
 
 #include "libavutil/log.h"
+#include "libavutil/pixdesc.h"
+#include "libavutil/stereo3d.h"
 
 #include "avcodec.h"
 #include "get_bits.h"
@@ -67,6 +69,7 @@ typedef struct MJpegDecodeContext {
     int bits;           /* bits per component */
     int colr;
     int xfrm;
+    int adobe_transform;
 
     int maxval;
     int near;         ///< near lossless bound (si 0 for lossless)
@@ -90,7 +93,7 @@ typedef struct MJpegDecodeContext {
     int h_max, v_max; /* maximum h and v counts */
     int quant_index[4];   /* quant table index for each component */
     int last_dc[MAX_COMPONENTS]; /* last DEQUANTIZED dc (XXX: am I right to do that ?) */
-    AVFrame picture; /* picture structure */
+    AVFrame *picture; /* picture structure */
     AVFrame *picture_ptr; /* pointer to picture structure */
     int got_picture;                                ///< we found a SOF and picture is valid, too.
     int linesize[MAX_COMPONENTS];                   ///< linesize << interlaced
@@ -120,6 +123,10 @@ typedef struct MJpegDecodeContext {
 
     int extern_huff;
     AVDictionary *exif_metadata;
+
+    AVStereo3D *stereo3d; ///!< stereoscopic information (cached, since it is read before frame allocation)
+
+    const AVPixFmtDescriptor *pix_desc;
 } MJpegDecodeContext;
 
 int ff_mjpeg_decode_init(AVCodecContext *avctx);
@@ -131,7 +138,8 @@ int ff_mjpeg_decode_dqt(MJpegDecodeContext *s);
 int ff_mjpeg_decode_dht(MJpegDecodeContext *s);
 int ff_mjpeg_decode_sof(MJpegDecodeContext *s);
 int ff_mjpeg_decode_sos(MJpegDecodeContext *s,
-                        const uint8_t *mb_bitmask, const AVFrame *reference);
+                        const uint8_t *mb_bitmask,int mb_bitmask_size,
+                        const AVFrame *reference);
 int ff_mjpeg_find_marker(MJpegDecodeContext *s,
                          const uint8_t **buf_ptr, const uint8_t *buf_end,
                          const uint8_t **unescaped_buf_ptr, int *unescaped_buf_size);

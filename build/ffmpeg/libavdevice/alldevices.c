@@ -49,6 +49,7 @@ void avdevice_register_all(void)
     REGISTER_INOUTDEV(ALSA,             alsa);
     REGISTER_INDEV   (BKTR,             bktr);
     REGISTER_OUTDEV  (CACA,             caca);
+    REGISTER_OUTDEV  (DECKLINK,         decklink);
     REGISTER_INDEV   (DSHOW,            dshow);
     REGISTER_INDEV   (DV1394,           dv1394);
     REGISTER_INOUTDEV(FBDEV,            fbdev);
@@ -56,6 +57,7 @@ void avdevice_register_all(void)
     REGISTER_INDEV   (JACK,             jack);
     REGISTER_INDEV   (LAVFI,            lavfi);
     REGISTER_INDEV   (OPENAL,           openal);
+    REGISTER_OUTDEV  (OPENGL,           opengl);
     REGISTER_INOUTDEV(OSS,              oss);
     REGISTER_INOUTDEV(PULSE,            pulse);
     REGISTER_OUTDEV  (SDL,              sdl);

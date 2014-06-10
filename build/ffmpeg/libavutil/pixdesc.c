@@ -29,6 +29,7 @@
 #include "internal.h"
 #include "intreadwrite.h"
 #include "avstring.h"
+#include "version.h"
 
 void av_read_image_line(uint16_t *dst,
                         const uint8_t *data[4], const int linesize[4],
@@ -313,6 +314,7 @@ const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
         },
         .flags = AV_PIX_FMT_FLAG_PLANAR,
     },
+#if FF_API_XVMC
     [AV_PIX_FMT_XVMC_MPEG2_MC] = {
         .name = "xvmcmc",
         .flags = AV_PIX_FMT_FLAG_HWACCEL,
@@ -321,6 +323,13 @@ const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
         .name = "xvmcidct",
         .flags = AV_PIX_FMT_FLAG_HWACCEL,
     },
+#endif /* FF_API_XVMC */
+#if !FF_API_XVMC
+    [AV_PIX_FMT_XVMC] = {
+        .name = "xvmc",
+        .flags = AV_PIX_FMT_FLAG_HWACCEL,
+    },
+#endif /* !FF_API_XVMC */
     [AV_PIX_FMT_UYVY422] = {
         .name = "uyvy422",
         .nb_components = 3,
@@ -1761,50 +1770,62 @@ const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
     [AV_PIX_FMT_BAYER_BGGR8] = {
         .name = "bayer_bggr8",
         BAYER8_DESC_COMMON
+        .flags = AV_PIX_FMT_FLAG_RGB,
     },
     [AV_PIX_FMT_BAYER_BGGR16LE] = {
         .name = "bayer_bggr16le",
         BAYER16_DESC_COMMON
+        .flags = AV_PIX_FMT_FLAG_RGB,
     },
     [AV_PIX_FMT_BAYER_BGGR16BE] = {
         .name = "bayer_bggr16be",
         BAYER16_DESC_COMMON
+        .flags = AV_PIX_FMT_FLAG_BE | AV_PIX_FMT_FLAG_RGB,
     },
     [AV_PIX_FMT_BAYER_RGGB8] = {
         .name = "bayer_rggb8",
         BAYER8_DESC_COMMON
+        .flags = AV_PIX_FMT_FLAG_RGB,
     },
     [AV_PIX_FMT_BAYER_RGGB16LE] = {
         .name = "bayer_rggb16le",
         BAYER16_DESC_COMMON
+        .flags = AV_PIX_FMT_FLAG_RGB,
     },
     [AV_PIX_FMT_BAYER_RGGB16BE] = {
         .name = "bayer_rggb16be",
         BAYER16_DESC_COMMON
+        .flags = AV_PIX_FMT_FLAG_BE | AV_PIX_FMT_FLAG_RGB,
     },
     [AV_PIX_FMT_BAYER_GBRG8] = {
         .name = "bayer_gbrg8",
         BAYER8_DESC_COMMON
+        .flags = AV_PIX_FMT_FLAG_RGB,
     },
     [AV_PIX_FMT_BAYER_GBRG16LE] = {
         .name = "bayer_gbrg16le",
         BAYER16_DESC_COMMON
+        .flags = AV_PIX_FMT_FLAG_RGB,
     },
     [AV_PIX_FMT_BAYER_GBRG16BE] = {
         .name = "bayer_gbrg16be",
         BAYER16_DESC_COMMON
+        .flags = AV_PIX_FMT_FLAG_BE | AV_PIX_FMT_FLAG_RGB,
     },
     [AV_PIX_FMT_BAYER_GRBG8] = {
         .name = "bayer_grbg8",
         BAYER8_DESC_COMMON
+        .flags = AV_PIX_FMT_FLAG_RGB,
     },
     [AV_PIX_FMT_BAYER_GRBG16LE] = {
         .name = "bayer_grbg16le",
         BAYER16_DESC_COMMON
+        .flags = AV_PIX_FMT_FLAG_RGB,
     },
     [AV_PIX_FMT_BAYER_GRBG16BE] = {
         .name = "bayer_grbg16be",
         BAYER16_DESC_COMMON
+        .flags = AV_PIX_FMT_FLAG_BE | AV_PIX_FMT_FLAG_RGB,
     },
     [AV_PIX_FMT_NV16] = {
         .name = "nv16",

@@ -21,8 +21,6 @@
 
 #include "libavutil/arm/asm.S"
 
-        .fpu neon
-
 function ff_scalarproduct_int16_neon, export=1
         vmov.i16        q0,  #0
         vmov.i16        q1,  #0
@@ -37,14 +35,14 @@ function ff_scalarproduct_int16_neon, export=1
         vmlal.s16       q2,  d18,  d22
         vmlal.s16       q3,  d19,  d23
         subs            r2,  r2,   #16
-        bne             1b
+        bgt             1b
 
         vpadd.s32       d16, d0,   d1
         vpadd.s32       d17, d2,   d3
-        vpadd.s32       d10, d4,   d5
-        vpadd.s32       d11, d6,   d7
+        vpadd.s32       d18, d4,   d5
+        vpadd.s32       d19, d6,   d7
         vpadd.s32       d0,  d16,  d17
-        vpadd.s32       d1,  d10,  d11
+        vpadd.s32       d1,  d18,  d19
         vpadd.s32       d2,  d0,   d1
         vpaddl.s32      d3,  d2
         vmov.32         r0,  d3[0]
@@ -77,14 +75,14 @@ function ff_scalarproduct_and_madd_int16_neon, export=1
         vst1.16         {q10},     [r12,:128]!
         subs            r3,  r3,   #16
         vst1.16         {q13},     [r12,:128]!
-        bne             1b
+        bgt             1b
 
         vpadd.s32       d16, d0,   d1
         vpadd.s32       d17, d2,   d3
-        vpadd.s32       d10, d4,   d5
-        vpadd.s32       d11, d6,   d7
+        vpadd.s32       d18, d4,   d5
+        vpadd.s32       d19, d6,   d7
         vpadd.s32       d0,  d16,  d17
-        vpadd.s32       d1,  d10,  d11
+        vpadd.s32       d1,  d18,  d19
         vpadd.s32       d2,  d0,   d1
         vpaddl.s32      d3,  d2
         vmov.32         r0,  d3[0]

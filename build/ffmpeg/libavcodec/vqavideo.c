@@ -179,7 +179,7 @@ static av_cold int vqa_decode_init(AVCodecContext *avctx)
     /* allocate decode buffer */
     s->decode_buffer_size = (s->width / s->vector_width) *
         (s->height / s->vector_height) * 2;
-    s->decode_buffer = av_malloc(s->decode_buffer_size);
+    s->decode_buffer = av_mallocz(s->decode_buffer_size);
     if (!s->decode_buffer)
         goto fail;
 
@@ -238,7 +238,7 @@ static int decode_format80(VqaContext *s, int src_size,
 
         /* 0x80 means that frame is finished */
         if (opcode == 0x80)
-            return 0;
+            break;
 
         if (dest_index >= dest_size) {
             av_log(s->avctx, AV_LOG_ERROR, "decode_format80 problem: dest_index (%d) exceeded dest_size (%d)\n",
@@ -303,9 +303,11 @@ static int decode_format80(VqaContext *s, int src_size,
      * codebook entry; it is not important for compressed codebooks because
      * not every entry needs to be filled */
     if (check_size)
-        if (dest_index < dest_size)
+        if (dest_index < dest_size) {
             av_log(s->avctx, AV_LOG_ERROR, "decode_format80 problem: decode finished with dest_index (%d) < dest_size (%d)\n",
                 dest_index, dest_size);
+            memset(dest + dest_index, 0, dest_size - dest_index);
+        }
 
     return 0; // let's display what we decoded anyway
 }

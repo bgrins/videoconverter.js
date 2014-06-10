@@ -24,6 +24,7 @@
 #include <stdint.h>
 
 #include "config.h"
+#include "libavcodec/dcadsp.h"
 #include "libavcodec/mathops.h"
 
 #if HAVE_ARMV6_INLINE && AV_GCC_VERSION_AT_LEAST(4,4) && !CONFIG_THUMB
@@ -74,28 +75,6 @@ static inline int decode_blockcodes(int code1, int code2, int levels,
              : "memory");
 
     return code1 | code2;
-}
-
-#endif
-
-#if HAVE_NEON_INLINE && HAVE_ASM_MOD_Y
-
-#define int8x8_fmul_int32 int8x8_fmul_int32
-static inline void int8x8_fmul_int32(float *dst, const int8_t *src, int scale)
-{
-    __asm__ ("vcvt.f32.s32 %2,  %2,  #4         \n"
-             "vld1.8       {d0},     [%1,:64]   \n"
-             "vmovl.s8     q0,  d0              \n"
-             "vmovl.s16    q1,  d1              \n"
-             "vmovl.s16    q0,  d0              \n"
-             "vcvt.f32.s32 q0,  q0              \n"
-             "vcvt.f32.s32 q1,  q1              \n"
-             "vmul.f32     q0,  q0,  %y2        \n"
-             "vmul.f32     q1,  q1,  %y2        \n"
-             "vst1.32      {q0-q1},  [%m0,:128] \n"
-             : "=Um"(*(float (*)[8])dst)
-             : "r"(src), "x"(scale)
-             : "d0", "d1", "d2", "d3");
 }
 
 #endif

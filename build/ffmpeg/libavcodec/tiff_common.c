@@ -75,7 +75,7 @@ unsigned ff_tget(GetByteContext *gb, int type, int le)
     }
 }
 
-static char *auto_sep(int count, char *sep, int i, int columns)
+static const char *auto_sep(int count, const char *sep, int i, int columns)
 {
     if (sep)
         return i ? sep : "";
@@ -165,7 +165,7 @@ int ff_tadd_doubles_metadata(int count, const char *name, const char *sep,
     av_bprint_init(&bp, 10 * count, 100 * count);
 
     for (i = 0; i < count; i++) {
-        av_bprintf(&bp, "%s%f", auto_sep(count, sep, i, 4), ff_tget_double(gb, le));
+        av_bprintf(&bp, "%s%.15g", auto_sep(count, sep, i, 4), ff_tget_double(gb, le));
     }
 
     if ((i = av_bprint_finalize(&bp, &ap))) {

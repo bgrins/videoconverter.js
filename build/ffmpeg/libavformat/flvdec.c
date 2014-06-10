@@ -256,6 +256,7 @@ static int flv_set_video_codec(AVFormatContext *s, AVStream *vstream,
         return 1;     // 1 byte body size adjustment for flv_read_packet()
     case FLV_CODECID_H264:
         vcodec->codec_id = AV_CODEC_ID_H264;
+        vstream->need_parsing = AVSTREAM_PARSE_HEADERS;
         return 3;     // not 4, reading packet type will consume one byte
     case FLV_CODECID_MPEG4:
         vcodec->codec_id = AV_CODEC_ID_MPEG4;
@@ -614,9 +615,8 @@ static int flv_read_close(AVFormatContext *s)
 static int flv_get_extradata(AVFormatContext *s, AVStream *st, int size)
 {
     av_free(st->codec->extradata);
-    if (ff_alloc_extradata(st->codec, size))
+    if (ff_get_extradata(st->codec, s->pb, size) < 0)
         return AVERROR(ENOMEM);
-    avio_read(s->pb, st->codec->extradata, st->codec->extradata_size);
     return 0;
 }
 
@@ -916,7 +916,7 @@ retry_duration:
             flv->last_channels    =
             channels              = st->codec->channels;
         } else {
-            AVCodecContext ctx;
+            AVCodecContext ctx = {0};
             ctx.sample_rate = sample_rate;
             flv_set_audio_codec(s, st, &ctx, flags & FLV_AUDIO_CODECID_MASK);
             sample_rate = ctx.sample_rate;
@@ -943,6 +943,8 @@ retry_duration:
                 dts = AV_NOPTS_VALUE;
         }
         if (type == 0 && (!st->codec->extradata || st->codec->codec_id == AV_CODEC_ID_AAC)) {
+            AVDictionaryEntry *t;
+
             if (st->codec->extradata) {
                 if ((ret = flv_queue_extradata(flv, s->pb, stream_type, size)) < 0)
                     return ret;
@@ -951,8 +953,15 @@ retry_duration:
             }
             if ((ret = flv_get_extradata(s, st, size)) < 0)
                 return ret;
+
+            /* Workaround for buggy Omnia A/XE encoder */
+            t = av_dict_get(s->metadata, "Encoder", NULL, 0);
+            if (st->codec->codec_id == AV_CODEC_ID_AAC && t && !strcmp(t->value, "Omnia A/XE"))
+                st->codec->extradata_size = 2;
+
             if (st->codec->codec_id == AV_CODEC_ID_AAC && 0) {
                 MPEG4AudioConfig cfg;
+
                 if (avpriv_mpeg4audio_get_config(&cfg, st->codec->extradata,
                                              st->codec->extradata_size * 8, 1) >= 0) {
                 st->codec->channels       = cfg.channels;

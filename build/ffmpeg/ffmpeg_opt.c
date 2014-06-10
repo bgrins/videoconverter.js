@@ -62,6 +62,14 @@
             outvar = o->name[i].u.type;\
     }\
 }
+
+const HWAccel hwaccels[] = {
+#if HAVE_VDPAU_X11
+    { "vdpau", vdpau_init, HWACCEL_VDPAU, AV_PIX_FMT_VDPAU },
+#endif
+    { 0 },
+};
+
 char *vstats_filename;
 
 float audio_drift_threshold = 0.1;
@@ -551,13 +559,14 @@ static AVCodec *choose_decoder(OptionsContext *o, AVFormatContext *s, AVStream *
 static void add_input_streams(OptionsContext *o, AVFormatContext *ic)
 {
     int i;
-    char *next, *codec_tag = NULL;
 
     for (i = 0; i < ic->nb_streams; i++) {
         AVStream *st = ic->streams[i];
         AVCodecContext *dec = st->codec;
         InputStream *ist = av_mallocz(sizeof(*ist));
-        char *framerate = NULL;
+        char *framerate = NULL, *hwaccel = NULL, *hwaccel_device = NULL;
+        char *codec_tag = NULL;
+        char *next;
 
         if (!ist)
             exit_program(1);
@@ -612,6 +621,41 @@ static void add_input_streams(OptionsContext *o, AVFormatContext *ic)
             ist->top_field_first = -1;
             MATCH_PER_STREAM_OPT(top_field_first, i, ist->top_field_first, ic, st);
 
+            MATCH_PER_STREAM_OPT(hwaccels, str, hwaccel, ic, st);
+            if (hwaccel) {
+                if (!strcmp(hwaccel, "none"))
+                    ist->hwaccel_id = HWACCEL_NONE;
+                else if (!strcmp(hwaccel, "auto"))
+                    ist->hwaccel_id = HWACCEL_AUTO;
+                else {
+                    int i;
+                    for (i = 0; hwaccels[i].name; i++) {
+                        if (!strcmp(hwaccels[i].name, hwaccel)) {
+                            ist->hwaccel_id = hwaccels[i].id;
+                            break;
+                        }
+                    }
+
+                    if (!ist->hwaccel_id) {
+                        av_log(NULL, AV_LOG_FATAL, "Unrecognized hwaccel: %s.\n",
+                               hwaccel);
+                        av_log(NULL, AV_LOG_FATAL, "Supported hwaccels: ");
+                        for (i = 0; hwaccels[i].name; i++)
+                            av_log(NULL, AV_LOG_FATAL, "%s ", hwaccels[i].name);
+                        av_log(NULL, AV_LOG_FATAL, "\n");
+                        exit_program(1);
+                    }
+                }
+            }
+
+            MATCH_PER_STREAM_OPT(hwaccel_devices, str, hwaccel_device, ic, st);
+            if (hwaccel_device) {
+                ist->hwaccel_device = av_strdup(hwaccel_device);
+                if (!ist->hwaccel_device)
+                    exit_program(1);
+            }
+            ist->hwaccel_pix_fmt = AV_PIX_FMT_NONE;
+
             break;
         case AVMEDIA_TYPE_AUDIO:
             ist->guess_layout_max = INT_MAX;
@@ -654,10 +698,9 @@ static void assert_file_overwrite(const char *filename)
         exit_program(1);
     }
 
-    if (!file_overwrite &&
-        (strchr(filename, ':') == NULL || filename[1] == ':' ||
-         av_strstart(filename, "file:", NULL))) {
-        if (avio_check(filename, 0) == 0) {
+    if (!file_overwrite) {
+        const char *proto_name = avio_find_protocol_name(filename);
+        if (proto_name && !strcmp(proto_name, "file") && avio_check(filename, 0) == 0) {
             if (stdin_interaction && !no_file_overwrite) {
                 fprintf(stderr,"File '%s' already exists. Overwrite ? [y/N] ", filename);
                 fflush(stderr);
@@ -852,6 +895,7 @@ static int open_input_file(OptionsContext *o, const char *filename)
     f->ist_index  = nb_input_streams - ic->nb_streams;
     f->start_time = o->start_time;
     f->recording_time = o->recording_time;
+    f->input_ts_offset = o->input_ts_offset;
     f->ts_offset  = o->input_ts_offset - (copy_ts ? 0 : timestamp);
     f->nb_streams = ic->nb_streams;
     f->rate_emu   = o->rate_emu;
@@ -871,8 +915,13 @@ static int open_input_file(OptionsContext *o, const char *filename)
         const AVClass *class = avcodec_get_class();
         const AVOption *option = av_opt_find(&class, e->key, NULL, 0,
                                              AV_OPT_SEARCH_CHILDREN | AV_OPT_SEARCH_FAKE_OBJ);
-        if (!option)
+        const AVClass *fclass = avformat_get_class();
+        const AVOption *foption = av_opt_find(&fclass, e->key, NULL, 0,
+                                             AV_OPT_SEARCH_CHILDREN | AV_OPT_SEARCH_FAKE_OBJ);
+        if (!option || foption)
             continue;
+
+
         if (!(option->flags & AV_OPT_FLAG_DECODING_PARAM)) {
             av_log(NULL, AV_LOG_ERROR, "Codec AVOption %s (%s) specified for "
                    "input file #%d (%s) is not a decoding option.\n", e->key,
@@ -929,14 +978,14 @@ static uint8_t *get_line(AVIOContext *s)
 
 static int get_preset_file_2(const char *preset_name, const char *codec_name, AVIOContext **s)
 {
-    int i, ret = 1;
+    int i, ret = -1;
     char filename[1000];
     const char *base[3] = { getenv("AVCONV_DATADIR"),
                             getenv("HOME"),
                             AVCONV_DATADIR,
                             };
 
-    for (i = 0; i < FF_ARRAY_ELEMS(base) && ret; i++) {
+    for (i = 0; i < FF_ARRAY_ELEMS(base) && ret < 0; i++) {
         if (!base[i])
             continue;
         if (codec_name) {
@@ -944,7 +993,7 @@ static int get_preset_file_2(const char *preset_name, const char *codec_name, AV
                      i != 1 ? "" : "/.avconv", codec_name, preset_name);
             ret = avio_open2(s, filename, AVIO_FLAG_READ, &int_cb, NULL);
         }
-        if (ret) {
+        if (ret < 0) {
             snprintf(filename, sizeof(filename), "%s%s/%s.avpreset", base[i],
                      i != 1 ? "" : "/.avconv", preset_name);
             ret = avio_open2(s, filename, AVIO_FLAG_READ, &int_cb, NULL);
@@ -1151,21 +1200,17 @@ static char *get_ost_filters(OptionsContext *o, AVFormatContext *oc,
                              OutputStream *ost)
 {
     AVStream *st = ost->st;
-    char *filter = NULL, *filter_script = NULL;
 
-    MATCH_PER_STREAM_OPT(filter_scripts, str, filter_script, oc, st);
-    MATCH_PER_STREAM_OPT(filters, str, filter, oc, st);
-
-    if (filter_script && filter) {
+    if (ost->filters_script && ost->filters) {
         av_log(NULL, AV_LOG_ERROR, "Both -filter and -filter_script set for "
                "output stream #%d:%d.\n", nb_output_files, st->index);
         exit_program(1);
     }
 
-    if (filter_script)
-        return read_file(filter_script);
-    else if (filter)
-        return av_strdup(filter);
+    if (ost->filters_script)
+        return read_file(ost->filters_script);
+    else if (ost->filters)
+        return av_strdup(ost->filters);
 
     return av_strdup(st->codec->codec_type == AVMEDIA_TYPE_VIDEO ?
                      "null" : "anull");
@@ -1174,18 +1219,13 @@ static char *get_ost_filters(OptionsContext *o, AVFormatContext *oc,
 static void check_streamcopy_filters(OptionsContext *o, AVFormatContext *oc,
                                      const OutputStream *ost, enum AVMediaType type)
 {
-    char *filter_script = NULL, *filter = NULL;
-    MATCH_PER_STREAM_OPT(filter_scripts, str, filter_script, oc, ost->st);
-    MATCH_PER_STREAM_OPT(filters,        str, filter,        oc, ost->st);
-    if (filter_script || filter) {
+    if (ost->filters_script || ost->filters) {
         av_log(NULL, AV_LOG_ERROR,
-               "Filtergraph '%s' or filter_script '%s' was defined for %s output stream "
-               "%d:%d but codec copy was selected.\n"
+               "%s '%s' was defined for %s output stream %d:%d but codec copy was selected.\n"
                "Filtering and streamcopy cannot be used together.\n",
-               (char *)av_x_if_null(filter, "(none)"),
-               (char *)av_x_if_null(filter_script, "(none)"),
-               av_get_media_type_string(type),
-               ost->file_index, ost->index);
+               ost->filters ? "Filtergraph" : "Filtergraph script",
+               ost->filters ? ost->filters : ost->filters_script,
+               av_get_media_type_string(type), ost->file_index, ost->index);
         exit_program(1);
     }
 }
@@ -1218,11 +1258,15 @@ static OutputStream *new_video_stream(OptionsContext *o, AVFormatContext *oc, in
         ost->frame_aspect_ratio = q;
     }
 
+    MATCH_PER_STREAM_OPT(filter_scripts, str, ost->filters_script, oc, st);
+    MATCH_PER_STREAM_OPT(filters,        str, ost->filters,        oc, st);
+
     if (!ost->stream_copy) {
         const char *p = NULL;
         char *frame_size = NULL;
         char *frame_pix_fmt = NULL;
         char *intra_matrix = NULL, *inter_matrix = NULL;
+        char *chroma_intra_matrix = NULL;
         int do_pass = 0;
         int i;
 
@@ -1254,6 +1298,16 @@ static OutputStream *new_video_stream(OptionsContext *o, AVFormatContext *oc, in
                 exit_program(1);
             }
             parse_matrix_coeffs(video_enc->intra_matrix, intra_matrix);
+        }
+        MATCH_PER_STREAM_OPT(chroma_intra_matrices, str, chroma_intra_matrix, oc, st);
+        if (chroma_intra_matrix) {
+            uint16_t *p = av_mallocz(sizeof(*video_enc->chroma_intra_matrix) * 64);
+            if (!p) {
+                av_log(NULL, AV_LOG_FATAL, "Could not allocate memory for intra matrix.\n");
+                exit_program(1);
+            }
+            av_codec_set_chroma_intra_matrix(video_enc, p);
+            parse_matrix_coeffs(p, chroma_intra_matrix);
         }
         MATCH_PER_STREAM_OPT(inter_matrices, str, inter_matrix, oc, st);
         if (inter_matrix) {
@@ -1348,6 +1402,9 @@ static OutputStream *new_audio_stream(OptionsContext *o, AVFormatContext *oc, in
 
     audio_enc = st->codec;
     audio_enc->codec_type = AVMEDIA_TYPE_AUDIO;
+
+    MATCH_PER_STREAM_OPT(filter_scripts, str, ost->filters_script, oc, st);
+    MATCH_PER_STREAM_OPT(filters,        str, ost->filters,        oc, st);
 
     if (!ost->stream_copy) {
         char *sample_fmt = NULL;
@@ -1573,21 +1630,16 @@ static void init_output_filter(OutputFilter *ofilter, OptionsContext *o,
         exit_program(1);
     }
 
-    if (ost->avfilter) {
-        char *filter_script = NULL, *filter = NULL;
-        MATCH_PER_STREAM_OPT(filter_scripts, str, filter_script, oc, ost->st);
-        MATCH_PER_STREAM_OPT(filters, str, filter, oc, ost->st);
-
-        if (filter || filter_script) {
-            av_log(NULL, AV_LOG_ERROR,
-                   "Filter graph '%s' or filter script '%s' was specified through the -filter/-filter_script/-vf/-af option "
-                   "for output stream %d:%d, which is fed from a complex filtergraph.\n"
-                   "-filter/-filter_script and -filter_complex cannot be used together for the same stream.\n",
-                   (char *)av_x_if_null(filter, "(none)"),
-                   (char *)av_x_if_null(filter_script, "(none)"),
-                   ost->file_index, ost->index);
-            exit_program(1);
-        }
+    if (ost->avfilter && (ost->filters || ost->filters_script)) {
+        const char *opt = ost->filters ? "-vf/-af/-filter" : "-filter_script";
+        av_log(NULL, AV_LOG_ERROR,
+               "%s '%s' was specified through the %s option "
+               "for output stream %d:%d, which is fed from a complex filtergraph.\n"
+               "%s and -filter_complex cannot be used together for the same stream.\n",
+               ost->filters ? "Filtergraph" : "Filtergraph script",
+               ost->filters ? ost->filters : ost->filters_script,
+               opt, ost->file_index, ost->index, opt);
+        exit_program(1);
     }
 
     if (configure_output_filter(ofilter->graph, ofilter, ofilter->out_tmp) < 0) {
@@ -1769,7 +1821,7 @@ static int open_output_file(OptionsContext *o, const char *filename)
 
         /* subtitles: pick first */
         MATCH_PER_TYPE_OPT(codec_names, str, subtitle_codec_name, oc, "s");
-        if (!o->subtitle_disable && (oc->oformat->subtitle_codec != AV_CODEC_ID_NONE || subtitle_codec_name)) {
+        if (!o->subtitle_disable && (avcodec_find_encoder(oc->oformat->subtitle_codec) || subtitle_codec_name)) {
             for (i = 0; i < nb_input_streams; i++)
                 if (input_streams[i]->st->codec->codec_type == AVMEDIA_TYPE_SUBTITLE) {
                     new_subtitle_stream(o, oc, i);
@@ -2097,23 +2149,22 @@ static int opt_target(void *optctx, const char *opt, const char *arg)
         opt_video_codec(o, "c:v", "mpeg1video");
         opt_audio_codec(o, "c:a", "mp2");
         parse_option(o, "f", "vcd", options);
-        av_dict_set(&o->g->codec_opts, "b:v", arg, 0);
 
         parse_option(o, "s", norm == PAL ? "352x288" : "352x240", options);
         parse_option(o, "r", frame_rates[norm], options);
-        av_dict_set(&o->g->codec_opts, "g", norm == PAL ? "15" : "18", 0);
+        av_dict_set(&o->g->codec_opts, "g", norm == PAL ? "15" : "18", AV_DICT_DONT_OVERWRITE);
 
-        av_dict_set(&o->g->codec_opts, "b:v", "1150000", 0);
-        av_dict_set(&o->g->codec_opts, "maxrate", "1150000", 0);
-        av_dict_set(&o->g->codec_opts, "minrate", "1150000", 0);
-        av_dict_set(&o->g->codec_opts, "bufsize", "327680", 0); // 40*1024*8;
+        av_dict_set(&o->g->codec_opts, "b:v", "1150000", AV_DICT_DONT_OVERWRITE);
+        av_dict_set(&o->g->codec_opts, "maxrate", "1150000", AV_DICT_DONT_OVERWRITE);
+        av_dict_set(&o->g->codec_opts, "minrate", "1150000", AV_DICT_DONT_OVERWRITE);
+        av_dict_set(&o->g->codec_opts, "bufsize", "327680", AV_DICT_DONT_OVERWRITE); // 40*1024*8;
 
-        av_dict_set(&o->g->codec_opts, "b:a", "224000", 0);
+        av_dict_set(&o->g->codec_opts, "b:a", "224000", AV_DICT_DONT_OVERWRITE);
         parse_option(o, "ar", "44100", options);
         parse_option(o, "ac", "2", options);
 
-        av_dict_set(&o->g->format_opts, "packetsize", "2324", 0);
-        av_dict_set(&o->g->format_opts, "muxrate", "1411200", 0); // 2352 * 75 * 8;
+        av_dict_set(&o->g->format_opts, "packetsize", "2324", AV_DICT_DONT_OVERWRITE);
+        av_dict_set(&o->g->format_opts, "muxrate", "1411200", AV_DICT_DONT_OVERWRITE); // 2352 * 75 * 8;
 
         /* We have to offset the PTS, so that it is consistent with the SCR.
            SCR starts at 36000, but the first two packs contain only padding
@@ -2130,18 +2181,18 @@ static int opt_target(void *optctx, const char *opt, const char *arg)
         parse_option(o, "s", norm == PAL ? "480x576" : "480x480", options);
         parse_option(o, "r", frame_rates[norm], options);
         parse_option(o, "pix_fmt", "yuv420p", options);
-        av_dict_set(&o->g->codec_opts, "g", norm == PAL ? "15" : "18", 0);
+        av_dict_set(&o->g->codec_opts, "g", norm == PAL ? "15" : "18", AV_DICT_DONT_OVERWRITE);
 
-        av_dict_set(&o->g->codec_opts, "b:v", "2040000", 0);
-        av_dict_set(&o->g->codec_opts, "maxrate", "2516000", 0);
-        av_dict_set(&o->g->codec_opts, "minrate", "0", 0); // 1145000;
-        av_dict_set(&o->g->codec_opts, "bufsize", "1835008", 0); // 224*1024*8;
-        av_dict_set(&o->g->codec_opts, "scan_offset", "1", 0);
+        av_dict_set(&o->g->codec_opts, "b:v", "2040000", AV_DICT_DONT_OVERWRITE);
+        av_dict_set(&o->g->codec_opts, "maxrate", "2516000", AV_DICT_DONT_OVERWRITE);
+        av_dict_set(&o->g->codec_opts, "minrate", "0", AV_DICT_DONT_OVERWRITE); // 1145000;
+        av_dict_set(&o->g->codec_opts, "bufsize", "1835008", AV_DICT_DONT_OVERWRITE); // 224*1024*8;
+        av_dict_set(&o->g->codec_opts, "scan_offset", "1", AV_DICT_DONT_OVERWRITE);
 
-        av_dict_set(&o->g->codec_opts, "b:a", "224000", 0);
+        av_dict_set(&o->g->codec_opts, "b:a", "224000", AV_DICT_DONT_OVERWRITE);
         parse_option(o, "ar", "44100", options);
 
-        av_dict_set(&o->g->format_opts, "packetsize", "2324", 0);
+        av_dict_set(&o->g->format_opts, "packetsize", "2324", AV_DICT_DONT_OVERWRITE);
 
     } else if (!strcmp(arg, "dvd")) {
 
@@ -2152,17 +2203,17 @@ static int opt_target(void *optctx, const char *opt, const char *arg)
         parse_option(o, "s", norm == PAL ? "720x576" : "720x480", options);
         parse_option(o, "r", frame_rates[norm], options);
         parse_option(o, "pix_fmt", "yuv420p", options);
-        av_dict_set(&o->g->codec_opts, "g", norm == PAL ? "15" : "18", 0);
+        av_dict_set(&o->g->codec_opts, "g", norm == PAL ? "15" : "18", AV_DICT_DONT_OVERWRITE);
 
-        av_dict_set(&o->g->codec_opts, "b:v", "6000000", 0);
-        av_dict_set(&o->g->codec_opts, "maxrate", "9000000", 0);
-        av_dict_set(&o->g->codec_opts, "minrate", "0", 0); // 1500000;
-        av_dict_set(&o->g->codec_opts, "bufsize", "1835008", 0); // 224*1024*8;
+        av_dict_set(&o->g->codec_opts, "b:v", "6000000", AV_DICT_DONT_OVERWRITE);
+        av_dict_set(&o->g->codec_opts, "maxrate", "9000000", AV_DICT_DONT_OVERWRITE);
+        av_dict_set(&o->g->codec_opts, "minrate", "0", AV_DICT_DONT_OVERWRITE); // 1500000;
+        av_dict_set(&o->g->codec_opts, "bufsize", "1835008", AV_DICT_DONT_OVERWRITE); // 224*1024*8;
 
-        av_dict_set(&o->g->format_opts, "packetsize", "2048", 0);  // from www.mpucoder.com: DVD sectors contain 2048 bytes of data, this is also the size of one pack.
-        av_dict_set(&o->g->format_opts, "muxrate", "10080000", 0); // from mplex project: data_rate = 1260000. mux_rate = data_rate * 8
+        av_dict_set(&o->g->format_opts, "packetsize", "2048", AV_DICT_DONT_OVERWRITE);  // from www.mpucoder.com: DVD sectors contain 2048 bytes of data, this is also the size of one pack.
+        av_dict_set(&o->g->format_opts, "muxrate", "10080000", AV_DICT_DONT_OVERWRITE); // from mplex project: data_rate = 1260000. mux_rate = data_rate * 8
 
-        av_dict_set(&o->g->codec_opts, "b:a", "448000", 0);
+        av_dict_set(&o->g->codec_opts, "b:a", "448000", AV_DICT_DONT_OVERWRITE);
         parse_option(o, "ar", "48000", options);
 
     } else if (!strncmp(arg, "dv", 2)) {
@@ -2730,7 +2781,7 @@ const OptionDef options[] = {
     { "frames",         OPT_INT64 | HAS_ARG | OPT_SPEC | OPT_OUTPUT, { .off = OFFSET(max_frames) },
         "set the number of frames to record", "number" },
     { "tag",            OPT_STRING | HAS_ARG | OPT_SPEC |
-                        OPT_EXPERT | OPT_OUTPUT,                     { .off = OFFSET(codec_tags) },
+                        OPT_EXPERT | OPT_OUTPUT | OPT_INPUT,         { .off = OFFSET(codec_tags) },
         "force codec tag/fourcc", "fourcc/tag" },
     { "q",              HAS_ARG | OPT_EXPERT | OPT_DOUBLE |
                         OPT_SPEC | OPT_OUTPUT,                       { .off = OFFSET(qscale) },
@@ -2821,6 +2872,9 @@ const OptionDef options[] = {
     { "inter_matrix", OPT_VIDEO | HAS_ARG | OPT_EXPERT  | OPT_STRING | OPT_SPEC |
                       OPT_OUTPUT,                                                { .off = OFFSET(inter_matrices) },
         "specify inter matrix coeffs", "matrix" },
+    { "chroma_intra_matrix", OPT_VIDEO | HAS_ARG | OPT_EXPERT  | OPT_STRING | OPT_SPEC |
+                      OPT_OUTPUT,                                                { .off = OFFSET(chroma_intra_matrices) },
+        "specify intra matrix coeffs", "matrix" },
     { "top",          OPT_VIDEO | HAS_ARG | OPT_EXPERT  | OPT_INT| OPT_SPEC |
                       OPT_INPUT | OPT_OUTPUT,                                    { .off = OFFSET(top_field_first) },
         "top=1/bottom=0/auto=-1 field first", "" },
@@ -2842,6 +2896,12 @@ const OptionDef options[] = {
         "force key frames at specified timestamps", "timestamps" },
     { "b",            OPT_VIDEO | HAS_ARG | OPT_PERFILE | OPT_OUTPUT,            { .func_arg = opt_bitrate },
         "video bitrate (please use -b:v)", "bitrate" },
+    { "hwaccel",          OPT_VIDEO | OPT_STRING | HAS_ARG | OPT_EXPERT |
+                          OPT_SPEC | OPT_INPUT,                                  { .off = OFFSET(hwaccels) },
+        "use HW accelerated decoding", "hwaccel name" },
+    { "hwaccel_device",   OPT_VIDEO | OPT_STRING | HAS_ARG | OPT_EXPERT |
+                          OPT_SPEC | OPT_INPUT,                                  { .off = OFFSET(hwaccel_devices) },
+        "select a device for HW acceleration" "devicename" },
 
     /* audio options */
     { "aframes",        OPT_AUDIO | HAS_ARG  | OPT_PERFILE | OPT_OUTPUT,           { .func_arg = opt_audio_frames },

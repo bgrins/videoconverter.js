@@ -197,6 +197,11 @@ static int ipvideo_decode_block_opcode_0x7(IpvideoContext *s, AVFrame *frame)
     unsigned char P[2];
     unsigned int flags;
 
+    if (bytestream2_get_bytes_left(&s->stream_ptr) < 4) {
+        av_log(s->avctx, AV_LOG_ERROR, "too little data for opcode 0x7\n");
+        return AVERROR_INVALIDDATA;
+    }
+
     /* 2-color encoding */
     P[0] = bytestream2_get_byte(&s->stream_ptr);
     P[1] = bytestream2_get_byte(&s->stream_ptr);
@@ -235,6 +240,11 @@ static int ipvideo_decode_block_opcode_0x8(IpvideoContext *s, AVFrame *frame)
     int x, y;
     unsigned char P[4];
     unsigned int flags = 0;
+
+    if (bytestream2_get_bytes_left(&s->stream_ptr) < 12) {
+        av_log(s->avctx, AV_LOG_ERROR, "too little data for opcode 0x8\n");
+        return AVERROR_INVALIDDATA;
+    }
 
     /* 2-color encoding for each 4x4 quadrant, or 2-color encoding on
      * either top and bottom or left and right halves */
@@ -308,6 +318,11 @@ static int ipvideo_decode_block_opcode_0x9(IpvideoContext *s, AVFrame *frame)
     int x, y;
     unsigned char P[4];
 
+    if (bytestream2_get_bytes_left(&s->stream_ptr) < 8) {
+        av_log(s->avctx, AV_LOG_ERROR, "too little data for opcode 0x9\n");
+        return AVERROR_INVALIDDATA;
+    }
+
     /* 4-color encoding */
     bytestream2_get_buffer(&s->stream_ptr, P, 4);
 
@@ -373,6 +388,11 @@ static int ipvideo_decode_block_opcode_0xA(IpvideoContext *s, AVFrame *frame)
     int x, y;
     unsigned char P[8];
     int flags = 0;
+
+    if (bytestream2_get_bytes_left(&s->stream_ptr) < 16) {
+        av_log(s->avctx, AV_LOG_ERROR, "too little data for opcode 0xA\n");
+        return AVERROR_INVALIDDATA;
+    }
 
     bytestream2_get_buffer(&s->stream_ptr, P, 4);
 
@@ -466,6 +486,11 @@ static int ipvideo_decode_block_opcode_0xD(IpvideoContext *s, AVFrame *frame)
 {
     int y;
     unsigned char P[2];
+
+    if (bytestream2_get_bytes_left(&s->stream_ptr) < 4) {
+        av_log(s->avctx, AV_LOG_ERROR, "too little data for opcode 0xD\n");
+        return AVERROR_INVALIDDATA;
+    }
 
     /* 4-color block encoding: each 4x4 block is a different color */
     for (y = 0; y < 8; y++) {

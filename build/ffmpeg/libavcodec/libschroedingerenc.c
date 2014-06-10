@@ -47,9 +47,6 @@ typedef struct SchroEncoderParams {
     /** Schroedinger frame format */
     SchroFrameFormat frame_format;
 
-    /** frame being encoded */
-    AVFrame picture;
-
     /** frame size */
     int frame_size;
 
@@ -162,7 +159,9 @@ static av_cold int libschroedinger_encode_init(AVCodecContext *avctx)
                                                     avctx->width,
                                                     avctx->height);
 
-    avctx->coded_frame = &p_schro_params->picture;
+    avctx->coded_frame = av_frame_alloc();
+    if (!avctx->coded_frame)
+        return AVERROR(ENOMEM);
 
     if (!avctx->gop_size) {
         schro_encoder_setting_set_double(p_schro_params->encoder,
@@ -294,21 +293,27 @@ static int libschroedinger_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     /* Now check to see if we have any output from the encoder. */
     while (go) {
+        int err;
         SchroStateEnum state;
         state = schro_encoder_wait(encoder);
         switch (state) {
         case SCHRO_STATE_HAVE_BUFFER:
         case SCHRO_STATE_END_OF_STREAM:
             enc_buf = schro_encoder_pull(encoder, &presentation_frame);
-            av_assert0(enc_buf->length > 0);
+            if (enc_buf->length <= 0)
+                return AVERROR_BUG;
             parse_code = enc_buf->data[4];
 
             /* All non-frame data is prepended to actual frame data to
              * be able to set the pts correctly. So we don't write data
              * to the frame output queue until we actually have a frame
              */
-            p_schro_params->enc_buf = av_realloc(p_schro_params->enc_buf,
-                                                 p_schro_params->enc_buf_size + enc_buf->length);
+            if ((err = av_reallocp(&p_schro_params->enc_buf,
+                                   p_schro_params->enc_buf_size +
+                                   enc_buf->length)) < 0) {
+                p_schro_params->enc_buf_size = 0;
+                return err;
+            }
 
             memcpy(p_schro_params->enc_buf + p_schro_params->enc_buf_size,
                    enc_buf->data, enc_buf->length);
@@ -426,6 +431,8 @@ static int libschroedinger_encode_close(AVCodecContext *avctx)
 
     /* Free the video format structure. */
     av_freep(&p_schro_params->format);
+
+    av_frame_free(&avctx->coded_frame);
 
     return 0;
 }

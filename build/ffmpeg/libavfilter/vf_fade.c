@@ -25,6 +25,7 @@
  * based heavily on vf_negate.c by Bobby Bingham
  */
 
+#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/common.h"
 #include "libavutil/eval.h"
@@ -53,7 +54,6 @@ typedef struct {
     int type;
     int factor, fade_per_frame;
     int start_frame, nb_frames;
-    unsigned int frame_index;
     int hsub, vsub, bpp;
     unsigned int black_level, black_level_scaled;
     uint8_t is_packed_rgb;
@@ -61,6 +61,8 @@ typedef struct {
     int alpha;
     uint64_t start_time, duration;
     enum {VF_FADE_WAITING=0, VF_FADE_FADING, VF_FADE_DONE} fade_state;
+    uint8_t color_rgba[4];  ///< fade color
+    int black_fade;         ///< if color_rgba is black
 } FadeContext;
 
 static av_cold int init(AVFilterContext *ctx)
@@ -89,11 +91,13 @@ static av_cold int init(AVFilterContext *ctx)
                (s->duration / (double)AV_TIME_BASE),s->alpha);
     }
 
+    s->black_fade = !memcmp(s->color_rgba, "\x00\x00\x00\xff", 4);
     return 0;
 }
 
 static int query_formats(AVFilterContext *ctx)
 {
+    const FadeContext *s = ctx->priv;
     static const enum AVPixelFormat pix_fmts[] = {
         AV_PIX_FMT_YUV444P,  AV_PIX_FMT_YUV422P,  AV_PIX_FMT_YUV420P,
         AV_PIX_FMT_YUV411P,  AV_PIX_FMT_YUV410P,
@@ -105,8 +109,17 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_RGBA,     AV_PIX_FMT_BGRA,
         AV_PIX_FMT_NONE
     };
+    static const enum AVPixelFormat pix_fmts_rgb[] = {
+        AV_PIX_FMT_RGB24,    AV_PIX_FMT_BGR24,
+        AV_PIX_FMT_ARGB,     AV_PIX_FMT_ABGR,
+        AV_PIX_FMT_RGBA,     AV_PIX_FMT_BGRA,
+        AV_PIX_FMT_NONE
+    };
 
-    ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    if (s->black_fade)
+        ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    else
+        ff_set_common_formats(ctx, ff_make_format_list(pix_fmts_rgb));
     return 0;
 }
 
@@ -135,6 +148,47 @@ static int config_props(AVFilterLink *inlink)
     /* 32768 = 1 << 15, it is an integer representation
      * of 0.5 and is for rounding. */
     s->black_level_scaled = (s->black_level << 16) + 32768;
+    return 0;
+}
+
+static av_always_inline void filter_rgb(FadeContext *s, const AVFrame *frame,
+                                        int slice_start, int slice_end,
+                                        int do_alpha, int step)
+{
+    int i, j;
+    const uint8_t r_idx  = s->rgba_map[R];
+    const uint8_t g_idx  = s->rgba_map[G];
+    const uint8_t b_idx  = s->rgba_map[B];
+    const uint8_t a_idx  = s->rgba_map[A];
+    const uint8_t *c = s->color_rgba;
+
+    for (i = slice_start; i < slice_end; i++) {
+        uint8_t *p = frame->data[0] + i * frame->linesize[0];
+        for (j = 0; j < frame->width; j++) {
+#define INTERP(c_name, c_idx) av_clip_uint8(((c[c_idx]<<16) + ((int)p[c_name] - (int)c[c_idx]) * s->factor + (1<<15)) >> 16)
+            p[r_idx] = INTERP(r_idx, 0);
+            p[g_idx] = INTERP(g_idx, 1);
+            p[b_idx] = INTERP(b_idx, 2);
+            if (do_alpha)
+                p[a_idx] = INTERP(a_idx, 3);
+            p += step;
+        }
+    }
+}
+
+static int filter_slice_rgb(AVFilterContext *ctx, void *arg, int jobnr,
+                            int nb_jobs)
+{
+    FadeContext *s = ctx->priv;
+    AVFrame *frame = arg;
+    int slice_start = (frame->height *  jobnr   ) / nb_jobs;
+    int slice_end   = (frame->height * (jobnr+1)) / nb_jobs;
+
+    if      (s->alpha)    filter_rgb(s, frame, slice_start, slice_end, 1, 4);
+    else if (s->bpp == 3) filter_rgb(s, frame, slice_start, slice_end, 0, 3);
+    else if (s->bpp == 4) filter_rgb(s, frame, slice_start, slice_end, 0, 4);
+    else                  av_assert0(0);
+
     return 0;
 }
 
@@ -222,36 +276,36 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     // Calculate Fade assuming this is a Fade In
     if (s->fade_state == VF_FADE_WAITING) {
         s->factor=0;
-        if ((frame_timestamp >= (s->start_time/(double)AV_TIME_BASE))
-            && (s->frame_index >= s->start_frame)) {
+        if (frame_timestamp >= s->start_time/(double)AV_TIME_BASE
+            && inlink->frame_count >= s->start_frame) {
             // Time to start fading
             s->fade_state = VF_FADE_FADING;
 
             // Save start time in case we are starting based on frames and fading based on time
-            if ((s->start_time == 0) && (s->start_frame != 0)) {
+            if (s->start_time == 0 && s->start_frame != 0) {
                 s->start_time = frame_timestamp*(double)AV_TIME_BASE;
             }
 
             // Save start frame in case we are starting based on time and fading based on frames
-            if ((s->start_time != 0) && (s->start_frame == 0)) {
-                s->start_frame = s->frame_index;
+            if (s->start_time != 0 && s->start_frame == 0) {
+                s->start_frame = inlink->frame_count;
             }
         }
     }
     if (s->fade_state == VF_FADE_FADING) {
         if (s->duration == 0) {
             // Fading based on frame count
-            s->factor = (s->frame_index - s->start_frame) * s->fade_per_frame;
-            if (s->frame_index > (s->start_frame + s->nb_frames)) {
+            s->factor = (inlink->frame_count - s->start_frame) * s->fade_per_frame;
+            if (inlink->frame_count > s->start_frame + s->nb_frames) {
                 s->fade_state = VF_FADE_DONE;
             }
 
         } else {
             // Fading based on duration
-            s->factor = (frame_timestamp - (s->start_time/(double)AV_TIME_BASE))
+            s->factor = (frame_timestamp - s->start_time/(double)AV_TIME_BASE)
                             * (float) UINT16_MAX / (s->duration/(double)AV_TIME_BASE);
-            if (frame_timestamp > ((s->start_time/(double)AV_TIME_BASE)
-                                    + (s->duration/(double)AV_TIME_BASE))) {
+            if (frame_timestamp > s->start_time/(double)AV_TIME_BASE
+                                  + s->duration/(double)AV_TIME_BASE) {
                 s->fade_state = VF_FADE_DONE;
             }
         }
@@ -263,7 +317,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     s->factor = av_clip_uint16(s->factor);
 
     // Invert fade_factor if Fading Out
-    if (s->type == 1) {
+    if (s->type == FADE_OUT) {
         s->factor=UINT16_MAX-s->factor;
     }
 
@@ -271,8 +325,11 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
         if (s->alpha) {
             ctx->internal->execute(ctx, filter_slice_alpha, frame, NULL,
                                 FFMIN(frame->height, ctx->graph->nb_threads));
+        } else if (s->is_packed_rgb && !s->black_fade) {
+            ctx->internal->execute(ctx, filter_slice_rgb, frame, NULL,
+                                   FFMIN(frame->height, ctx->graph->nb_threads));
         } else {
-            /* luma or rgb plane */
+            /* luma, or rgb plane in case of black */
             ctx->internal->execute(ctx, filter_slice_luma, frame, NULL,
                                 FFMIN(frame->height, ctx->graph->nb_threads));
 
@@ -283,8 +340,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
             }
         }
     }
-
-    s->frame_index++;
 
     return ff_filter_frame(inlink->dst->outputs[0], frame);
 }
@@ -315,6 +370,8 @@ static const AVOption fade_options[] = {
                                                     OFFSET(duration),    AV_OPT_TYPE_DURATION, {.i64 = 0. }, 0, INT32_MAX, FLAGS },
     { "d",           "Duration of the effect in seconds.",
                                                     OFFSET(duration),    AV_OPT_TYPE_DURATION, {.i64 = 0. }, 0, INT32_MAX, FLAGS },
+    { "color",       "set color",                   OFFSET(color_rgba),  AV_OPT_TYPE_COLOR,    {.str = "black"}, CHAR_MIN, CHAR_MAX, FLAGS },
+    { "c",           "set color",                   OFFSET(color_rgba),  AV_OPT_TYPE_COLOR,    {.str = "black"}, CHAR_MIN, CHAR_MAX, FLAGS },
     { NULL }
 };
 

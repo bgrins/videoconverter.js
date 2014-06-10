@@ -58,31 +58,26 @@ static int concatenate_packet(unsigned int* offset,
                               const ogg_packet* packet)
 {
     const char* message = NULL;
-    uint8_t* newdata    = NULL;
     int newsize = avc_context->extradata_size + 2 + packet->bytes;
-    int ret;
+    int err = AVERROR_INVALIDDATA;
 
     if (packet->bytes < 0) {
         message = "ogg_packet has negative size";
-        ret = AVERROR_INVALIDDATA;
     } else if (packet->bytes > 0xffff) {
         message = "ogg_packet is larger than 65535 bytes";
-        ret = AVERROR_INVALIDDATA;
     } else if (newsize < avc_context->extradata_size) {
         message = "extradata_size would overflow";
-        ret = AVERROR_INVALIDDATA;
     } else {
-        newdata = av_realloc(avc_context->extradata, newsize);
-        if (!newdata)
+        if ((err = av_reallocp(&avc_context->extradata, newsize)) < 0) {
+            avc_context->extradata_size = 0;
             message = "av_realloc failed";
-        ret = AVERROR(ENOMEM);
+        }
     }
     if (message) {
         av_log(avc_context, AV_LOG_ERROR, "concatenate_packet failed: %s\n", message);
-        return ret;
+        return err;
     }
 
-    avc_context->extradata      = newdata;
     avc_context->extradata_size = newsize;
     AV_WB16(avc_context->extradata + (*offset), packet->bytes);
     *offset += 2;
@@ -264,7 +259,7 @@ static av_cold int encode_init(AVCodecContext* avc_context)
     th_comment_clear(&t_comment);
 
     /* Set up the output AVFrame */
-    avc_context->coded_frame= avcodec_alloc_frame();
+    avc_context->coded_frame = av_frame_alloc();
 
     return 0;
 }

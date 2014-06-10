@@ -259,7 +259,7 @@ static void mpegts_write_pat(AVFormatContext *s)
                           data, q - data);
 }
 
-static void mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
+static int mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
 {
     MpegTSWrite *ts = s->priv_data;
     uint8_t data[1012], *q, *desc_length_ptr, *program_info_length_ptr;
@@ -315,6 +315,10 @@ static void mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
             stream_type = STREAM_TYPE_PRIVATE_DATA;
             break;
         }
+
+        if (q - data > sizeof(data) - 32)
+            return AVERROR(EINVAL);
+
         *q++ = stream_type;
         put16(&q, 0xe000 | ts_st->pid);
         desc_length_ptr = q;
@@ -346,7 +350,7 @@ static void mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
                 len_ptr = q++;
                 *len_ptr = 0;
 
-                for (p = lang->value; next && *len_ptr < 255 / 4 * 4; p = next + 1) {
+                for (p = lang->value; next && *len_ptr < 255 / 4 * 4 && q - data < sizeof(data) - 4; p = next + 1) {
                     next = strchr(p, ',');
                     if (strlen(p) != 3 && (!next || next != p + 3))
                         continue; /* not a 3-letter code */
@@ -373,21 +377,79 @@ static void mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
             break;
         case AVMEDIA_TYPE_SUBTITLE:
             {
-                const char *language;
-                language = lang && strlen(lang->value)==3 ? lang->value : "eng";
-                *q++ = 0x59;
-                *q++ = 8;
-                *q++ = language[0];
-                *q++ = language[1];
-                *q++ = language[2];
-                *q++ = 0x10; /* normal subtitles (0x20 = if hearing pb) */
-                if(st->codec->extradata_size == 4) {
-                    memcpy(q, st->codec->extradata, 4);
-                    q += 4;
-                } else {
-                    put16(&q, 1); /* page id */
-                    put16(&q, 1); /* ancillary page id */
-                }
+                const char default_language[] = "und";
+                const char *language = lang && strlen(lang->value) >= 3 ? lang->value : default_language;
+
+                if (st->codec->codec_id == AV_CODEC_ID_DVB_SUBTITLE) {
+                    uint8_t *len_ptr;
+                    int extradata_copied = 0;
+
+                    *q++ = 0x59; /* subtitling_descriptor */
+                    len_ptr = q++;
+
+                    while (strlen(language) >= 3 && (sizeof(data) - (q - data)) >= 8) { /* 8 bytes per DVB subtitle substream data */
+                        *q++ = *language++;
+                        *q++ = *language++;
+                        *q++ = *language++;
+                        /* Skip comma */
+                        if (*language != '\0')
+                            language++;
+
+                        if (st->codec->extradata_size - extradata_copied >= 5) {
+                            *q++ = st->codec->extradata[extradata_copied + 4]; /* subtitling_type */
+                            memcpy(q, st->codec->extradata + extradata_copied, 4); /* composition_page_id and ancillary_page_id */
+                            extradata_copied += 5;
+                            q += 4;
+                        } else {
+                            /* subtitling_type:
+                             * 0x10 - normal with no monitor aspect ratio criticality
+                             * 0x20 - for the hard of hearing with no monitor aspect ratio criticality */
+                            *q++ = (st->disposition & AV_DISPOSITION_HEARING_IMPAIRED) ? 0x20 : 0x10;
+                            if ((st->codec->extradata_size == 4) && (extradata_copied == 0)) {
+                                /* support of old 4-byte extradata format */
+                                memcpy(q, st->codec->extradata, 4); /* composition_page_id and ancillary_page_id */
+                                extradata_copied += 4;
+                                q += 4;
+                            } else {
+                                put16(&q, 1); /* composition_page_id */
+                                put16(&q, 1); /* ancillary_page_id */
+                            }
+                        }
+                    }
+
+                    *len_ptr = q - len_ptr - 1;
+                } else if (st->codec->codec_id == AV_CODEC_ID_DVB_TELETEXT) {
+                    uint8_t *len_ptr = NULL;
+                    int extradata_copied = 0;
+
+                    /* The descriptor tag. teletext_descriptor */
+                    *q++ = 0x56;
+                    len_ptr = q++;
+
+                    while (strlen(language) >= 3 && q - data < sizeof(data) - 6) {
+                        *q++ = *language++;
+                        *q++ = *language++;
+                        *q++ = *language++;
+                        /* Skip comma */
+                        if (*language != '\0')
+                            language++;
+
+                        if (st->codec->extradata_size - 1 > extradata_copied) {
+                            memcpy(q, st->codec->extradata + extradata_copied, 2);
+                            extradata_copied += 2;
+                            q += 2;
+                        } else {
+                            /* The Teletext descriptor:
+                             * teletext_type: This 5-bit field indicates the type of Teletext page indicated. (0x01 Initial Teletext page)
+                             * teletext_magazine_number: This is a 3-bit field which identifies the magazine number.
+                             * teletext_page_number: This is an 8-bit field giving two 4-bit hex digits identifying the page number. */
+                            *q++ = 0x08;
+                            *q++ = 0x00;
+                        }
+                    }
+
+                    *len_ptr = q - len_ptr - 1;
+                 }
             }
             break;
         case AVMEDIA_TYPE_VIDEO:
@@ -418,6 +480,7 @@ static void mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
     }
     mpegts_write_section1(&service->pmt, PMT_TID, service->sid, ts->tables_version, 0, 0,
                           data, q - data);
+    return 0;
 }
 
 /* NOTE: str == NULL is accepted for an empty string */
@@ -859,7 +922,7 @@ static void mpegts_write_pes(AVFormatContext *s, AVStream *st,
     MpegTSWrite *ts = s->priv_data;
     uint8_t buf[TS_PACKET_SIZE];
     uint8_t *q;
-    int val, is_start, len, header_len, write_pcr, private_code, flags;
+    int val, is_start, len, header_len, write_pcr, is_dvb_subtitle, is_dvb_teletext, flags;
     int afc_len, stuffing_len;
     int64_t pcr = -1; /* avoid warning */
     int64_t delay = av_rescale(s->max_delay, 90000, AV_TIME_BASE);
@@ -923,11 +986,13 @@ static void mpegts_write_pes(AVFormatContext *s, AVStream *st,
         }
         if (is_start) {
             int pes_extension = 0;
+            int pes_header_stuffing_bytes = 0;
             /* write PES header */
             *q++ = 0x00;
             *q++ = 0x00;
             *q++ = 0x01;
-            private_code = 0;
+            is_dvb_subtitle = 0;
+            is_dvb_teletext = 0;
             if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
                 if (st->codec->codec_id == AV_CODEC_ID_DIRAC) {
                     *q++ = 0xfd;
@@ -944,8 +1009,12 @@ static void mpegts_write_pes(AVFormatContext *s, AVStream *st,
                 *q++ = 0xfd;
             } else {
                 *q++ = 0xbd;
-                if (st->codec->codec_type == AVMEDIA_TYPE_SUBTITLE) {
-                    private_code = 0x20;
+                if(st->codec->codec_type == AVMEDIA_TYPE_SUBTITLE) {
+                    if (st->codec->codec_id == AV_CODEC_ID_DVB_SUBTITLE) {
+                        is_dvb_subtitle = 1;
+                    } else if (st->codec->codec_id == AV_CODEC_ID_DVB_TELETEXT) {
+                        is_dvb_teletext = 1;
+                    }
                 }
             }
             header_len = 0;
@@ -982,9 +1051,16 @@ static void mpegts_write_pes(AVFormatContext *s, AVStream *st,
                         flags |= 0x01;
                         header_len += 3;
             }
+            if (is_dvb_teletext) {
+                pes_header_stuffing_bytes = 0x24 - header_len;
+                header_len = 0x24;
+            }
             len = payload_size + header_len + 3;
-            if (private_code != 0)
-                len++;
+            /* 3 extra bytes should be added to DVB subtitle payload: 0x20 0x00 at the beginning and trailing 0xff */
+            if (is_dvb_subtitle) {
+                len += 3;
+                payload_size++;
+            }
             if (len > 0xffff)
                 len = 0;
             *q++ = len >> 8;
@@ -1025,8 +1101,17 @@ static void mpegts_write_pes(AVFormatContext *s, AVStream *st,
               }
 
 
-            if (private_code != 0)
-                *q++ = private_code;
+            if (is_dvb_subtitle) {
+                /* First two fields of DVB subtitles PES data:
+                 * data_identifier: for DVB subtitle streams shall be coded with the value 0x20
+                 * subtitle_stream_id: for DVB subtitle stream shall be identified by the value 0x00 */
+                *q++ = 0x20;
+                *q++ = 0x00;
+            }
+            if (is_dvb_teletext) {
+                memset(q, 0xff, pes_header_stuffing_bytes);
+                q += pes_header_stuffing_bytes;
+            }
             is_start = 0;
         }
         /* header size */
@@ -1057,7 +1142,14 @@ static void mpegts_write_pes(AVFormatContext *s, AVStream *st,
                 }
             }
         }
-        memcpy(buf + TS_PACKET_SIZE - len, payload, len);
+
+        if (is_dvb_subtitle && payload_size == len) {
+            memcpy(buf + TS_PACKET_SIZE - len, payload, len - 1);
+            buf[TS_PACKET_SIZE - 1] = 0xff; /* end_of_PES_data_field_marker: an 8-bit field with fixed contents 0xff for DVB subtitle */
+        } else {
+            memcpy(buf + TS_PACKET_SIZE - len, payload, len);
+        }
+
         payload += len;
         payload_size -= len;
         mpegts_prefix_m2ts_header(s);
@@ -1109,9 +1201,9 @@ static int mpegts_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
 
         if (pkt->size < 5 || AV_RB32(pkt->data) != 0x0000001) {
             if (!st->nb_frames) {
-            av_log(s, AV_LOG_ERROR, "H.264 bitstream malformed, "
-                   "no startcode found, use the h264_mp4toannexb bitstream filter (-bsf h264_mp4toannexb)\n");
-            return AVERROR(EINVAL);
+                av_log(s, AV_LOG_ERROR, "H.264 bitstream malformed, "
+                       "no startcode found, use the h264_mp4toannexb bitstream filter (-bsf h264_mp4toannexb)\n");
+                return AVERROR(EINVAL);
             }
             av_log(s, AV_LOG_WARNING, "H.264 bitstream error, startcode missing\n");
         }

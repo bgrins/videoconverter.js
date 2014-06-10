@@ -72,6 +72,7 @@ int ff_put_wav_header(AVIOContext *pb, AVCodecContext *enc)
 
     waveformatextensible = (enc->channels > 2 && enc->channel_layout) ||
                            enc->sample_rate > 48000 ||
+                           enc->codec_id == AV_CODEC_ID_EAC3 ||
                            av_get_bits_per_sample(enc->codec_id) > 16;
 
     if (waveformatextensible)
@@ -183,10 +184,14 @@ int ff_put_wav_header(AVIOContext *pb, AVCodecContext *enc)
         /* dwChannelMask */
         avio_wl32(pb, enc->channel_layout);
         /* GUID + next 3 */
+        if (enc->codec_id == AV_CODEC_ID_EAC3) {
+            ff_put_guid(pb, get_codec_guid(enc->codec_id, ff_codec_wav_guids));
+        } else {
         avio_wl32(pb, enc->codec_tag);
         avio_wl32(pb, 0x00100000);
         avio_wl32(pb, 0xAA000080);
         avio_wl32(pb, 0x719B3800);
+        }
     } else {
         avio_wl16(pb, riff_extradata - riff_extradata_start); /* cbSize */
     }
@@ -201,10 +206,10 @@ int ff_put_wav_header(AVIOContext *pb, AVCodecContext *enc)
 
 /* BITMAPINFOHEADER header */
 void ff_put_bmp_header(AVIOContext *pb, AVCodecContext *enc,
-                       const AVCodecTag *tags, int for_asf)
+                       const AVCodecTag *tags, int for_asf, int ignore_extradata)
 {
     /* size */
-    avio_wl32(pb, 40 + enc->extradata_size);
+    avio_wl32(pb, 40 + (ignore_extradata ? 0 : enc->extradata_size));
     avio_wl32(pb, enc->width);
     //We always store RGB TopDown
     avio_wl32(pb, enc->codec_tag ? enc->height : -enc->height);
@@ -220,10 +225,12 @@ void ff_put_bmp_header(AVIOContext *pb, AVCodecContext *enc,
     avio_wl32(pb, 0);
     avio_wl32(pb, 0);
 
-    avio_write(pb, enc->extradata, enc->extradata_size);
+    if (!ignore_extradata) {
+        avio_write(pb, enc->extradata, enc->extradata_size);
 
-    if (!for_asf && enc->extradata_size & 1)
-        avio_w8(pb, 0);
+        if (!for_asf && enc->extradata_size & 1)
+            avio_w8(pb, 0);
+    }
 }
 
 void ff_parse_specific_params(AVCodecContext *stream, int *au_rate,
@@ -309,4 +316,20 @@ void ff_riff_write_info(AVFormatContext *s)
                              NULL, AV_DICT_MATCH_CASE)))
             ff_riff_write_info_tag(s->pb, t->key, t->value);
     ff_end_tag(pb, list_pos);
+}
+
+void ff_put_guid(AVIOContext *s, const ff_asf_guid *g)
+{
+    av_assert0(sizeof(*g) == 16);
+    avio_write(s, *g, sizeof(*g));
+}
+
+const ff_asf_guid *get_codec_guid(enum AVCodecID id, const AVCodecGuid *av_guid)
+{
+    int i;
+    for (i = 0; av_guid[i].id != AV_CODEC_ID_NONE; i++) {
+        if (id == av_guid[i].id)
+            return &(av_guid[i].guid);
+    }
+    return NULL;
 }

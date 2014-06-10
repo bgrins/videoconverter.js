@@ -300,7 +300,7 @@ static int rv20_decode_picture_header(RVDecContext *rv)
 {
     MpegEncContext *s = &rv->m;
     int seq, mb_pos, i, ret;
-    int rpr_bits;
+    int rpr_max;
 
     i = get_bits(&s->gb, 2);
     switch(i) {
@@ -341,10 +341,10 @@ static int rv20_decode_picture_header(RVDecContext *rv)
     else
         seq = get_bits(&s->gb, 13) << 2;
 
-    rpr_bits = s->avctx->extradata[1] & 7;
-    if (rpr_bits) {
+    rpr_max = s->avctx->extradata[1] & 7;
+    if (rpr_max) {
         int f, new_w, new_h;
-        rpr_bits = FFMIN((rpr_bits >> 1) + 1, 3);
+        int rpr_bits = av_log2(rpr_max) + 1;
 
         f = get_bits(&s->gb, rpr_bits);
 
@@ -364,6 +364,8 @@ static int rv20_decode_picture_header(RVDecContext *rv)
             AVRational old_aspect = s->avctx->sample_aspect_ratio;
             av_log(s->avctx, AV_LOG_DEBUG,
                    "attempting to change resolution to %dx%d\n", new_w, new_h);
+            if (av_image_check_size(new_w, new_h, 0, s->avctx) < 0)
+                return AVERROR_INVALIDDATA;
             ff_MPV_common_end(s);
 
             // attempt to keep aspect during typical resolution switches
@@ -385,7 +387,7 @@ static int rv20_decode_picture_header(RVDecContext *rv)
         }
 
         if (s->avctx->debug & FF_DEBUG_PICT_INFO) {
-            av_log(s->avctx, AV_LOG_DEBUG, "F %d/%d\n", f, rpr_bits);
+            av_log(s->avctx, AV_LOG_DEBUG, "F %d/%d/%d\n", f, rpr_bits, rpr_max);
         }
     }
     if (av_image_check_size(s->width, s->height, 0, s->avctx) < 0)
@@ -728,7 +730,10 @@ static int rv10_decode_frame(AVCodecContext *avctx,
             offset + FFMAX(size, size2) > buf_size)
             return AVERROR_INVALIDDATA;
 
-        if (rv10_decode_packet(avctx, buf + offset, size, size2) > 8 * size)
+        if ((ret = rv10_decode_packet(avctx, buf + offset, size, size2)) < 0)
+            return ret;
+
+        if (ret > 8 * size)
             i++;
     }
 

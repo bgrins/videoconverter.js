@@ -34,6 +34,7 @@
 
 static int rv30_parse_slice_header(RV34DecContext *r, GetBitContext *gb, SliceInfo *si)
 {
+    AVCodecContext *avctx = r->s.avctx;
     int mb_bits;
     int w = r->s.width, h = r->s.height;
     int mb_size;
@@ -49,13 +50,20 @@ static int rv30_parse_slice_header(RV34DecContext *r, GetBitContext *gb, SliceIn
     si->quant = get_bits(gb, 5);
     skip_bits1(gb);
     si->pts = get_bits(gb, 13);
-    rpr = get_bits(gb, r->rpr);
-    if (r->s.avctx->extradata_size < 8 + rpr*2) {
-        av_log(r->s.avctx, AV_LOG_WARNING,
-               "Extradata does not contain selected resolution\n");
-        rpr = 0;
-    }
+    rpr = get_bits(gb, av_log2(r->max_rpr) + 1);
     if(rpr){
+        if (rpr > r->max_rpr) {
+            av_log(avctx, AV_LOG_ERROR, "rpr too large\n");
+            return AVERROR_INVALIDDATA;
+        }
+
+        if (avctx->extradata_size < rpr * 2 + 8) {
+            av_log(avctx, AV_LOG_ERROR,
+                   "Insufficient extradata - need at least %d bytes, got %d\n",
+                   8 + rpr * 2, avctx->extradata_size);
+            return AVERROR(EINVAL);
+        }
+
         w = r->s.avctx->extradata[6 + rpr*2] << 2;
         h = r->s.avctx->extradata[7 + rpr*2] << 2;
     }
@@ -257,12 +265,13 @@ static av_cold int rv30_decode_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "Extradata is too small.\n");
         return -1;
     }
-    r->rpr = (avctx->extradata[1] & 7) >> 1;
-    r->rpr = FFMIN(r->rpr + 1, 3);
-    if(avctx->extradata_size - 8 < (r->rpr - 1) * 2){
-        av_log(avctx, AV_LOG_ERROR, "Insufficient extradata - need at least %d bytes, got %d\n",
-               6 + r->rpr * 2, avctx->extradata_size);
+
+    r->max_rpr = avctx->extradata[1] & 7;
+    if(avctx->extradata_size < 2*r->max_rpr + 8){
+        av_log(avctx, AV_LOG_WARNING, "Insufficient extradata - need at least %d bytes, got %d\n",
+               2*r->max_rpr + 8, avctx->extradata_size);
     }
+
     r->parse_slice_header = rv30_parse_slice_header;
     r->decode_intra_types = rv30_decode_intra_types;
     r->decode_mb_info     = rv30_decode_mb_info;

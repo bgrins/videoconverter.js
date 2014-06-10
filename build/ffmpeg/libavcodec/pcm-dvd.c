@@ -70,6 +70,7 @@ static int pcm_dvd_parse_header(AVCodecContext *avctx, const uint8_t *header)
     /* early exit if the header didn't change apart from the frame number */
     if (s->last_header == header_int)
         return 0;
+    s->last_header = -1;
 
     if (avctx->debug & FF_DEBUG_PICT_INFO)
         av_dlog(avctx, "pcm_dvd_parse_header: header = %02x%02x%02x\n",
@@ -173,6 +174,17 @@ static void *pcm_dvd_decode_samples(AVCodecContext *avctx, const uint8_t *src,
 #endif
         return dst16;
     case 20:
+        if (avctx->channels == 1) {
+            do {
+                for (i = 2; i; i--) {
+                    dst32[0] = bytestream2_get_be16u(&gb) << 16;
+                    dst32[1] = bytestream2_get_be16u(&gb) << 16;
+                    t = bytestream2_get_byteu(&gb);
+                    *dst32++ += (t & 0xf0) << 8;
+                    *dst32++ += (t & 0x0f) << 12;
+                }
+            } while (--blocks);
+        } else {
         do {
             for (i = s->groups_per_block; i; i--) {
                 dst32[0] = bytestream2_get_be16u(&gb) << 16;
@@ -180,15 +192,26 @@ static void *pcm_dvd_decode_samples(AVCodecContext *avctx, const uint8_t *src,
                 dst32[2] = bytestream2_get_be16u(&gb) << 16;
                 dst32[3] = bytestream2_get_be16u(&gb) << 16;
                 t = bytestream2_get_byteu(&gb);
-                *dst32 += (t & 0xf0) << 8;
-                *dst32 += (t & 0x0f) << 12;
+                *dst32++ += (t & 0xf0) << 8;
+                *dst32++ += (t & 0x0f) << 12;
                 t = bytestream2_get_byteu(&gb);
-                *dst32 += (t & 0xf0) << 8;
-                *dst32 += (t & 0x0f) << 12;
+                *dst32++ += (t & 0xf0) << 8;
+                *dst32++ += (t & 0x0f) << 12;
             }
         } while (--blocks);
+        }
         return dst32;
     case 24:
+        if (avctx->channels == 1) {
+            do {
+                for (i = 2; i; i--) {
+                    dst32[0] = bytestream2_get_be16u(&gb) << 16;
+                    dst32[1] = bytestream2_get_be16u(&gb) << 16;
+                    *dst32++ += bytestream2_get_byteu(&gb) << 8;
+                    *dst32++ += bytestream2_get_byteu(&gb) << 8;
+                }
+            } while (--blocks);
+        } else {
         do {
             for (i = s->groups_per_block; i; i--) {
                 dst32[0] = bytestream2_get_be16u(&gb) << 16;
@@ -201,6 +224,7 @@ static void *pcm_dvd_decode_samples(AVCodecContext *avctx, const uint8_t *src,
                 *dst32++ += bytestream2_get_byteu(&gb) << 8;
             }
         } while (--blocks);
+        }
         return dst32;
     default:
         return NULL;
@@ -225,8 +249,8 @@ static int pcm_dvd_decode_frame(AVCodecContext *avctx, void *data,
 
     if ((retval = pcm_dvd_parse_header(avctx, src)))
         return retval;
-    if (s->last_block_size != s->block_size) {
-        av_log(avctx, AV_LOG_WARNING, "block_size has changed\n");
+    if (s->last_block_size && s->last_block_size != s->block_size) {
+        av_log(avctx, AV_LOG_WARNING, "block_size has changed %d != %d\n", s->last_block_size, s->block_size);
         s->extra_sample_count = 0;
     }
     s->last_block_size = s->block_size;

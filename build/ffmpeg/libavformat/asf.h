@@ -43,6 +43,7 @@ typedef struct ASFStream {
     int timestamp;
     int64_t duration;
     int skip_to_key;
+    int pkt_clean;
 
     int ds_span;                /* descrambling  */
     int ds_packet_size;
@@ -187,7 +188,5 @@ extern const AVMetadataConv ff_asf_metadata_conv[];
 #define ASF_PL_FLAG_KEY_FRAME 0x80 //1000 0000
 
 extern AVInputFormat ff_asf_demuxer;
-
-void ff_put_guid(AVIOContext *s, const ff_asf_guid *g);
 
 #endif /* AVFORMAT_ASF_H */

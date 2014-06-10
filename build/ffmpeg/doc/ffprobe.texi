@@ -197,11 +197,11 @@ The information for each single packet is printed within a dedicated
 section with name "PACKET".
 
 @item -show_frames
-Show information about each frame contained in the input multimedia
-stream.
+Show information about each frame and subtitle contained in the input
+multimedia stream.
 
 The information for each single frame is printed within a dedicated
-section with name "FRAME".
+section with name "FRAME" or "SUBTITLE".
 
 @item -show_streams
 Show information about each media stream contained in the input
@@ -336,6 +336,39 @@ used for printing all the parts of the output.
 A writer may accept one or more arguments, which specify the options
 to adopt. The options are specified as a list of @var{key}=@var{value}
 pairs, separated by ":".
+
+All writers support the following options:
+
+@table @option
+@item string_validation, sv
+Set string validation mode.
+
+The following values are accepted.
+@table @samp
+@item fail
+The writer will fail immediately in case an invalid string (UTF-8)
+sequence or code point is found in the input. This is especially
+useful to validate input metadata.
+
+@item ignore
+Any validation error will be ignored. This will result in possibly
+broken output, especially with the json or xml writer.
+
+@item replace
+The writer will substitute invalid UTF-8 sequences or code points with
+the string specified with the @option{string_validation_replacement}.
+@end table
+
+Default value is @samp{replace}.
+
+@item string_validation_replacement, svr
+Set replacement string to use in case @option{string_validation} is
+set to @samp{replace}.
+
+In case the option is not specified, the writer will assume the empty
+string, that is it will remove the invalid sequences from the input
+strings.
+@end table
 
 A description of the currently available writers follows.
 
@@ -566,6 +599,7 @@ DV, GXF and AVI timecodes are available in format metadata
 
 @include config.texi
 @ifset config-all
+@set config-readonly
 @ifset config-avutil
 @include utils.texi
 @end ifset

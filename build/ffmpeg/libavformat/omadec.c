@@ -37,6 +37,7 @@
  * - Sound data organized in packets follow the EA3 header
  *   (can be encrypted using the Sony DRM!).
  *
+ * Supported decoders: ATRAC3, ATRAC3+, MP3, LPCM
  */
 
 #include "libavutil/channel_layout.h"
@@ -379,7 +380,6 @@ static int oma_read_header(AVFormatContext *s)
         st->codec->sample_rate = samplerate;
         st->codec->bit_rate    = samplerate * framesize * 8 / 2048;
         avpriv_set_pts_info(st, 64, 1, samplerate);
-        av_log(s, AV_LOG_ERROR, "Unsupported codec ATRAC3+!\n");
         break;
     case OMA_CODECID_MP3:
         st->need_parsing = AVSTREAM_PARSE_FULL_RAW;
@@ -448,7 +448,7 @@ static int oma_read_probe(AVProbeData *p)
     /* This check cannot overflow as tag_len has at most 28 bits */
     if (p->buf_size < tag_len + 5)
         /* EA3 header comes late, might be outside of the probe buffer */
-        return tag_len ? AVPROBE_SCORE_EXTENSION : 0;
+        return tag_len ? AVPROBE_SCORE_EXTENSION/2 : 0;
 
     buf += tag_len;
 

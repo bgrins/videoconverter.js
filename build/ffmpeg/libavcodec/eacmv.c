@@ -132,7 +132,7 @@ static void cmv_decode_inter(CmvContext *s, AVFrame *frame, const uint8_t *buf,
 
 static int cmv_process_header(CmvContext *s, const uint8_t *buf, const uint8_t *buf_end)
 {
-    int pal_start, pal_count, i, ret;
+    int pal_start, pal_count, i, ret, fps;
 
     if(buf_end - buf < 16) {
         av_log(s->avctx, AV_LOG_WARNING, "truncated header\n");
@@ -141,16 +141,20 @@ static int cmv_process_header(CmvContext *s, const uint8_t *buf, const uint8_t *
 
     s->width  = AV_RL16(&buf[4]);
     s->height = AV_RL16(&buf[6]);
-    if (s->avctx->width!=s->width || s->avctx->height!=s->height) {
+
+    if (s->width  != s->avctx->width ||
+        s->height != s->avctx->height) {
         av_frame_unref(s->last_frame);
         av_frame_unref(s->last2_frame);
-        ret = ff_set_dimensions(s->avctx, s->width, s->height);
-        if (ret < 0)
-            return ret;
     }
 
-    s->avctx->time_base.num = 1;
-    s->avctx->time_base.den = AV_RL16(&buf[10]);
+    ret = ff_set_dimensions(s->avctx, s->width, s->height);
+    if (ret < 0)
+        return ret;
+
+    fps = AV_RL16(&buf[10]);
+    if (fps > 0)
+        s->avctx->time_base = (AVRational){ 1, fps };
 
     pal_start = AV_RL16(&buf[12]);
     pal_count = AV_RL16(&buf[14]);

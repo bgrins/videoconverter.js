@@ -242,7 +242,7 @@ static av_cold int libopenjpeg_encode_init(AVCodecContext *avctx)
         goto fail;
     }
 
-    avctx->coded_frame = avcodec_alloc_frame();
+    avctx->coded_frame = av_frame_alloc();
     if (!avctx->coded_frame) {
         av_log(avctx, AV_LOG_ERROR, "Error allocating coded frame\n");
         goto fail;
@@ -480,7 +480,7 @@ static int libopenjpeg_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     opj_cio_t *stream     = ctx->stream;
     int cpyresult = 0;
     int ret, len;
-    AVFrame gbrframe;
+    AVFrame *gbrframe;
 
     switch (avctx->pix_fmt) {
     case AV_PIX_FMT_RGB24:
@@ -501,18 +501,21 @@ static int libopenjpeg_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     case AV_PIX_FMT_GBRP12:
     case AV_PIX_FMT_GBRP14:
     case AV_PIX_FMT_GBRP16:
-        gbrframe = *frame;
-        gbrframe.data[0] = frame->data[2]; // swap to be rgb
-        gbrframe.data[1] = frame->data[0];
-        gbrframe.data[2] = frame->data[1];
-        gbrframe.linesize[0] = frame->linesize[2];
-        gbrframe.linesize[1] = frame->linesize[0];
-        gbrframe.linesize[2] = frame->linesize[1];
+        gbrframe = av_frame_clone(frame);
+        if (!gbrframe)
+            return AVERROR(ENOMEM);
+        gbrframe->data[0] = frame->data[2]; // swap to be rgb
+        gbrframe->data[1] = frame->data[0];
+        gbrframe->data[2] = frame->data[1];
+        gbrframe->linesize[0] = frame->linesize[2];
+        gbrframe->linesize[1] = frame->linesize[0];
+        gbrframe->linesize[2] = frame->linesize[1];
         if (avctx->pix_fmt == AV_PIX_FMT_GBR24P) {
-            cpyresult = libopenjpeg_copy_unpacked8(avctx, &gbrframe, image);
+            cpyresult = libopenjpeg_copy_unpacked8(avctx, gbrframe, image);
         } else {
-            cpyresult = libopenjpeg_copy_unpacked16(avctx, &gbrframe, image);
+            cpyresult = libopenjpeg_copy_unpacked16(avctx, gbrframe, image);
         }
+        av_frame_free(&gbrframe);
         break;
     case AV_PIX_FMT_GRAY8:
     case AV_PIX_FMT_YUV410P:

@@ -69,9 +69,6 @@ const uint8_t ff_zigzag248_direct[64] = {
     53, 61, 54, 62, 39, 47, 55, 63,
 };
 
-/* not permutated inverse zigzag_direct + 1 for MMX quantizer */
-DECLARE_ALIGNED(16, uint16_t, ff_inv_zigzag_direct16)[64];
-
 const uint8_t ff_alternate_horizontal_scan[64] = {
     0,  1,   2,  3,  8,  9, 16, 17,
     10, 11,  4,  5,  6,  7, 15, 14,
@@ -1857,7 +1854,7 @@ void ff_set_cmp(DSPContext* c, me_cmp_func *cmp, int type){
 
 static void add_bytes_c(uint8_t *dst, uint8_t *src, int w){
     long i;
-    for(i=0; i<=w-(int)sizeof(long); i+=sizeof(long)){
+    for (i = 0; i <= w - (int)sizeof(long); i += sizeof(long)) {
         long a = *(long*)(src+i);
         long b = *(long*)(dst+i);
         *(long*)(dst+i) = ((a&pb_7f) + (b&pb_7f)) ^ ((a^b)&pb_80);
@@ -1882,7 +1879,7 @@ static void diff_bytes_c(uint8_t *dst, const uint8_t *src1, const uint8_t *src2,
         }
     }else
 #endif
-    for(i=0; i<=w-(int)sizeof(long); i+=sizeof(long)){
+    for (i = 0; i <= w - (int)sizeof(long); i += sizeof(long)) {
         long a = *(long*)(src1+i);
         long b = *(long*)(src2+i);
         *(long*)(dst+i) = ((a|pb_80) - (b&pb_7f)) ^ ((a^b^pb_80)&pb_80);
@@ -2498,19 +2495,6 @@ static int32_t scalarproduct_and_madd_int16_c(int16_t *v1, const int16_t *v2, co
     return res;
 }
 
-static void apply_window_int16_c(int16_t *output, const int16_t *input,
-                                 const int16_t *window, unsigned int len)
-{
-    int i;
-    int len2 = len >> 1;
-
-    for (i = 0; i < len2; i++) {
-        int16_t w       = window[i];
-        output[i]       = (MUL16(input[i],       w) + (1 << 14)) >> 15;
-        output[len-i-1] = (MUL16(input[len-i-1], w) + (1 << 14)) >> 15;
-    }
-}
-
 static void vector_clip_int32_c(int32_t *dst, const int32_t *src, int32_t min,
                                 int32_t max, unsigned int len)
 {
@@ -2577,8 +2561,6 @@ av_cold void ff_dsputil_static_init(void)
     for(i=0;i<512;i++) {
         ff_squareTbl[i] = (i - 256) * (i - 256);
     }
-
-    for(i=0; i<64; i++) ff_inv_zigzag_direct16[ff_zigzag_direct[i]]= i+1;
 }
 
 int ff_check_alignment(void){
@@ -2804,7 +2786,6 @@ av_cold void ff_dsputil_init(DSPContext* c, AVCodecContext *avctx)
     c->vector_clipf = vector_clipf_c;
     c->scalarproduct_int16 = scalarproduct_int16_c;
     c->scalarproduct_and_madd_int16 = scalarproduct_and_madd_int16_c;
-    c->apply_window_int16 = apply_window_int16_c;
     c->vector_clip_int32 = vector_clip_int32_c;
 
     c->shrink[0]= av_image_copy_plane;

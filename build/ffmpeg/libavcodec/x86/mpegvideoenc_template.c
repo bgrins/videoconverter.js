@@ -171,7 +171,7 @@ static int RENAME(dct_quantize)(MpegEncContext *s,
             "movzb %%al, %%"REG_a"              \n\t" // last_non_zero_p1
             : "+a" (last_non_zero_p1)
             : "r" (block+64), "r" (qmat), "r" (bias),
-              "r" (ff_inv_zigzag_direct16+64), "r" (temp_block+64)
+              "r" (inv_zigzag_direct16 + 64), "r" (temp_block + 64)
               XMM_CLOBBERS_ONLY("%xmm0", "%xmm1", "%xmm2", "%xmm3",
                                 "%xmm4", "%xmm5", "%xmm6", "%xmm7")
         );
@@ -205,7 +205,7 @@ static int RENAME(dct_quantize)(MpegEncContext *s,
             "movzb %%al, %%"REG_a"              \n\t" // last_non_zero_p1
             : "+a" (last_non_zero_p1)
             : "r" (block+64), "r" (qmat+64), "r" (bias+64),
-              "r" (ff_inv_zigzag_direct16+64), "r" (temp_block+64)
+              "r" (inv_zigzag_direct16 + 64), "r" (temp_block + 64)
               XMM_CLOBBERS_ONLY("%xmm0", "%xmm1", "%xmm2", "%xmm3",
                                 "%xmm4", "%xmm5", "%xmm6", "%xmm7")
         );
@@ -216,7 +216,7 @@ static int RENAME(dct_quantize)(MpegEncContext *s,
         "psubusw "MM"1, "MM"4               \n\t"
         "packuswb "MM"4, "MM"4              \n\t"
 #if COMPILE_TEMPLATE_SSE2
-        "packuswb "MM"4, "MM"4              \n\t"
+        "packsswb "MM"4, "MM"4              \n\t"
 #endif
         "movd "MM"4, %0                     \n\t" // *overflow
         : "=g" (*overflow)

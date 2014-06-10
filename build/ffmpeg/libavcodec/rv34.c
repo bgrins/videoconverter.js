@@ -724,15 +724,21 @@ static inline void rv34_mc(RV34DecContext *r, const int block_type,
         uint8_t *uvbuf = s->edge_emu_buffer + 22 * s->linesize;
 
         srcY -= 2 + 2*s->linesize;
-        s->vdsp.emulated_edge_mc(s->edge_emu_buffer, s->linesize, srcY, s->linesize,
-                                 (width<<3)+6, (height<<3)+6, src_x - 2, src_y - 2,
+        s->vdsp.emulated_edge_mc(s->edge_emu_buffer, srcY,
+                                 s->linesize, s->linesize,
+                                 (width << 3) + 6, (height << 3) + 6,
+                                 src_x - 2, src_y - 2,
                                  s->h_edge_pos, s->v_edge_pos);
         srcY = s->edge_emu_buffer + 2 + 2*s->linesize;
-        s->vdsp.emulated_edge_mc(uvbuf, s->uvlinesize, srcU, s->uvlinesize,
-                                 (width<<2)+1, (height<<2)+1, uvsrc_x, uvsrc_y,
+        s->vdsp.emulated_edge_mc(uvbuf, srcU,
+                                 s->uvlinesize, s->uvlinesize,
+                                 (width << 2) + 1, (height << 2) + 1,
+                                 uvsrc_x, uvsrc_y,
                                  s->h_edge_pos >> 1, s->v_edge_pos >> 1);
-        s->vdsp.emulated_edge_mc(uvbuf + 16, s->uvlinesize, srcV, s->uvlinesize,
-                                 (width<<2)+1, (height<<2)+1, uvsrc_x, uvsrc_y,
+        s->vdsp.emulated_edge_mc(uvbuf + 16, srcV,
+                                 s->uvlinesize, s->uvlinesize,
+                                 (width << 2) + 1, (height << 2) + 1,
+                                 uvsrc_x, uvsrc_y,
                                  s->h_edge_pos >> 1, s->v_edge_pos >> 1);
         srcU = uvbuf;
         srcV = uvbuf + 16;
@@ -1356,11 +1362,11 @@ static int rv34_decoder_alloc(RV34DecContext *r)
 {
     r->intra_types_stride = r->s.mb_width * 4 + 4;
 
-    r->cbp_chroma       = av_malloc(r->s.mb_stride * r->s.mb_height *
+    r->cbp_chroma       = av_mallocz(r->s.mb_stride * r->s.mb_height *
                                     sizeof(*r->cbp_chroma));
-    r->cbp_luma         = av_malloc(r->s.mb_stride * r->s.mb_height *
+    r->cbp_luma         = av_mallocz(r->s.mb_stride * r->s.mb_height *
                                     sizeof(*r->cbp_luma));
-    r->deblock_coefs    = av_malloc(r->s.mb_stride * r->s.mb_height *
+    r->deblock_coefs    = av_mallocz(r->s.mb_stride * r->s.mb_height *
                                     sizeof(*r->deblock_coefs));
     r->intra_types_hist = av_malloc(r->intra_types_stride * 4 * 2 *
                                     sizeof(*r->intra_types_hist));
@@ -1483,8 +1489,6 @@ av_cold int ff_rv34_decode_init(AVCodecContext *avctx)
     s->height = avctx->height;
 
     r->s.avctx = avctx;
-    avctx->flags |= CODEC_FLAG_EMU_EDGE;
-    r->s.flags |= CODEC_FLAG_EMU_EDGE;
     avctx->pix_fmt = AV_PIX_FMT_YUV420P;
     avctx->has_b_frames = 1;
     s->low_delay = 0;

@@ -565,8 +565,10 @@ static int decode_residual_block(AVSContext *h, GetBitContext *gb,
         level_code = get_ue_code(gb, r->golomb_order);
         if (level_code >= ESCAPE_CODE) {
             run      = ((level_code - ESCAPE_CODE) >> 1) + 1;
-            if(run > 64)
-                return -1;
+            if(run > 64) {
+                av_log(h->avctx, AV_LOG_ERROR, "run %d is too large\n", run);
+                return AVERROR_INVALIDDATA;
+            }
             esc_code = get_ue_code(gb, esc_golomb_order);
             level    = esc_code + (run > r->max_run ? 1 : r->level_add[run]);
             while (level > r->inc_limit)
@@ -892,8 +894,10 @@ static inline int decode_slice_header(AVSContext *h, GetBitContext *gb)
     if (h->stc > 0xAF)
         av_log(h->avctx, AV_LOG_ERROR, "unexpected start code 0x%02x\n", h->stc);
 
-    if (h->stc >= h->mb_height)
-        return -1;
+    if (h->stc >= h->mb_height) {
+        av_log(h->avctx, AV_LOG_ERROR, "stc 0x%02x is too large\n", h->stc);
+        return AVERROR_INVALIDDATA;
+    }
 
     h->mby   = h->stc;
     h->mbidx = h->mby * h->mb_width;
@@ -944,8 +948,8 @@ static inline int check_for_slice(AVSContext *h)
 
 static int decode_pic(AVSContext *h)
 {
-    int skip_count    = -1;
     int ret;
+    int skip_count    = -1;
     enum cavs_mb mb_type;
 
     if (!h->top_qp) {
@@ -981,9 +985,9 @@ static int decode_pic(AVSContext *h)
             skip_bits(&h->gb, 1); //marker_bit
     }
 
-    if ((ret = ff_get_buffer(h->avctx, h->cur.f,
-                             h->cur.f->pict_type == AV_PICTURE_TYPE_B ?
-                             0 : AV_GET_BUFFER_FLAG_REF)) < 0)
+    ret = ff_get_buffer(h->avctx, h->cur.f, h->cur.f->pict_type == AV_PICTURE_TYPE_B ?
+                        0 : AV_GET_BUFFER_FLAG_REF);
+    if (ret < 0)
         return ret;
 
     if (!h->edge_emu_buffer) {
@@ -1161,12 +1165,17 @@ static int cavs_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         return 0;
     }
 
+    h->stc = 0;
+
     buf_ptr = buf;
     buf_end = buf + buf_size;
     for(;;) {
         buf_ptr = avpriv_find_start_code(buf_ptr, buf_end, &stc);
-        if ((stc & 0xFFFFFE00) || buf_ptr == buf_end)
+        if ((stc & 0xFFFFFE00) || buf_ptr == buf_end) {
+            if (!h->stc)
+                av_log(h->avctx, AV_LOG_WARNING, "no frame decoded\n");
             return FFMAX(0, buf_ptr - buf);
+        }
         input_size = (buf_end - buf_ptr) * 8;
         switch (stc) {
         case CAVS_START_CODE:

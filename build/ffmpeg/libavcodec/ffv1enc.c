@@ -405,7 +405,7 @@ static int encode_plane(FFV1Context *s, uint8_t *src, int w, int h,
     return 0;
 }
 
-static int encode_rgb_frame(FFV1Context *s, uint8_t *src[3], int w, int h, int stride[3])
+static int encode_rgb_frame(FFV1Context *s, uint8_t *src[3], int w, int h, const int stride[3])
 {
     int x, y, p, i;
     const int ring_size = s->avctx->context_model ? 3 : 2;
@@ -441,7 +441,7 @@ static int encode_rgb_frame(FFV1Context *s, uint8_t *src[3], int w, int h, int s
             if (s->slice_coding_mode != 1) {
                 b -= g;
                 r -= g;
-                g += (b + r) >> 2;
+                g += (b * s->slice_rct_by_coef + r * s->slice_rct_ry_coef) >> 2;
                 b += offset;
                 r += offset;
             }
@@ -557,8 +557,10 @@ static int write_extradata(FFV1Context *f)
 
     put_symbol(c, state, f->version, 0);
     if (f->version > 2) {
-        if (f->version == 3)
+        if (f->version == 3) {
             f->micro_version = 4;
+        } else if (f->version == 4)
+            f->micro_version = 2;
         put_symbol(c, state, f->micro_version, 0);
     }
 
@@ -672,9 +674,15 @@ static av_cold int encode_init(AVCodecContext *avctx)
     if ((avctx->flags & (CODEC_FLAG_PASS1|CODEC_FLAG_PASS2)) || avctx->slices>1)
         s->version = FFMAX(s->version, 2);
 
-    if (avctx->level == 3 || (avctx->level <= 0 && s->version == 2)) {
+    // Unspecified level & slices, we choose version 1.2+ to ensure multithreaded decodability
+    if (avctx->slices == 0 && avctx->level < 0 && avctx->width * avctx->height > 720*576)
+        s->version = FFMAX(s->version, 2);
+
+    if (avctx->level <= 0 && s->version == 2) {
         s->version = 3;
     }
+    if (avctx->level >= 0 && avctx->level <= 4)
+        s->version = FFMAX(s->version, avctx->level);
 
     if (s->ec < 0) {
         s->ec = (s->version >= 3);
@@ -829,6 +837,12 @@ static av_cold int encode_init(AVCodecContext *avctx)
 
     if ((ret = ffv1_allocate_initial_states(s)) < 0)
         return ret;
+
+    avctx->coded_frame = av_frame_alloc();
+    if (!avctx->coded_frame)
+        return AVERROR(ENOMEM);
+
+    avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
 
     if (!s->transparency)
         s->plane_count = 2;
@@ -989,7 +1003,93 @@ static void encode_slice_header(FFV1Context *f, FFV1Context *fs)
         if (fs->slice_coding_mode == 1)
             ffv1_clear_slice_state(f, fs);
         put_symbol(c, state, fs->slice_coding_mode, 0);
+        if (fs->slice_coding_mode != 1) {
+            put_symbol(c, state, fs->slice_rct_by_coef, 0);
+            put_symbol(c, state, fs->slice_rct_ry_coef, 0);
+        }
     }
+}
+
+static void choose_rct_params(FFV1Context *fs, uint8_t *src[3], const int stride[3], int w, int h)
+{
+#define NB_Y_COEFF 15
+    static const int rct_y_coeff[15][2] = {
+        {0, 0}, //      4G
+        {1, 1}, //  R + 2G + B
+        {2, 2}, // 2R      + 2B
+        {0, 2}, //      2G + 2B
+        {2, 0}, // 2R + 2G
+        {4, 0}, // 4R
+        {0, 4}, //           4B
+
+        {0, 3}, //      1G + 3B
+        {3, 0}, // 3R + 1G
+        {3, 1}, // 3R      +  B
+        {1, 3}, //  R      + 3B
+        {1, 2}, //  R +  G + 2B
+        {2, 1}, // 2R +  G +  B
+        {0, 1}, //      3G +  B
+        {1, 0}, //  R + 3G
+    };
+
+    int stat[NB_Y_COEFF] = {0};
+    int x, y, i, p, best;
+    int16_t *sample[3];
+    int lbd = fs->bits_per_raw_sample <= 8;
+
+    for (y = 0; y < h; y++) {
+        int lastr=0, lastg=0, lastb=0;
+        for (p = 0; p < 3; p++)
+            sample[p] = fs->sample_buffer + p*w;
+
+        for (x = 0; x < w; x++) {
+            int b, g, r;
+            int ab, ag, ar;
+            if (lbd) {
+                unsigned v = *((uint32_t*)(src[0] + x*4 + stride[0]*y));
+                b =  v        & 0xFF;
+                g = (v >>  8) & 0xFF;
+                r = (v >> 16) & 0xFF;
+            } else {
+                b = *((uint16_t*)(src[0] + x*2 + stride[0]*y));
+                g = *((uint16_t*)(src[1] + x*2 + stride[1]*y));
+                r = *((uint16_t*)(src[2] + x*2 + stride[2]*y));
+            }
+
+            ar = r - lastr;
+            ag = g - lastg;
+            ab = b - lastb;
+            if (x && y) {
+                int bg = ag - sample[0][x];
+                int bb = ab - sample[1][x];
+                int br = ar - sample[2][x];
+
+                br -= bg;
+                bb -= bg;
+
+                for (i = 0; i<NB_Y_COEFF; i++) {
+                    stat[i] += FFABS(bg + ((br*rct_y_coeff[i][0] + bb*rct_y_coeff[i][1])>>2));
+                }
+
+            }
+            sample[0][x] = ag;
+            sample[1][x] = ab;
+            sample[2][x] = ar;
+
+            lastr = r;
+            lastg = g;
+            lastb = b;
+        }
+    }
+
+    best = 0;
+    for (i=1; i<NB_Y_COEFF; i++) {
+        if (stat[i] < stat[best])
+            best = i;
+    }
+
+    fs->slice_rct_by_coef = rct_y_coeff[best][1];
+    fs->slice_rct_ry_coef = rct_y_coeff[best][0];
 }
 
 static int encode_slice(AVCodecContext *c, void *arg)
@@ -1000,15 +1100,24 @@ static int encode_slice(AVCodecContext *c, void *arg)
     int height       = fs->slice_height;
     int x            = fs->slice_x;
     int y            = fs->slice_y;
-    AVFrame *const p = f->picture.f;
+    const AVFrame *const p = f->picture.f;
     const int ps     = av_pix_fmt_desc_get(c->pix_fmt)->comp[0].step_minus1 + 1;
     int ret;
     RangeCoder c_bak = fs->c;
+    uint8_t *planes[3] = {p->data[0] + ps*x + y*p->linesize[0],
+                          p->data[1] + ps*x + y*p->linesize[1],
+                          p->data[2] + ps*x + y*p->linesize[2]};
 
     fs->slice_coding_mode = 0;
+    if (f->version > 3) {
+        choose_rct_params(fs, planes, p->linesize, width, height);
+    } else {
+        fs->slice_rct_by_coef = 1;
+        fs->slice_rct_ry_coef = 1;
+    }
 
 retry:
-    if (p->key_frame)
+    if (c->coded_frame->key_frame)
         ffv1_clear_slice_state(f, fs);
     if (f->version > 2) {
         encode_slice_header(f, fs);
@@ -1037,9 +1146,6 @@ retry:
         if (fs->transparency)
             ret |= encode_plane(fs, p->data[3] + ps*x + y*p->linesize[3], width, height, p->linesize[3], 2);
     } else {
-        uint8_t *planes[3] = {p->data[0] + ps*x + y*p->linesize[0],
-                              p->data[1] + ps*x + y*p->linesize[1],
-                              p->data[2] + ps*x + y*p->linesize[2]};
         ret = encode_rgb_frame(fs, planes, width, height, p->linesize);
     }
     emms_c();
@@ -1129,16 +1235,16 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     av_frame_unref(p);
     if ((ret = av_frame_ref(p, pict)) < 0)
         return ret;
-    p->pict_type = AV_PICTURE_TYPE_I;
+    avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
 
     if (avctx->gop_size == 0 || f->picture_number % avctx->gop_size == 0) {
         put_rac(c, &keystate, 1);
-        p->key_frame = 1;
+        avctx->coded_frame->key_frame = 1;
         f->gob_count++;
         write_header(f);
     } else {
         put_rac(c, &keystate, 0);
-        p->key_frame = 0;
+        avctx->coded_frame->key_frame = 0;
     }
 
     if (f->ac > 1) {
@@ -1195,9 +1301,16 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     pkt->size   = buf_p - pkt->data;
     pkt->pts    =
     pkt->dts    = pict->pts;
-    pkt->flags |= AV_PKT_FLAG_KEY * p->key_frame;
+    pkt->flags |= AV_PKT_FLAG_KEY * avctx->coded_frame->key_frame;
     *got_packet = 1;
 
+    return 0;
+}
+
+static av_cold int encode_close(AVCodecContext *avctx)
+{
+    av_frame_free(&avctx->coded_frame);
+    ffv1_close(avctx);
     return 0;
 }
 
@@ -1228,7 +1341,7 @@ AVCodec ff_ffv1_encoder = {
     .priv_data_size = sizeof(FFV1Context),
     .init           = encode_init,
     .encode2        = encode_frame,
-    .close          = ffv1_close,
+    .close          = encode_close,
     .capabilities   = CODEC_CAP_SLICE_THREADS | CODEC_CAP_DELAY,
     .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_YUV420P,   AV_PIX_FMT_YUVA420P,  AV_PIX_FMT_YUVA422P,  AV_PIX_FMT_YUV444P,

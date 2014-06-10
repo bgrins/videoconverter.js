@@ -37,6 +37,8 @@
 #define X86_SSE4(flags)             CPUEXT(flags, SSE4)
 #define X86_SSE42(flags)            CPUEXT(flags, SSE42)
 #define X86_AVX(flags)              CPUEXT(flags, AVX)
+#define X86_XOP(flags)              CPUEXT(flags, XOP)
+#define X86_FMA3(flags)             CPUEXT(flags, FMA3)
 #define X86_FMA4(flags)             CPUEXT(flags, FMA4)
 #define X86_AVX2(flags)             CPUEXT(flags, AVX2)
 
@@ -51,6 +53,8 @@
 #define EXTERNAL_SSE4(flags)        CPUEXT_SUFFIX(flags, _EXTERNAL, SSE4)
 #define EXTERNAL_SSE42(flags)       CPUEXT_SUFFIX(flags, _EXTERNAL, SSE42)
 #define EXTERNAL_AVX(flags)         CPUEXT_SUFFIX(flags, _EXTERNAL, AVX)
+#define EXTERNAL_XOP(flags)         CPUEXT_SUFFIX(flags, _EXTERNAL, XOP)
+#define EXTERNAL_FMA3(flags)        CPUEXT_SUFFIX(flags, _EXTERNAL, FMA3)
 #define EXTERNAL_FMA4(flags)        CPUEXT_SUFFIX(flags, _EXTERNAL, FMA4)
 #define EXTERNAL_AVX2(flags)        CPUEXT_SUFFIX(flags, _EXTERNAL, AVX2)
 
@@ -65,6 +69,8 @@
 #define INLINE_SSE4(flags)          CPUEXT_SUFFIX(flags, _INLINE, SSE4)
 #define INLINE_SSE42(flags)         CPUEXT_SUFFIX(flags, _INLINE, SSE42)
 #define INLINE_AVX(flags)           CPUEXT_SUFFIX(flags, _INLINE, AVX)
+#define INLINE_XOP(flags)           CPUEXT_SUFFIX(flags, _INLINE, XOP)
+#define INLINE_FMA3(flags)          CPUEXT_SUFFIX(flags, _INLINE, FMA3)
 #define INLINE_FMA4(flags)          CPUEXT_SUFFIX(flags, _INLINE, FMA4)
 #define INLINE_AVX2(flags)          CPUEXT_SUFFIX(flags, _INLINE, AVX2)
 

@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/opt.h"
 #include "libavcodec/flac.h"
 #include "avformat.h"
 #include "avio_internal.h"
@@ -26,6 +27,11 @@
 #include "vorbiscomment.h"
 #include "libavcodec/bytestream.h"
 
+
+typedef struct FlacMuxerContext {
+    const AVClass *class;
+    int write_header;
+} FlacMuxerContext;
 
 static int flac_write_block_padding(AVIOContext *pb, unsigned int n_padding_bytes,
                                     int last_block)
@@ -65,7 +71,12 @@ static int flac_write_block_comment(AVIOContext *pb, AVDictionary **m,
 static int flac_write_header(struct AVFormatContext *s)
 {
     int ret;
+    int padding = s->metadata_header_padding;
     AVCodecContext *codec = s->streams[0]->codec;
+    FlacMuxerContext *c   = s->priv_data;
+
+    if (!c->write_header)
+        return 0;
 
     if (s->nb_streams > 1) {
         av_log(s, AV_LOG_ERROR, "only one stream is supported\n");
@@ -76,11 +87,17 @@ static int flac_write_header(struct AVFormatContext *s)
         return AVERROR(EINVAL);
     }
 
+    if (padding < 0)
+        padding = 8192;
+    /* The FLAC specification states that 24 bits are used to represent the
+     * size of a metadata block so we must clip this value to 2^24-1. */
+    padding = av_clip_c(padding, 0, 16777215);
+
     ret = ff_flac_write_header(s->pb, codec, 0);
     if (ret)
         return ret;
 
-    ret = flac_write_block_comment(s->pb, &s->metadata, 0,
+    ret = flac_write_block_comment(s->pb, &s->metadata, !padding,
                                    codec->flags & CODEC_FLAG_BITEXACT);
     if (ret)
         return ret;
@@ -88,8 +105,9 @@ static int flac_write_header(struct AVFormatContext *s)
     /* The command line flac encoder defaults to placing a seekpoint
      * every 10s.  So one might add padding to allow that later
      * but there seems to be no simple way to get the duration here.
-     * So let's try the flac default of 8192 bytes */
-    flac_write_block_padding(s->pb, 8192, 1);
+     * So just add the amount requested by the user. */
+    if (padding)
+        flac_write_block_padding(s->pb, padding, 1);
 
     return ret;
 }
@@ -100,6 +118,10 @@ static int flac_write_trailer(struct AVFormatContext *s)
     uint8_t *streaminfo;
     enum FLACExtradataFormat format;
     int64_t file_size;
+    FlacMuxerContext *c = s->priv_data;
+
+    if (!c->write_header)
+        return 0;
 
     if (!avpriv_flac_is_extradata_valid(s->streams[0]->codec, &format, &streaminfo))
         return -1;
@@ -123,9 +145,22 @@ static int flac_write_packet(struct AVFormatContext *s, AVPacket *pkt)
     return 0;
 }
 
+static const AVOption flacenc_options[] = {
+    { "write_header", "Write the file header", offsetof(FlacMuxerContext, write_header), AV_OPT_TYPE_INT, {.i64 = 1}, 0, 1, AV_OPT_FLAG_ENCODING_PARAM },
+    { NULL },
+};
+
+static const AVClass flac_muxer_class = {
+    .class_name = "flac muxer",
+    .item_name  = av_default_item_name,
+    .option     = flacenc_options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
+
 AVOutputFormat ff_flac_muxer = {
     .name              = "flac",
     .long_name         = NULL_IF_CONFIG_SMALL("raw FLAC"),
+    .priv_data_size    = sizeof(FlacMuxerContext),
     .mime_type         = "audio/x-flac",
     .extensions        = "flac",
     .audio_codec       = AV_CODEC_ID_FLAC,
@@ -134,4 +169,5 @@ AVOutputFormat ff_flac_muxer = {
     .write_packet      = flac_write_packet,
     .write_trailer     = flac_write_trailer,
     .flags             = AVFMT_NOTIMESTAMPS,
+    .priv_class        = &flac_muxer_class,
 };
