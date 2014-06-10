@@ -59,8 +59,10 @@ static int probe(AVProbeData *p)
 {
     const uint8_t *b = p->buf;
 
-    if ( b[0] == 'B' && b[1] == 'I' && b[2] == 'K' &&
-        (b[3] == 'b' || b[3] == 'f' || b[3] == 'g' || b[3] == 'h' || b[3] == 'i') &&
+    if (((b[0] == 'B' && b[1] == 'I' && b[2] == 'K' &&
+         (b[3] == 'b' || b[3] == 'f' || b[3] == 'g' || b[3] == 'h' || b[3] == 'i')) ||
+         (b[0] == 'K' && b[1] == 'B' && b[2] == '2' && /* Bink 2 */
+         (b[3] == 'a' || b[3] == 'd' || b[3] == 'f' || b[3] == 'g'))) &&
         AV_RL32(b+8) > 0 &&  // num_frames
         AV_RL32(b+20) > 0 && AV_RL32(b+20) <= BINK_MAX_WIDTH &&
         AV_RL32(b+24) > 0 && AV_RL32(b+24) <= BINK_MAX_HEIGHT &&
@@ -79,6 +81,7 @@ static int read_header(AVFormatContext *s)
     uint32_t pos, next_pos;
     uint16_t flags;
     int keyframe;
+    int ret;
 
     vst = avformat_new_stream(s, NULL);
     if (!vst)
@@ -116,9 +119,14 @@ static int read_header(AVFormatContext *s)
 
     vst->codec->codec_type = AVMEDIA_TYPE_VIDEO;
     vst->codec->codec_id   = AV_CODEC_ID_BINKVIDEO;
-    if (ff_alloc_extradata(vst->codec, 4))
+
+    if ((vst->codec->codec_tag & 0xFFFFFF) == MKTAG('K', 'B', '2', 0)) {
+        av_log(s, AV_LOG_WARNING, "Bink 2 video is not implemented\n");
+        vst->codec->codec_id = AV_CODEC_ID_NONE;
+    }
+
+    if (ff_get_extradata(vst->codec, pb, 4) < 0)
         return AVERROR(ENOMEM);
-    avio_read(pb, vst->codec->extradata, 4);
 
     bink->num_audio_tracks = avio_rl32(pb);
 
@@ -177,11 +185,12 @@ static int read_header(AVFormatContext *s)
             av_log(s, AV_LOG_ERROR, "invalid frame index table\n");
             return AVERROR(EIO);
         }
-        av_add_index_entry(vst, pos, i, next_pos - pos, 0,
-                           keyframe ? AVINDEX_KEYFRAME : 0);
+        if ((ret = av_add_index_entry(vst, pos, i, next_pos - pos, 0,
+                                      keyframe ? AVINDEX_KEYFRAME : 0)) < 0)
+            return ret;
     }
 
-    avio_skip(pb, 4);
+    avio_seek(pb, vst->index_entries[0].pos, SEEK_SET);
 
     bink->current_track = -1;
     return 0;
@@ -280,4 +289,5 @@ AVInputFormat ff_bink_demuxer = {
     .read_header    = read_header,
     .read_packet    = read_packet,
     .read_seek      = read_seek,
+    .flags          = AVFMT_SHOW_IDS,
 };

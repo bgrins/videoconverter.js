@@ -688,7 +688,11 @@ static int read_var_block_data(ALSDecContext *ctx, ALSBlockData *bd)
         } else {
             *bd->opt_order = sconf->max_order;
         }
-
+        if (*bd->opt_order > bd->block_length) {
+            *bd->opt_order = bd->block_length;
+            av_log(avctx, AV_LOG_ERROR, "Predictor order too large.\n");
+            return AVERROR_INVALIDDATA;
+        }
         opt_order = *bd->opt_order;
 
         if (opt_order) {
@@ -1263,13 +1267,15 @@ static int revert_channel_correlation(ALSDecContext *ctx, ALSBlockData *bd,
     bd->quant_cof   = ctx->quant_cof[c];
     bd->raw_samples = ctx->raw_samples[c] + offset;
 
-    dep = 0;
-    while (!ch[dep].stop_flag) {
+    for (dep = 0; !ch[dep].stop_flag; dep++) {
         unsigned int smp;
         unsigned int begin = 1;
         unsigned int end   = bd->block_length - 1;
         int64_t y;
         int32_t *master = ctx->raw_samples[ch[dep].master_channel] + offset;
+
+        if (ch[dep].master_channel == c)
+            continue;
 
         if (ch[dep].time_diff_flag) {
             int t = ch[dep].time_diff_index;
@@ -1302,8 +1308,6 @@ static int revert_channel_correlation(ALSDecContext *ctx, ALSBlockData *bd,
                 bd->raw_samples[smp] += y >> 7;
             }
         }
-
-        dep++;
     }
 
     return 0;
@@ -1391,6 +1395,11 @@ static int read_frame_data(ALSDecContext *ctx, unsigned int ra_frame)
 
         for (b = 0; b < ctx->num_blocks; b++) {
             bd.block_length = div_blocks[b];
+            if (bd.block_length <= 0) {
+                av_log(ctx->avctx, AV_LOG_WARNING,
+                       "Invalid block length %d in channel data!\n", bd.block_length);
+                continue;
+            }
 
             for (c = 0; c < avctx->channels; c++) {
                 bd.const_block = ctx->const_block + c;

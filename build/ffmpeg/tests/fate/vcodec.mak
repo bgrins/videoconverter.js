@@ -58,7 +58,11 @@ FATE_VCODEC-$(call ENCDEC, FFV1, AVI)   += ffv1 ffv1.0
 fate-vsynth%-ffv1:               ENCOPTS = -slices 4
 fate-vsynth%-ffv1.0:             CODEC   = ffv1
 
-FATE_VCODEC-$(call ENCDEC, FFVHUFF, AVI) += ffvhuff
+FATE_VCODEC-$(call ENCDEC, FFVHUFF, AVI) += ffvhuff ffvhuff444 ffvhuff420p12 ffvhuff422p10left ffvhuff444p16
+fate-vsynth%-ffvhuff444:         ENCOPTS = -strict -2 -vcodec ffvhuff -pix_fmt yuv444p
+fate-vsynth%-ffvhuff420p12:      ENCOPTS = -strict -2 -vcodec ffvhuff -pix_fmt yuv420p12le
+fate-vsynth%-ffvhuff422p10left:  ENCOPTS = -strict -2 -vcodec ffvhuff -pix_fmt yuv422p10le -pred left
+fate-vsynth%-ffvhuff444p16:      ENCOPTS = -strict -2 -vcodec ffvhuff -pix_fmt yuv444p16le -pred plane
 
 FATE_VCODEC-$(call ENCDEC, FLASHSV, FLV) += flashsv
 fate-vsynth%-flashsv:            ENCOPTS = -sws_flags neighbor+full_chroma_int
@@ -74,8 +78,9 @@ FATE_VCODEC-$(call ENCDEC, FLV, FLV)    += flv
 fate-vsynth%-flv:                ENCOPTS = -qscale 10
 fate-vsynth%-flv:                FMT     = flv
 
-FATE_VCODEC-$(call ENCDEC, H261, AVI)   += h261
+FATE_VCODEC-$(call ENCDEC, H261, AVI)   += h261 h261-trellis
 fate-vsynth%-h261:               ENCOPTS = -qscale 11
+fate-vsynth%-h261-trellis:       ENCOPTS = -qscale 12 -trellis 1 -mbd rd
 
 FATE_VCODEC-$(call ENCDEC, H263, AVI)   += h263 h263-obmc h263p
 fate-vsynth%-h263:               ENCOPTS = -qscale 10

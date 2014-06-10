@@ -26,11 +26,11 @@
  * Libavcodec version macros.
  */
 
-#include "libavutil/avutil.h"
+#include "libavutil/version.h"
 
 #define LIBAVCODEC_VERSION_MAJOR 55
-#define LIBAVCODEC_VERSION_MINOR  41
-#define LIBAVCODEC_VERSION_MICRO 100
+#define LIBAVCODEC_VERSION_MINOR  52
+#define LIBAVCODEC_VERSION_MICRO 102
 
 #define LIBAVCODEC_VERSION_INT  AV_VERSION_INT(LIBAVCODEC_VERSION_MAJOR, \
                                                LIBAVCODEC_VERSION_MINOR, \
@@ -113,6 +113,33 @@
 #endif
 #ifndef FF_API_CODEC_PKT
 #define FF_API_CODEC_PKT         (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_ARCH_ALPHA
+#define FF_API_ARCH_ALPHA        (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_XVMC
+#define FF_API_XVMC              (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_ERROR_RATE
+#define FF_API_ERROR_RATE        (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_QSCALE_TYPE
+#define FF_API_QSCALE_TYPE       (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_MB_TYPE
+#define FF_API_MB_TYPE           (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_MAX_BFRAMES
+#define FF_API_MAX_BFRAMES       (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_FAST_MALLOC
+#define FF_API_FAST_MALLOC       (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_NEG_LINESIZES
+#define FF_API_NEG_LINESIZES     (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_EMU_EDGE
+#define FF_API_EMU_EDGE          (LIBAVCODEC_VERSION_MAJOR < 56)
 #endif
 
 #endif /* AVCODEC_VERSION_H */

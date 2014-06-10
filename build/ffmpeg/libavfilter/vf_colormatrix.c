@@ -17,7 +17,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software Foundation,
- * Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /**
@@ -164,8 +164,8 @@ static av_cold int init(AVFilterContext *ctx)
 {
     ColorMatrixContext *color = ctx->priv;
 
-    if (color->source == COLOR_MODE_NONE || color->dest == COLOR_MODE_NONE) {
-        av_log(ctx, AV_LOG_ERROR, "Unspecified source or destination color space\n");
+    if (color->dest == COLOR_MODE_NONE) {
+        av_log(ctx, AV_LOG_ERROR, "Unspecified destination color space\n");
         return AVERROR(EINVAL);
     }
 
@@ -173,10 +173,6 @@ static av_cold int init(AVFilterContext *ctx)
         av_log(ctx, AV_LOG_ERROR, "Source and destination color space must not be identical\n");
         return AVERROR(EINVAL);
     }
-
-    color->mode = color->source * 4 + color->dest;
-
-    calc_coefficients(ctx);
 
     return 0;
 }
@@ -345,6 +341,32 @@ static int filter_frame(AVFilterLink *link, AVFrame *in)
         return AVERROR(ENOMEM);
     }
     av_frame_copy_props(out, in);
+
+    if (color->source == COLOR_MODE_NONE) {
+        enum AVColorSpace cs = av_frame_get_colorspace(in);
+        enum ColorMode source;
+
+        switch(cs) {
+        case AVCOL_SPC_BT709     : source = COLOR_MODE_BT709     ; break;
+        case AVCOL_SPC_FCC       : source = COLOR_MODE_FCC       ; break;
+        case AVCOL_SPC_SMPTE240M : source = COLOR_MODE_SMPTE240M ; break;
+        case AVCOL_SPC_BT470BG   : source = COLOR_MODE_BT601     ; break;
+        default :
+            av_log(ctx, AV_LOG_ERROR, "Input frame does not specify a supported colorspace, and none has been specified as source either\n");
+            return AVERROR(EINVAL);
+        }
+        color->mode = source * 4 + color->dest;
+    } else
+        color->mode = color->source * 4 + color->dest;
+
+    switch(color->dest) {
+    case COLOR_MODE_BT709    : av_frame_set_colorspace(out, AVCOL_SPC_BT709)    ; break;
+    case COLOR_MODE_FCC      : av_frame_set_colorspace(out, AVCOL_SPC_FCC)      ; break;
+    case COLOR_MODE_SMPTE240M: av_frame_set_colorspace(out, AVCOL_SPC_SMPTE240M); break;
+    case COLOR_MODE_BT601    : av_frame_set_colorspace(out, AVCOL_SPC_BT470BG)  ; break;
+    }
+
+    calc_coefficients(ctx);
 
     if (in->format == AV_PIX_FMT_YUV422P)
         process_frame_yuv422p(color, out, in);

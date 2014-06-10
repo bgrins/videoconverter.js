@@ -142,7 +142,7 @@ static int xsub_encode(AVCodecContext *avctx, unsigned char *buf,
         av_log(avctx, AV_LOG_WARNING, "No more than 4 subtitle colors supported (%d found.)\n", h->rects[0]->nb_colors);
 
     // TODO: Palette swapping if color zero is not transparent
-    if (((uint32_t *)h->rects[0]->pict.data[1])[0] & 0xff)
+    if (((uint32_t *)h->rects[0]->pict.data[1])[0] & 0xff000000)
         av_log(avctx, AV_LOG_WARNING, "Color index 0 is not transparent. Transparency will be messed up.\n");
 
     if (make_tc(startTime, start_tc) || make_tc(endTime, end_tc)) {
@@ -166,8 +166,8 @@ static int xsub_encode(AVCodecContext *avctx, unsigned char *buf,
     bytestream_put_le16(&hdr, height);
     bytestream_put_le16(&hdr, h->rects[0]->x);
     bytestream_put_le16(&hdr, h->rects[0]->y);
-    bytestream_put_le16(&hdr, h->rects[0]->x + width);
-    bytestream_put_le16(&hdr, h->rects[0]->y + height);
+    bytestream_put_le16(&hdr, h->rects[0]->x + width -1);
+    bytestream_put_le16(&hdr, h->rects[0]->y + height -1);
 
     rlelenptr = hdr; // Will store length of first field here later.
     hdr+=2;
@@ -205,6 +205,8 @@ static av_cold int xsub_encoder_init(AVCodecContext *avctx)
 {
     if (!avctx->codec_tag)
         avctx->codec_tag = MKTAG('D','X','S','B');
+
+    avctx->bits_per_coded_sample = 4;
 
     return 0;
 }

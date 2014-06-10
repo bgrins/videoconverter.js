@@ -85,6 +85,8 @@ struct ogg_stream {
     int got_data;   ///< 1 if the stream got some data (non-initial packets), 0 otherwise
     int nb_header; ///< set to the number of parsed headers
     int end_trimming; ///< set the number of packets to drop from the end
+    uint8_t *new_metadata;
+    unsigned int new_metadata_size;
     void *private;
 };
 
@@ -125,6 +127,7 @@ extern const struct ogg_codec ff_skeleton_codec;
 extern const struct ogg_codec ff_speex_codec;
 extern const struct ogg_codec ff_theora_codec;
 extern const struct ogg_codec ff_vorbis_codec;
+extern const struct ogg_codec ff_vp8_codec;
 
 int ff_vorbis_comment(AVFormatContext *ms, AVDictionary **m, const uint8_t *buf, int size);
 

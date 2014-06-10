@@ -136,7 +136,7 @@ static void mpc8_parse_seektable(AVFormatContext *s, int64_t off)
     int tag;
     int64_t size, pos, ppos[2];
     uint8_t *buf;
-    int i, t, seekd;
+    int i, t, seekd, ret;
     GetBitContext gb;
 
     if (s->nb_streams == 0) {
@@ -156,7 +156,14 @@ static void mpc8_parse_seektable(AVFormatContext *s, int64_t off)
     }
     if(!(buf = av_malloc(size + FF_INPUT_BUFFER_PADDING_SIZE)))
         return;
-    avio_read(s->pb, buf, size);
+    ret = avio_read(s->pb, buf, size);
+    if (ret != size) {
+        av_log(s, AV_LOG_ERROR, "seek table truncated\n");
+        av_free(buf);
+        return;
+    }
+    memset(buf+size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
+
     init_get_bits(&gb, buf, size * 8);
     size = gb_get_v(&gb);
     if(size > UINT_MAX/4 || size > c->samples/1152){
@@ -241,9 +248,8 @@ static int mpc8_read_header(AVFormatContext *s)
     st->codec->codec_id = AV_CODEC_ID_MUSEPACK8;
     st->codec->bits_per_coded_sample = 16;
 
-    if (ff_alloc_extradata(st->codec, 2))
+    if (ff_get_extradata(st->codec, pb, 2) < 0)
         return AVERROR(ENOMEM);
-    avio_read(pb, st->codec->extradata, st->codec->extradata_size);
 
     st->codec->channels = (st->codec->extradata[1] >> 4) + 1;
     st->codec->sample_rate = mpc8_rate[st->codec->extradata[0] >> 5];

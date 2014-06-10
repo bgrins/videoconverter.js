@@ -14,7 +14,7 @@ You can disable all the encoders with the configure option
 with the options @code{--enable-encoder=@var{ENCODER}} /
 @code{--disable-encoder=@var{ENCODER}}.
 
-The option @code{-codecs} of the ff* tools will display the list of
+The option @code{-encoders} of the ff* tools will display the list of
 enabled encoders.
 
 @c man end ENCODERS
@@ -617,7 +617,14 @@ so if you allow the use of GPL, you should configure with
 
 This encoder is considered to be of higher quality with respect to
 both @ref{aacenc,,the native experimental FFmpeg AAC encoder} and
-libfaac.
+@ref{libfaac}.
+
+VBR encoding, enabled through the @option{vbr} or @option{flags
++qscale} options, is experimental and only works with some
+combinations of parameters.
+
+Support for encoding 7.1 audio is only available with libfdk-aac 0.1.3 or
+higher.
 
 For more information see the fdk-aac project at
 @url{http://sourceforge.net/p/opencore-amr/fdk-aac/}.
@@ -642,7 +649,7 @@ Set the number of audio channels.
 
 @item flags +qscale
 Enable fixed quality, VBR (Variable Bit Rate) mode.
-Note that VBR is implicitely enabled when the @option{vbr} value is
+Note that VBR is implicitly enabled when the @option{vbr} value is
 positive.
 
 @item cutoff
@@ -725,12 +732,12 @@ Default value is 0.
 
 @item vbr
 Set VBR mode, from 1 to 5. 1 is lowest quality (though still pretty
-good) and 5 is highest quality. A value of 0 will disable VBR mode,
-and CBR (Constant Bit Rate) mode is enabled.
+good) and 5 is highest quality. A value of 0 will disable VBR, and CBR
+(Constant Bit Rate) is enabled.
 
-Currently only the @samp{aac_low} profile supports VBR mode.
+Currently only the @samp{aac_low} profile supports VBR encoding.
 
-VBR modes 1-5 correspond to roughly the following average bit rate:
+VBR modes 1-5 correspond to roughly the following average bit rates:
 
 @table @samp
 @item 1
@@ -748,7 +755,7 @@ about 80-96 kbps/channel
 Default value is 0.
 @end table
 
-@section Examples
+@subsection Examples
 
 @itemize
 @item
@@ -1063,7 +1070,7 @@ Set maximum frame size, or duration of a frame in milliseconds. The
 argument must be exactly the following: 2.5, 5, 10, 20, 40, 60. Smaller
 frame sizes achieve lower latency but less quality at a given bitrate.
 Sizes greater than 20ms are only interesting at fairly low bitrates.
-The default of FFmpeg is 10ms, but is 20ms in @command{opusenc}.
+The default is 20ms.
 
 @item packet_loss (@emph{expect-loss})
 Set expected packet loss percentage. The default is 0.
@@ -1140,32 +1147,111 @@ transient response is a higher bitrate.
 
 @end table
 
+@anchor{libwavpack}
 @section libwavpack
 
 A wrapper providing WavPack encoding through libwavpack.
 
 Only lossless mode using 32-bit integer samples is supported currently.
-The @option{compression_level} option can be used to control speed vs.
-compression tradeoff, with the values mapped to libwavpack as follows:
+
+Requires the presence of the libwavpack headers and library during
+configuration. You need to explicitly configure the build with
+@code{--enable-libwavpack}.
+
+Note that a libavcodec-native encoder for the WavPack codec exists so users can
+encode audios with this codec without using this encoder. See @ref{wavpackenc}.
+
+@subsection Options
+
+@command{wavpack} command line utility's corresponding options are listed in
+parentheses, if any.
 
 @table @option
+@item frame_size (@emph{--blocksize})
+Default is 32768.
 
-@item 0
-Fast mode - corresponding to the wavpack @option{-f} option.
+@item compression_level
+Set speed vs. compression tradeoff. Acceptable arguments are listed below:
+
+@table @samp
+@item 0 (@emph{-f})
+Fast mode.
 
 @item 1
 Normal (default) settings.
 
-@item 2
-High quality - corresponding to the wavpack @option{-h} option.
+@item 2 (@emph{-h})
+High quality.
 
-@item 3
-Very high quality - corresponding to the wavpack @option{-hh} option.
+@item 3 (@emph{-hh})
+Very high quality.
 
-@item 4-8
-Same as 3, but with extra processing enabled - corresponding to the wavpack
-@option{-x} option. I.e. 4 is the same as @option{-x2} and 8 is the same as
-@option{-x6}.
+@item 4-8 (@emph{-hh -x}@var{EXTRAPROC})
+Same as @samp{3}, but with extra processing enabled.
+
+@samp{4} is the same as @option{-x2} and @samp{8} is the same as @option{-x6}.
+
+@end table
+@end table
+
+@anchor{wavpackenc}
+@section wavpack
+
+WavPack lossless audio encoder.
+
+This is a libavcodec-native WavPack encoder. There is also an encoder based on
+libwavpack, but there is virtually no reason to use that encoder.
+
+See also @ref{libwavpack}.
+
+@subsection Options
+
+The equivalent options for @command{wavpack} command line utility are listed in
+parentheses.
+
+@subsubsection Shared options
+
+The following shared options are effective for this encoder. Only special notes
+about this particular encoder will be documented here. For the general meaning
+of the options, see @ref{codec-options,,the Codec Options chapter}.
+
+@table @option
+@item frame_size (@emph{--blocksize})
+For this encoder, the range for this option is between 128 and 131072. Default
+is automatically decided based on sample rate and number of channel.
+
+For the complete formula of calculating default, see
+@file{libavcodec/wavpackenc.c}.
+
+@item compression_level (@emph{-f}, @emph{-h}, @emph{-hh}, and @emph{-x})
+This option's syntax is consistent with @ref{libwavpack}'s.
+@end table
+
+@subsubsection Private options
+
+@table @option
+@item joint_stereo (@emph{-j})
+Set whether to enable joint stereo. Valid values are:
+
+@table @samp
+@item on (@emph{1})
+Force mid/side audio encoding.
+@item off (@emph{0})
+Force left/right audio encoding.
+@item auto
+Let the encoder decide automatically.
+@end table
+
+@item optimize_mono
+Set whether to enable optimization for mono. This option is only effective for
+non-mono streams. Available values:
+
+@table @samp
+@item on
+enabled
+@item off
+disabled
+@end table
 
 @end table
 
@@ -1185,7 +1271,7 @@ Requires the presence of the libtheora headers and library during
 configuration. You need to explicitly configure the build with
 @code{--enable-libtheora}.
 
-For more informations about the libtheora project see
+For more information about the libtheora project see
 @url{http://www.theora.org/}.
 
 @subsection Options
@@ -1361,7 +1447,69 @@ g_error_resilient
 For more information about libvpx see:
 @url{http://www.webmproject.org/}
 
-@section libx264
+
+@section libwebp
+
+libwebp WebP Image encoder wrapper
+
+libwebp is Google's official encoder for WebP images. It can encode in either
+lossy or lossless mode. Lossy images are essentially a wrapper around a VP8
+frame. Lossless images are a separate codec developed by Google.
+
+@subsection Pixel Format
+
+Currently, libwebp only supports YUV420 for lossy and RGB for lossless due
+to limitations of the format and libwebp. Alpha is supported for either mode.
+Because of API limitations, if RGB is passed in when encoding lossy or YUV is
+passed in for encoding lossless, the pixel format will automatically be
+converted using functions from libwebp. This is not ideal and is done only for
+convenience.
+
+@subsection Options
+
+@table @option
+
+@item -lossless @var{boolean}
+Enables/Disables use of lossless mode. Default is 0.
+
+@item -compression_level @var{integer}
+For lossy, this is a quality/speed tradeoff. Higher values give better quality
+for a given size at the cost of increased encoding time. For lossless, this is
+a size/speed tradeoff. Higher values give smaller size at the cost of increased
+encoding time. More specifically, it controls the number of extra algorithms
+and compression tools used, and varies the combination of these tools. This
+maps to the @var{method} option in libwebp. The valid range is 0 to 6.
+Default is 4.
+
+@item -qscale @var{float}
+For lossy encoding, this controls image quality, 0 to 100. For lossless
+encoding, this controls the effort and time spent at compressing more. The
+default value is 75. Note that for usage via libavcodec, this option is called
+@var{global_quality} and must be multiplied by @var{FF_QP2LAMBDA}.
+
+@item -preset @var{type}
+Configuration preset. This does some automatic settings based on the general
+type of the image.
+@table @option
+@item none
+Do not use a preset.
+@item default
+Use the encoder default.
+@item picture
+Digital picture, like portrait, inner shot
+@item photo
+Outdoor photograph, with natural lighting
+@item drawing
+Hand or line drawing, with high-contrast details
+@item icon
+Small-sized colorful images
+@item text
+Text-like
+@end table
+
+@end table
+
+@section libx264, libx264rgb
 
 x264 H.264/MPEG-4 AVC encoder wrapper.
 
@@ -1382,6 +1530,16 @@ by the libx264 @code{x264_param_parse} function.
 
 The x264 project website is at
 @url{http://www.videolan.org/developers/x264.html}.
+
+The libx264rgb encoder is the same as libx264, except it accepts packed RGB
+pixel formats as input instead of YUV.
+
+@subsection Supported Pixel Formats
+
+x264 supports 8- to 10-bit color spaces. The exact bit depth is controlled at
+x264's configure time. FFmpeg only supports one bit depth in one particular
+build. In other words, it is not possible to build one FFmpeg with multiple
+versions of x264 with different bit depths.
 
 @subsection Options
 

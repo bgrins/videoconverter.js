@@ -208,8 +208,9 @@ static void lumRangeToJpeg16_c(int16_t *_dst, int width)
 {
     int i;
     int32_t *dst = (int32_t *) _dst;
-    for (i = 0; i < width; i++)
-        dst[i] = (FFMIN(dst[i], 30189 << 4) * 4769 - (39057361 << 2)) >> 12;
+    for (i = 0; i < width; i++) {
+        dst[i] = ((int)(FFMIN(dst[i], 30189 << 4) * 4769U - (39057361 << 2))) >> 12;
+    }
 }
 
 static void lumRangeFromJpeg16_c(int16_t *_dst, int width)
@@ -854,7 +855,7 @@ static void rgb48Toxyz12(struct SwsContext *c, uint16_t *dst,
                          const uint16_t *src, int stride, int h)
 {
     int xp,yp;
-    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(c->srcFormat);
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(c->dstFormat);
 
     for (yp=0; yp<h; yp++) {
         for (xp=0; xp+2<stride; xp+=3) {

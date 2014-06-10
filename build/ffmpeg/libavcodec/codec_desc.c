@@ -21,10 +21,10 @@
 
 #include <string.h>
 
-#include "avcodec.h"
-
 #include "libavutil/common.h"
 #include "libavutil/internal.h"
+#include "avcodec.h"
+#include "version.h"
 
 static const AVCodecDescriptor codec_descriptors[] = {
     /* video codecs */
@@ -42,6 +42,7 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .long_name = NULL_IF_CONFIG_SMALL("MPEG-2 video"),
         .props     = AV_CODEC_PROP_LOSSY,
     },
+#if FF_API_XVMC
     {
         .id        = AV_CODEC_ID_MPEG2VIDEO_XVMC,
         .type      = AVMEDIA_TYPE_VIDEO,
@@ -49,6 +50,7 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .long_name = NULL_IF_CONFIG_SMALL("MPEG-1/2 video XvMC (X-Video Motion Compensation)"),
         .props     = AV_CODEC_PROP_LOSSY,
     },
+#endif /* FF_API_XVMC */
     {
         .id        = AV_CODEC_ID_H261,
         .type      = AVMEDIA_TYPE_VIDEO,
@@ -1401,6 +1403,13 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .long_name = NULL_IF_CONFIG_SMALL("H.265 / HEVC (High Efficiency Video Coding)"),
         .props     = AV_CODEC_PROP_LOSSY,
     },
+    {
+        .id        = AV_CODEC_ID_FIC,
+        .type      = AVMEDIA_TYPE_VIDEO,
+        .name      = "fic",
+        .long_name = NULL_IF_CONFIG_SMALL("Mirillis FIC"),
+        .props     = AV_CODEC_PROP_LOSSY,
+    },
 
     /* various PCM "codecs" */
     {
@@ -2619,6 +2628,12 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .type      = AVMEDIA_TYPE_DATA,
         .name      = "dvd_nav_packet",
         .long_name = NULL_IF_CONFIG_SMALL("DVD Nav packet"),
+    },
+    {
+        .id        = AV_CODEC_ID_TIMED_ID3,
+        .type      = AVMEDIA_TYPE_DATA,
+        .name      = "timed_id3",
+        .long_name = NULL_IF_CONFIG_SMALL("timed ID3 metadata"),
     },
 
 };

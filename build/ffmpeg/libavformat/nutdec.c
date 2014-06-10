@@ -24,8 +24,10 @@
 #include "libavutil/avassert.h"
 #include "libavutil/bswap.h"
 #include "libavutil/dict.h"
+#include "libavutil/intreadwrite.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/tree.h"
+#include "libavcodec/bytestream.h"
 #include "avio_internal.h"
 #include "nut.h"
 #include "riff.h"
@@ -227,11 +229,14 @@ static int decode_main_header(NUTContext *nut)
     end += avio_tell(bc);
 
     tmp = ffio_read_varlen(bc);
-    if (tmp < 2 && tmp > NUT_VERSION) {
+    if (tmp < 2 && tmp > 4) {
         av_log(s, AV_LOG_ERROR, "Version %"PRId64" not supported.\n",
                tmp);
         return AVERROR(ENOSYS);
     }
+    nut->version = tmp;
+    if (nut->version > 3)
+        nut->minor_version = ffio_read_varlen(bc);
 
     GET_V(stream_count, tmp > 0 && tmp <= NUT_MAX_STREAMS);
 
@@ -415,9 +420,8 @@ static int decode_stream_header(NUTContext *nut)
 
     GET_V(st->codec->extradata_size, tmp < (1 << 30));
     if (st->codec->extradata_size) {
-        if (ff_alloc_extradata(st->codec, st->codec->extradata_size))
+        if (ff_get_extradata(st->codec, bc, st->codec->extradata_size) < 0)
             return AVERROR(ENOMEM);
-        avio_read(bc, st->codec->extradata, st->codec->extradata_size);
     }
 
     if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
@@ -774,6 +778,116 @@ static int nut_read_header(AVFormatContext *s)
     return 0;
 }
 
+static int read_sm_data(AVFormatContext *s, AVIOContext *bc, AVPacket *pkt, int is_meta, int64_t maxpos)
+{
+    int count = ffio_read_varlen(bc);
+    int skip_start = 0;
+    int skip_end = 0;
+    int channels = 0;
+    int64_t channel_layout = 0;
+    int sample_rate = 0;
+    int width = 0;
+    int height = 0;
+    int i;
+
+    for (i=0; i<count; i++) {
+        uint8_t name[256], str_value[256], type_str[256];
+        int value;
+        if (avio_tell(bc) >= maxpos)
+            return AVERROR_INVALIDDATA;
+        get_str(bc, name, sizeof(name));
+        value = get_s(bc);
+
+        if (value == -1) {
+            get_str(bc, str_value, sizeof(str_value));
+            av_log(s, AV_LOG_WARNING, "Unknown string %s / %s\n", name, str_value);
+        } else if (value == -2) {
+            uint8_t *dst = NULL;
+            int64_t v64, value_len;
+
+            get_str(bc, type_str, sizeof(type_str));
+            value_len = ffio_read_varlen(bc);
+            if (avio_tell(bc) + value_len >= maxpos)
+                return AVERROR_INVALIDDATA;
+            if (!strcmp(name, "Palette")) {
+                dst = av_packet_new_side_data(pkt, AV_PKT_DATA_PALETTE, value_len);
+            } else if (!strcmp(name, "Extradata")) {
+                dst = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, value_len);
+            } else if (sscanf(name, "CodecSpecificSide%"SCNd64"", &v64) == 1) {
+                dst = av_packet_new_side_data(pkt, AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL, value_len + 8);
+                if(!dst)
+                    return AVERROR(ENOMEM);
+                AV_WB64(dst, v64);
+                dst += 8;
+            } else if (!strcmp(name, "ChannelLayout") && value_len == 8) {
+                channel_layout = avio_rl64(bc);
+                continue;
+            } else {
+                av_log(s, AV_LOG_WARNING, "Unknown data %s / %s\n", name, type_str);
+                avio_skip(bc, value_len);
+                continue;
+            }
+            if(!dst)
+                return AVERROR(ENOMEM);
+            avio_read(bc, dst, value_len);
+        } else if (value == -3) {
+            value = get_s(bc);
+        } else if (value == -4) {
+            value = ffio_read_varlen(bc);
+        } else if (value < -4) {
+            get_s(bc);
+        } else {
+            if (!strcmp(name, "SkipStart")) {
+                skip_start = value;
+            } else if (!strcmp(name, "SkipEnd")) {
+                skip_end = value;
+            } else if (!strcmp(name, "Channels")) {
+                channels = value;
+            } else if (!strcmp(name, "SampleRate")) {
+                sample_rate = value;
+            } else if (!strcmp(name, "Width")) {
+                width = value;
+            } else if (!strcmp(name, "Height")) {
+                height = value;
+            } else {
+                av_log(s, AV_LOG_WARNING, "Unknown integer %s\n", name);
+            }
+        }
+    }
+
+    if (channels || channel_layout || sample_rate || width || height) {
+        uint8_t *dst = av_packet_new_side_data(pkt, AV_PKT_DATA_PARAM_CHANGE, 28);
+        if (!dst)
+            return AVERROR(ENOMEM);
+        bytestream_put_le32(&dst,
+                            AV_SIDE_DATA_PARAM_CHANGE_CHANNEL_COUNT*(!!channels) +
+                            AV_SIDE_DATA_PARAM_CHANGE_CHANNEL_LAYOUT*(!!channel_layout) +
+                            AV_SIDE_DATA_PARAM_CHANGE_SAMPLE_RATE*(!!sample_rate) +
+                            AV_SIDE_DATA_PARAM_CHANGE_DIMENSIONS*(!!(width|height))
+                           );
+        if (channels)
+            bytestream_put_le32(&dst, channels);
+        if (channel_layout)
+            bytestream_put_le64(&dst, channel_layout);
+        if (sample_rate)
+            bytestream_put_le32(&dst, sample_rate);
+        if (width || height){
+            bytestream_put_le32(&dst, width);
+            bytestream_put_le32(&dst, height);
+        }
+    }
+
+    if (skip_start || skip_end) {
+        uint8_t *dst = av_packet_new_side_data(pkt, AV_PKT_DATA_SKIP_SAMPLES, 10);
+        if (!dst)
+            return AVERROR(ENOMEM);
+        AV_WL32(dst, skip_start);
+        AV_WL32(dst+4, skip_end);
+    }
+
+    return 0;
+}
+
 static int decode_frame_header(NUTContext *nut, int64_t *pts, int *stream_id,
                                uint8_t *header_idx, int frame_code)
 {
@@ -856,6 +970,7 @@ static int decode_frame(NUTContext *nut, AVPacket *pkt, int frame_code)
     int64_t pts, last_IP_pts;
     StreamContext *stc;
     uint8_t header_idx;
+    int ret;
 
     size = decode_frame_header(nut, &pts, &stream_id, &header_idx, frame_code);
     if (size < 0)
@@ -881,7 +996,23 @@ static int decode_frame(NUTContext *nut, AVPacket *pkt, int frame_code)
         return AVERROR(ENOMEM);
     memcpy(pkt->data, nut->header[header_idx], nut->header_len[header_idx]);
     pkt->pos = avio_tell(bc); // FIXME
-    avio_read(bc, pkt->data + nut->header_len[header_idx], size);
+    if (stc->last_flags & FLAG_SM_DATA) {
+        int sm_size;
+        if (read_sm_data(s, bc, pkt, 0, pkt->pos + size) < 0)
+            return AVERROR_INVALIDDATA;
+        if (read_sm_data(s, bc, pkt, 1, pkt->pos + size) < 0)
+            return AVERROR_INVALIDDATA;
+        sm_size = avio_tell(bc) - pkt->pos;
+        size      -= sm_size;
+        pkt->size -= sm_size;
+    }
+
+    ret = avio_read(bc, pkt->data + nut->header_len[header_idx], size);
+    if (ret != size) {
+        if (ret < 0)
+            return ret;
+    }
+    av_shrink_packet(pkt, nut->header_len[header_idx] + ret);
 
     pkt->stream_index = stream_id;
     if (stc->last_flags & FLAG_KEY)

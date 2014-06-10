@@ -749,8 +749,24 @@ static av_always_inline int isRGB(enum AVPixelFormat pix_fmt)
         || (x) == AV_PIX_FMT_BGR24       \
     )
 
+#define isBayer(x) ( \
+           (x)==AV_PIX_FMT_BAYER_BGGR8    \
+        || (x)==AV_PIX_FMT_BAYER_BGGR16LE \
+        || (x)==AV_PIX_FMT_BAYER_BGGR16BE \
+        || (x)==AV_PIX_FMT_BAYER_RGGB8    \
+        || (x)==AV_PIX_FMT_BAYER_RGGB16LE \
+        || (x)==AV_PIX_FMT_BAYER_RGGB16BE \
+        || (x)==AV_PIX_FMT_BAYER_GBRG8    \
+        || (x)==AV_PIX_FMT_BAYER_GBRG16LE \
+        || (x)==AV_PIX_FMT_BAYER_GBRG16BE \
+        || (x)==AV_PIX_FMT_BAYER_GRBG8    \
+        || (x)==AV_PIX_FMT_BAYER_GRBG16LE \
+        || (x)==AV_PIX_FMT_BAYER_GRBG16BE \
+    )
+
 #define isAnyRGB(x) \
     (           \
+          isBayer(x)          ||    \
           isRGBinInt(x)       ||    \
           isBGRinInt(x)       ||    \
           isRGB(x)      \
@@ -835,6 +851,7 @@ extern const AVClass sws_context_class;
 void ff_get_unscaled_swscale(SwsContext *c);
 void ff_get_unscaled_swscale_bfin(SwsContext *c);
 void ff_get_unscaled_swscale_ppc(SwsContext *c);
+void ff_get_unscaled_swscale_arm(SwsContext *c);
 
 /**
  * Return function pointer to fastest main scaler path function depending

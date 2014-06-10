@@ -17,18 +17,24 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+/**
+ * @file
+ * @ingroup lavu_frame
+ * reference-counted frame API
+ */
+
 #ifndef AVUTIL_FRAME_H
 #define AVUTIL_FRAME_H
 
 #include <stdint.h>
-
-#include "libavcodec/version.h"
 
 #include "avutil.h"
 #include "buffer.h"
 #include "dict.h"
 #include "rational.h"
 #include "samplefmt.h"
+#include "version.h"
+
 
 enum AVColorSpace{
     AVCOL_SPC_RGB         =  0,
@@ -53,11 +59,39 @@ enum AVColorRange{
 };
 
 
+/**
+ * @defgroup lavu_frame AVFrame
+ * @ingroup lavu_data
+ *
+ * @{
+ * AVFrame is an abstraction for reference-counted raw multimedia data.
+ */
+
 enum AVFrameSideDataType {
     /**
      * The data is the AVPanScan struct defined in libavcodec.
      */
     AV_FRAME_DATA_PANSCAN,
+    /**
+     * ATSC A53 Part 4 Closed Captions.
+     * A53 CC bitstream is stored as uint8_t in AVFrameSideData.data.
+     * The number of bytes of CC data is AVFrameSideData.size.
+     */
+    AV_FRAME_DATA_A53_CC,
+    /**
+     * Stereoscopic 3d metadata.
+     * The data is the AVStereo3D struct defined in libavutil/stereo3d.h.
+     */
+    AV_FRAME_DATA_STEREO3D,
+    /**
+     * The data is the AVMatrixEncoding enum defined in libavutil/channel_layout.h.
+     */
+    AV_FRAME_DATA_MATRIXENCODING,
+    /**
+     * Metadata relevant to a downmix procedure.
+     * The data is the AVDownmixInfo struct defined in libavutil/downmix_info.h.
+     */
+    AV_FRAME_DATA_DOWNMIX_INFO,
 };
 
 typedef struct AVFrameSideData {
@@ -390,12 +424,22 @@ typedef struct AVFrame {
     int            nb_side_data;
 
 /**
+ * @defgroup lavu_frame_flags AV_FRAME_FLAGS
+ * Flags describing additional frame properties.
+ *
+ * @{
+ */
+
+/**
  * The frame data may be corrupted, e.g. due to decoding errors.
  */
 #define AV_FRAME_FLAG_CORRUPT       (1 << 0)
+/**
+ * @}
+ */
 
     /**
-     * Frame flags, a combination of AV_FRAME_FLAG_*
+     * Frame flags, a combination of @ref lavu_frame_flags
      */
     int flags;
 
@@ -552,7 +596,7 @@ AVFrame *av_frame_alloc(void);
 void av_frame_free(AVFrame **frame);
 
 /**
- * Setup a new reference to the data described by a given frame.
+ * Set up a new reference to the data described by the source frame.
  *
  * Copy frame properties from src to dst and create a new reference for each
  * AVBufferRef from src.
@@ -630,6 +674,19 @@ int av_frame_is_writable(AVFrame *frame);
 int av_frame_make_writable(AVFrame *frame);
 
 /**
+ * Copy the frame data from src to dst.
+ *
+ * This function does not allocate anything, dst must be already initialized and
+ * allocated with the same parameters as src.
+ *
+ * This function only copies the frame data (i.e. the contents of the data /
+ * extended data arrays), not any other properties.
+ *
+ * @return >= 0 on success, a negative AVERROR on error.
+ */
+int av_frame_copy(AVFrame *dst, const AVFrame *src);
+
+/**
  * Copy only "metadata" fields from src to dst.
  *
  * Metadata for the purpose of this function are those fields that do not affect
@@ -668,5 +725,9 @@ AVFrameSideData *av_frame_new_side_data(AVFrame *frame,
  */
 AVFrameSideData *av_frame_get_side_data(const AVFrame *frame,
                                         enum AVFrameSideDataType type);
+
+/**
+ * @}
+ */
 
 #endif /* AVUTIL_FRAME_H */

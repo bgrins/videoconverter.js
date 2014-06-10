@@ -31,6 +31,7 @@
 #include "libavutil/imgutils.h"
 #include "avcodec.h"
 #include "internal.h"
+#include "libvpx.h"
 
 typedef struct VP8DecoderContext {
     struct vpx_codec_ctx decoder;
@@ -144,6 +145,7 @@ AVCodec ff_libvpx_vp9_decoder = {
     .init           = vp9_init,
     .close          = vp8_free,
     .decode         = vp8_decode,
-    .capabilities   = CODEC_CAP_AUTO_THREADS | CODEC_CAP_EXPERIMENTAL,
+    .capabilities   = CODEC_CAP_AUTO_THREADS | CODEC_CAP_DR1,
+    .init_static_data = ff_vp9_init_static,
 };
 #endif /* CONFIG_LIBVPX_VP9_DECODER */

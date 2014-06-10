@@ -90,6 +90,9 @@ struct Program {
     unsigned int id; //program id/service id
     unsigned int nb_pids;
     unsigned int pids[MAX_PIDS_PER_PROGRAM];
+
+    /** have we found pmt for this program */
+    int pmt_found;
 };
 
 struct MpegTSContext {
@@ -142,6 +145,8 @@ struct MpegTSContext {
 static const AVOption mpegtsraw_options[] = {
     {"compute_pcr", "Compute exact PCR for each transport stream packet.", offsetof(MpegTSContext, mpeg2ts_compute_pcr), AV_OPT_TYPE_INT,
      {.i64 = 0}, 0, 1, AV_OPT_FLAG_DECODING_PARAM },
+    {"ts_packetsize", "Output option carrying the raw packet size.", offsetof(MpegTSContext, raw_packet_size), AV_OPT_TYPE_INT,
+     {.i64 = 0}, 0, 0, AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_EXPORT | AV_OPT_FLAG_READONLY },
     { NULL },
 };
 
@@ -155,6 +160,8 @@ static const AVClass mpegtsraw_class = {
 static const AVOption mpegts_options[] = {
     {"fix_teletext_pts", "Try to fix pts values of dvb teletext streams.", offsetof(MpegTSContext, fix_teletext_pts), AV_OPT_TYPE_INT,
      {.i64 = 1}, 0, 1, AV_OPT_FLAG_DECODING_PARAM },
+    {"ts_packetsize", "Output option carrying the raw packet size.", offsetof(MpegTSContext, raw_packet_size), AV_OPT_TYPE_INT,
+     {.i64 = 0}, 0, 0, AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_EXPORT | AV_OPT_FLAG_READONLY },
     { NULL },
 };
 
@@ -205,6 +212,17 @@ typedef struct PESContext {
 
 extern AVInputFormat ff_mpegts_demuxer;
 
+static struct Program * get_program(MpegTSContext *ts, unsigned int programid)
+{
+    int i;
+    for(i=0; i<ts->nb_prg; i++) {
+        if(ts->prg[i].id == programid) {
+            return &ts->prg[i];
+        }
+    }
+    return NULL;
+}
+
 static void clear_avprogram(MpegTSContext *ts, unsigned int programid)
 {
     AVProgram *prg = NULL;
@@ -225,8 +243,10 @@ static void clear_program(MpegTSContext *ts, unsigned int programid)
 
     clear_avprogram(ts, programid);
     for(i=0; i<ts->nb_prg; i++)
-        if(ts->prg[i].id == programid)
+        if(ts->prg[i].id == programid) {
             ts->prg[i].nb_pids = 0;
+            ts->prg[i].pmt_found = 0;
+        }
 }
 
 static void clear_programs(MpegTSContext *ts)
@@ -245,25 +265,28 @@ static void add_pat_entry(MpegTSContext *ts, unsigned int programid)
     p = &ts->prg[ts->nb_prg];
     p->id = programid;
     p->nb_pids = 0;
+    p->pmt_found = 0;
     ts->nb_prg++;
 }
 
 static void add_pid_to_pmt(MpegTSContext *ts, unsigned int programid, unsigned int pid)
 {
-    int i;
-    struct Program *p = NULL;
-    for(i=0; i<ts->nb_prg; i++) {
-        if(ts->prg[i].id == programid) {
-            p = &ts->prg[i];
-            break;
-        }
-    }
+    struct Program *p = get_program(ts, programid);
     if(!p)
         return;
 
     if(p->nb_pids >= MAX_PIDS_PER_PROGRAM)
         return;
     p->pids[p->nb_pids++] = pid;
+}
+
+static void set_pmt_found(MpegTSContext *ts, unsigned int programid)
+{
+    struct Program *p = get_program(ts, programid);
+    if(!p)
+        return;
+
+    p->pmt_found = 1;
 }
 
 static void set_pcr_pid(AVFormatContext *s, unsigned int programid, unsigned int pid)
@@ -452,22 +475,19 @@ static void mpegts_close_filter(MpegTSContext *ts, MpegTSFilter *filter)
 static int analyze(const uint8_t *buf, int size, int packet_size, int *index){
     int stat[TS_MAX_PACKET_SIZE];
     int i;
-    int x=0;
     int best_score=0;
 
-    memset(stat, 0, packet_size*sizeof(int));
+    memset(stat, 0, packet_size*sizeof(*stat));
 
-    for(x=i=0; i<size-3; i++){
+    for(i=0; i<size-3; i++){
         if(buf[i] == 0x47 && !(buf[i+1] & 0x80) && buf[i+3] != 0x47){
+            int x = i % packet_size;
             stat[x]++;
             if(stat[x] > best_score){
                 best_score= stat[x];
                 if(index) *index= x;
             }
         }
-
-        x++;
-        if(x == packet_size) x= 0;
     }
 
     return best_score;
@@ -642,6 +662,7 @@ static const StreamType REGD_types[] = {
 
 static const StreamType METADATA_types[] = {
     { MKTAG('K','L','V','A'), AVMEDIA_TYPE_DATA, AV_CODEC_ID_SMPTE_KLV },
+    { MKTAG('I','D','3',' '), AVMEDIA_TYPE_DATA, AV_CODEC_ID_TIMED_ID3 },
     { 0 },
 };
 
@@ -1233,6 +1254,11 @@ static int parse_MP4SLDescrTag(MP4DescrParseContext *d, int64_t off, int len)
         descr->sl.timestamp_res      = avio_rb32(&d->pb);
                                        avio_rb32(&d->pb);
         descr->sl.timestamp_len      = avio_r8(&d->pb);
+        if (descr->sl.timestamp_len > 64) {
+            avpriv_request_sample(NULL, "timestamp_len > 64");
+            descr->sl.timestamp_len = 64;
+            return AVERROR_PATCHWELCOME;
+        }
         descr->sl.ocr_len            = avio_r8(&d->pb);
         descr->sl.au_len             = avio_r8(&d->pb);
         descr->sl.inst_bitrate_len   = avio_r8(&d->pb);
@@ -1441,38 +1467,111 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
         }
         break;
     case 0x56: /* DVB teletext descriptor */
-        language[0] = get8(pp, desc_end);
-        language[1] = get8(pp, desc_end);
-        language[2] = get8(pp, desc_end);
-        language[3] = 0;
-        av_dict_set(&st->metadata, "language", language, 0);
-        break;
-    case 0x59: /* subtitling descriptor */
-        language[0] = get8(pp, desc_end);
-        language[1] = get8(pp, desc_end);
-        language[2] = get8(pp, desc_end);
-        language[3] = 0;
-        /* hearing impaired subtitles detection */
-        switch(get8(pp, desc_end)) {
-        case 0x20: /* DVB subtitles (for the hard of hearing) with no monitor aspect ratio criticality */
-        case 0x21: /* DVB subtitles (for the hard of hearing) for display on 4:3 aspect ratio monitor */
-        case 0x22: /* DVB subtitles (for the hard of hearing) for display on 16:9 aspect ratio monitor */
-        case 0x23: /* DVB subtitles (for the hard of hearing) for display on 2.21:1 aspect ratio monitor */
-        case 0x24: /* DVB subtitles (for the hard of hearing) for display on a high definition monitor */
-        case 0x25: /* DVB subtitles (for the hard of hearing) with plano-stereoscopic disparity for display on a high definition monitor */
-            st->disposition |= AV_DISPOSITION_HEARING_IMPAIRED;
-            break;
-        }
-        if (st->codec->extradata) {
-            if (st->codec->extradata_size == 4 && memcmp(st->codec->extradata, *pp, 4))
-                avpriv_request_sample(fc, "DVB sub with multiple IDs");
-        } else {
-            if (!ff_alloc_extradata(st->codec, 4)) {
-                memcpy(st->codec->extradata, *pp, 4);
+        {
+            uint8_t *extradata = NULL;
+            int language_count = desc_len / 5;
+
+            if (desc_len > 0 && desc_len % 5 != 0)
+                return AVERROR_INVALIDDATA;
+
+            if (language_count > 0) {
+                /* 4 bytes per language code (3 bytes) with comma or NUL byte should fit language buffer */
+                if (language_count > sizeof(language) / 4) {
+                    language_count = sizeof(language) / 4;
+                }
+
+                if (st->codec->extradata == NULL) {
+                    if (ff_alloc_extradata(st->codec, language_count * 2)) {
+                        return AVERROR(ENOMEM);
+                    }
+                }
+
+               if (st->codec->extradata_size < language_count * 2)
+                   return AVERROR_INVALIDDATA;
+
+               extradata = st->codec->extradata;
+
+                for (i = 0; i < language_count; i++) {
+                    language[i * 4 + 0] = get8(pp, desc_end);
+                    language[i * 4 + 1] = get8(pp, desc_end);
+                    language[i * 4 + 2] = get8(pp, desc_end);
+                    language[i * 4 + 3] = ',';
+
+                    memcpy(extradata, *pp, 2);
+                    extradata += 2;
+
+                    *pp += 2;
+                }
+
+                language[i * 4 - 1] = 0;
+                av_dict_set(&st->metadata, "language", language, 0);
             }
         }
-        *pp += 4;
-        av_dict_set(&st->metadata, "language", language, 0);
+        break;
+    case 0x59: /* subtitling descriptor */
+        {
+            /* 8 bytes per DVB subtitle substream data:
+             * ISO_639_language_code (3 bytes),
+             * subtitling_type (1 byte),
+             * composition_page_id (2 bytes),
+             * ancillary_page_id (2 bytes) */
+            int language_count = desc_len / 8;
+
+            if (desc_len > 0 && desc_len % 8 != 0)
+                return AVERROR_INVALIDDATA;
+
+            if (language_count > 1) {
+                avpriv_request_sample(fc, "DVB subtitles with multiple languages");
+            }
+
+            if (language_count > 0) {
+                uint8_t *extradata;
+
+                /* 4 bytes per language code (3 bytes) with comma or NUL byte should fit language buffer */
+                if (language_count > sizeof(language) / 4) {
+                    language_count = sizeof(language) / 4;
+                }
+
+                if (st->codec->extradata == NULL) {
+                    if (ff_alloc_extradata(st->codec, language_count * 5)) {
+                        return AVERROR(ENOMEM);
+                    }
+                }
+
+                if (st->codec->extradata_size < language_count * 5)
+                    return AVERROR_INVALIDDATA;
+
+                extradata = st->codec->extradata;
+
+                for (i = 0; i < language_count; i++) {
+                    language[i * 4 + 0] = get8(pp, desc_end);
+                    language[i * 4 + 1] = get8(pp, desc_end);
+                    language[i * 4 + 2] = get8(pp, desc_end);
+                    language[i * 4 + 3] = ',';
+
+                    /* hearing impaired subtitles detection using subtitling_type */
+                    switch(*pp[0]) {
+                    case 0x20: /* DVB subtitles (for the hard of hearing) with no monitor aspect ratio criticality */
+                    case 0x21: /* DVB subtitles (for the hard of hearing) for display on 4:3 aspect ratio monitor */
+                    case 0x22: /* DVB subtitles (for the hard of hearing) for display on 16:9 aspect ratio monitor */
+                    case 0x23: /* DVB subtitles (for the hard of hearing) for display on 2.21:1 aspect ratio monitor */
+                    case 0x24: /* DVB subtitles (for the hard of hearing) for display on a high definition monitor */
+                    case 0x25: /* DVB subtitles (for the hard of hearing) with plano-stereoscopic disparity for display on a high definition monitor */
+                        st->disposition |= AV_DISPOSITION_HEARING_IMPAIRED;
+                        break;
+                    }
+
+                    extradata[4] = get8(pp, desc_end); /* subtitling_type */
+                    memcpy(extradata, *pp, 4); /* composition_page_id and ancillary_page_id */
+                    extradata += 5;
+
+                    *pp += 4;
+                }
+
+                language[i * 4 - 1] = 0;
+                av_dict_set(&st->metadata, "language", language, 0);
+            }
+        }
         break;
     case 0x0a: /* ISO 639 language descriptor */
         for (i = 0; i + 4 <= desc_len; i += 4) {
@@ -1589,6 +1688,8 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
     // stop parsing after pmt, we found header
     if (!ts->stream->nb_streams)
         ts->stop_parse = 2;
+
+    set_pmt_found(ts, h->id);
 
     for(;;) {
         st = 0;
@@ -1912,6 +2013,23 @@ static int handle_packet(MpegTSContext *ts, const uint8_t *packet)
                                    p, p_end - p, 0);
             }
         }
+
+        // stop find_stream_info from waiting for more streams
+        // when all programs have received a PMT
+        if(ts->stream->ctx_flags & AVFMTCTX_NOHEADER) {
+            int i;
+            for(i=0; i<ts->nb_prg; i++) {
+                if (!ts->prg[i].pmt_found)
+                    break;
+            }
+            if (i == ts->nb_prg && ts->nb_prg > 0) {
+                if (ts->stream->nb_streams > 1 || pos > 100000) {
+                    av_log(ts->stream, AV_LOG_DEBUG, "All programs have pmt, headers found\n");
+                    ts->stream->ctx_flags &= ~AVFMTCTX_NOHEADER;
+                }
+            }
+        }
+
     } else {
         int ret;
         int64_t pcr = -1;
@@ -1996,7 +2114,9 @@ static int read_packet(AVFormatContext *s, uint8_t *buf, int raw_packet_size, co
         /* check packet sync byte */
         if ((*data)[0] != 0x47) {
             /* find a new packet start */
-            avio_seek(pb, -raw_packet_size, SEEK_CUR);
+            uint64_t pos = avio_tell(pb);
+            avio_seek(pb, -FFMIN(raw_packet_size, pos), SEEK_CUR);
+
             if (mpegts_resync(s) < 0)
                 return AVERROR(EAGAIN);
             else

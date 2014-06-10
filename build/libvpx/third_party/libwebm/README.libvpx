@@ -1,0 +1,7 @@
+URL: https://chromium.googlesource.com/webm/libwebm
+Version: a7118d8ec564e9db841da1eb01f547f3229f240a
+License: BSD
+License File: LICENSE.txt
+
+Description:
+libwebm is used to handle WebM container I/O.

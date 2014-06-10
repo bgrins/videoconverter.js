@@ -44,6 +44,14 @@ fate-filter-fade: CMD = framecrc -c:v pgmyuv -i $(SRC) -vf fade=in:5:15,fade=out
 FATE_FILTER_VSYNTH-$(call ALLYES, INTERLACE_FILTER FIELDORDER_FILTER) += fate-filter-fieldorder
 fate-filter-fieldorder: CMD = framecrc -c:v pgmyuv -i $(SRC) -vf interlace=tff,fieldorder=bff -sws_flags +accurate_rnd+bitexact
 
+define FATE_FPFILTER_SUITE
+FATE_FILTER_VSYNTH-$(CONFIG_FRAMEPACK_FILTER) += fate-filter-framepack-$(1)
+fate-filter-framepack-$(1): CMD = framecrc -c:v pgmyuv -i $(TARGET_PATH)/tests/vsynth1/%02d.pgm -c:v pgmyuv -i $(TARGET_PATH)/tests/vsynth1/%02d.pgm -filter_complex framepack=$(1) -frames 15
+endef
+
+FPMODES = columns frameseq lines sbs tab
+$(foreach MODE,$(FPMODES),$(eval $(call FATE_FPFILTER_SUITE,$(MODE))))
+
 FATE_FILTER_VSYNTH-$(CONFIG_GRADFUN_FILTER) += fate-filter-gradfun
 fate-filter-gradfun: CMD = framecrc -c:v pgmyuv -i $(SRC) -vf gradfun
 
@@ -72,6 +80,9 @@ fate-filter-overlay_rgb: CMD = framecrc -c:v pgmyuv -i $(SRC) -filter_complex_sc
 FATE_FILTER_VSYNTH-$(call ALLYES, SPLIT_FILTER SCALE_FILTER PAD_FILTER OVERLAY_FILTER) += fate-filter-overlay_yuv420
 fate-filter-overlay_yuv420: CMD = framecrc -c:v pgmyuv -i $(SRC) -filter_complex_script $(SRC_PATH)/tests/filtergraphs/overlay_yuv420
 
+FATE_FILTER_VSYNTH-$(call ALLYES, SPLIT_FILTER SCALE_FILTER PAD_FILTER OVERLAY_FILTER) += fate-filter-overlay_yuv422
+fate-filter-overlay_yuv422: CMD = framecrc -c:v pgmyuv -i $(SRC) -filter_complex_script $(SRC_PATH)/tests/filtergraphs/overlay_yuv422
+
 FATE_FILTER_VSYNTH-$(call ALLYES, SPLIT_FILTER SCALE_FILTER PAD_FILTER OVERLAY_FILTER) += fate-filter-overlay_yuv444
 fate-filter-overlay_yuv444: CMD = framecrc -c:v pgmyuv -i $(SRC) -filter_complex_script $(SRC_PATH)/tests/filtergraphs/overlay_yuv444
 
@@ -80,6 +91,10 @@ fate-filter-phase: CMD = framecrc -c:v pgmyuv -i $(SRC) -vf phase
 
 FATE_FILTER_VSYNTH-$(CONFIG_SEPARATEFIELDS_FILTER) += fate-filter-separatefields
 fate-filter-separatefields: CMD = framecrc -c:v pgmyuv -i $(SRC) -vf separatefields
+
+FATE_FILTER_VSYNTH-$(CONFIG_SELECT_FILTER) += fate-filter-select-alternate
+fate-filter-select-alternate: tests/data/filtergraphs/select-alternate
+fate-filter-select-alternate: CMD = framecrc -c:v pgmyuv -i $(SRC) -filter_script $(TARGET_PATH)/tests/data/filtergraphs/select-alternate
 
 FATE_FILTER_VSYNTH-$(call ALLYES, SETPTS_FILTER  SETTB_FILTER) += fate-filter-setpts
 fate-filter-setpts: tests/data/filtergraphs/setpts

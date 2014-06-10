@@ -84,10 +84,10 @@ static void vert_32x32_c(uint8_t *dst, ptrdiff_t stride,
 static void hor_4x4_c(uint8_t *dst, ptrdiff_t stride,
                       const uint8_t *left, const uint8_t *top)
 {
-    AV_WN32A(dst + stride * 0, left[0] * 0x01010101U);
-    AV_WN32A(dst + stride * 1, left[1] * 0x01010101U);
-    AV_WN32A(dst + stride * 2, left[2] * 0x01010101U);
-    AV_WN32A(dst + stride * 3, left[3] * 0x01010101U);
+    AV_WN32A(dst + stride * 0, left[3] * 0x01010101U);
+    AV_WN32A(dst + stride * 1, left[2] * 0x01010101U);
+    AV_WN32A(dst + stride * 2, left[1] * 0x01010101U);
+    AV_WN32A(dst + stride * 3, left[0] * 0x01010101U);
 }
 
 static void hor_8x8_c(uint8_t *dst, ptrdiff_t stride,
@@ -96,7 +96,7 @@ static void hor_8x8_c(uint8_t *dst, ptrdiff_t stride,
     int y;
 
     for (y = 0; y < 8; y++) {
-        AV_WN64A(dst, left[y] * 0x0101010101010101ULL);
+        AV_WN64A(dst, left[7 - y] * 0x0101010101010101ULL);
         dst += stride;
     }
 }
@@ -107,7 +107,7 @@ static void hor_16x16_c(uint8_t *dst, ptrdiff_t stride,
     int y;
 
     for (y = 0; y < 16; y++) {
-        uint64_t p8 = left[y] * 0x0101010101010101ULL;
+        uint64_t p8 = left[15 - y] * 0x0101010101010101ULL;
 
         AV_WN64A(dst + 0, p8);
         AV_WN64A(dst + 8, p8);
@@ -121,7 +121,7 @@ static void hor_32x32_c(uint8_t *dst, ptrdiff_t stride,
     int y;
 
     for (y = 0; y < 32; y++) {
-        uint64_t p8 = left[y] * 0x0101010101010101ULL;
+        uint64_t p8 = left[31 - y] * 0x0101010101010101ULL;
 
         AV_WN64A(dst +  0, p8);
         AV_WN64A(dst +  8, p8);
@@ -137,7 +137,7 @@ static void tm_4x4_c(uint8_t *dst, ptrdiff_t stride,
     int y, tl = top[-1];
 
     for (y = 0; y < 4; y++) {
-        int l_m_tl = left[y] - tl;
+        int l_m_tl = left[3 - y] - tl;
 
         dst[0] = av_clip_uint8(top[0] + l_m_tl);
         dst[1] = av_clip_uint8(top[1] + l_m_tl);
@@ -153,7 +153,7 @@ static void tm_8x8_c(uint8_t *dst, ptrdiff_t stride,
     int y, tl = top[-1];
 
     for (y = 0; y < 8; y++) {
-        int l_m_tl = left[y] - tl;
+        int l_m_tl = left[7 - y] - tl;
 
         dst[0] = av_clip_uint8(top[0] + l_m_tl);
         dst[1] = av_clip_uint8(top[1] + l_m_tl);
@@ -173,7 +173,7 @@ static void tm_16x16_c(uint8_t *dst, ptrdiff_t stride,
     int y, tl = top[-1];
 
     for (y = 0; y < 16; y++) {
-        int l_m_tl = left[y] - tl;
+        int l_m_tl = left[15 - y] - tl;
 
         dst[ 0] = av_clip_uint8(top[ 0] + l_m_tl);
         dst[ 1] = av_clip_uint8(top[ 1] + l_m_tl);
@@ -201,7 +201,7 @@ static void tm_32x32_c(uint8_t *dst, ptrdiff_t stride,
     int y, tl = top[-1];
 
     for (y = 0; y < 32; y++) {
-        int l_m_tl = left[y] - tl;
+        int l_m_tl = left[31 - y] - tl;
 
         dst[ 0] = av_clip_uint8(top[ 0] + l_m_tl);
         dst[ 1] = av_clip_uint8(top[ 1] + l_m_tl);
@@ -613,7 +613,7 @@ static void diag_downright_4x4_c(uint8_t *dst, ptrdiff_t stride,
                                  const uint8_t *left, const uint8_t *top)
 {
     int tl = top[-1], a0 = top[0], a1 = top[1], a2 = top[2], a3 = top[3],
-        l0 = left[0], l1 = left[1], l2 = left[2], l3 = left[3];
+        l0 = left[3], l1 = left[2], l2 = left[1], l3 = left[0];
 
     DST(0,3) = (l1 + l2 * 2 + l3 + 2) >> 2;
     DST(0,2) = DST(1,3) = (l0 + l1 * 2 + l2 + 2) >> 2;
@@ -632,11 +632,11 @@ static void diag_downright_##size##x##size##_c(uint8_t *dst, ptrdiff_t stride, \
     uint8_t v[size + size - 1]; \
 \
     for (i = 0; i < size - 2; i++) { \
-        v[i           ] = (left[size - 1 - i] + left[size - 2 - i] * 2 + left[size - 3 - i] + 2) >> 2; \
-        v[size + 1 + i] = (top[i]             + top[i + 1]         * 2 + top[i + 2]         + 2) >> 2; \
+        v[i           ] = (left[i] + left[i + 1] * 2 + left[i + 2] + 2) >> 2; \
+        v[size + 1 + i] = (top[i]  + top[i + 1]  * 2 + top[i + 2]  + 2) >> 2; \
     } \
-    v[size - 2] = (left[1] + left[0] * 2 + top[-1] + 2) >> 2; \
-    v[size - 1] = (left[0] + top[-1] * 2 + top[ 0] + 2) >> 2; \
+    v[size - 2] = (left[size - 2] + left[size - 1] * 2 + top[-1] + 2) >> 2; \
+    v[size - 1] = (left[size - 1] + top[-1] * 2 + top[ 0] + 2) >> 2; \
     v[size    ] = (top[-1] + top[0]  * 2 + top[ 1] + 2) >> 2; \
 \
     for (j = 0; j < size; j++) \
@@ -651,7 +651,7 @@ static void vert_right_4x4_c(uint8_t *dst, ptrdiff_t stride,
                              const uint8_t *left, const uint8_t *top)
 {
     int tl = top[-1], a0 = top[0], a1 = top[1], a2 = top[2], a3 = top[3],
-        l0 = left[0], l1 = left[1], l2 = left[2];
+        l0 = left[3], l1 = left[2], l2 = left[1];
 
     DST(0,3) = (l0 + l1 * 2 + l2 + 2) >> 2;
     DST(0,2) = (tl + l0 * 2 + l1 + 2) >> 2;
@@ -673,14 +673,14 @@ static void vert_right_##size##x##size##_c(uint8_t *dst, ptrdiff_t stride, \
     uint8_t ve[size + size/2 - 1], vo[size + size/2 - 1]; \
 \
     for (i = 0; i < size/2 - 2; i++) { \
-        vo[i] = (left[size - 4 - i*2] + left[size - 3 - i*2] * 2 + left[size - 2 - i*2] + 2) >> 2; \
-        ve[i] = (left[size - 5 - i*2] + left[size - 4 - i*2] * 2 + left[size - 3 - i*2] + 2) >> 2; \
+        vo[i] = (left[i*2 + 3] + left[i*2 + 2] * 2 + left[i*2 + 1] + 2) >> 2; \
+        ve[i] = (left[i*2 + 4] + left[i*2 + 3] * 2 + left[i*2 + 2] + 2) >> 2; \
     } \
-    vo[size/2 - 2] = (left[0] + left[1] * 2 + left[2] + 2) >> 2; \
-    ve[size/2 - 2] = (top[-1] + left[0] * 2 + left[1] + 2) >> 2; \
+    vo[size/2 - 2] = (left[size - 1] + left[size - 2] * 2 + left[size - 3] + 2) >> 2; \
+    ve[size/2 - 2] = (top[-1] + left[size - 1] * 2 + left[size - 2] + 2) >> 2; \
 \
     ve[size/2 - 1] = (top[-1] + top[0] + 1) >> 1; \
-    vo[size/2 - 1] = (left[0] + top[-1] * 2 + top[0] + 2) >> 2; \
+    vo[size/2 - 1] = (left[size - 1] + top[-1] * 2 + top[0] + 2) >> 2; \
     for (i = 0; i < size - 1; i++) { \
         ve[size/2 + i] = (top[i] + top[i + 1] + 1) >> 1; \
         vo[size/2 + i] = (top[i - 1] + top[i] * 2 + top[i + 1] + 2) >> 2; \
@@ -699,7 +699,7 @@ def_vert_right(32)
 static void hor_down_4x4_c(uint8_t *dst, ptrdiff_t stride,
                            const uint8_t *left, const uint8_t *top)
 {
-    int l0 = left[0], l1 = left[1], l2 = left[2], l3 = left[3],
+    int l0 = left[3], l1 = left[2], l2 = left[1], l3 = left[0],
         tl = top[-1], a0 = top[0], a1 = top[1], a2 = top[2];
 
     DST(2,0) = (tl + a0 * 2 + a1 + 2) >> 2;
@@ -722,14 +722,14 @@ static void hor_down_##size##x##size##_c(uint8_t *dst, ptrdiff_t stride, \
     uint8_t v[size * 3 - 2]; \
 \
     for (i = 0; i < size - 2; i++) { \
-        v[i*2       ] = (left[size - 2 - i] + left[size - 1 - i] + 1) >> 1; \
-        v[i*2    + 1] = (left[size - 3 - i] + left[size - 2 - i] * 2 + left[size - 1 - i] + 2) >> 2; \
+        v[i*2       ] = (left[i + 1] + left[i + 0] + 1) >> 1; \
+        v[i*2    + 1] = (left[i + 2] + left[i + 1] * 2 + left[i + 0] + 2) >> 2; \
         v[size*2 + i] = (top[i - 1] + top[i] * 2 + top[i + 1] + 2) >> 2; \
     } \
-    v[size*2 - 2] = (top[-1] + left[0] + 1) >> 1; \
-    v[size*2 - 4] = (left[0] + left[1] + 1) >> 1; \
-    v[size*2 - 1] = (top[0]  + top[-1] * 2 + left[0] + 2) >> 2; \
-    v[size*2 - 3] = (top[-1] + left[0] * 2 + left[1] + 2) >> 2; \
+    v[size*2 - 2] = (top[-1] + left[size - 1] + 1) >> 1; \
+    v[size*2 - 4] = (left[size - 1] + left[size - 2] + 1) >> 1; \
+    v[size*2 - 1] = (top[0]  + top[-1] * 2 + left[size - 1] + 2) >> 2; \
+    v[size*2 - 3] = (top[-1] + left[size - 1] * 2 + left[size - 2] + 2) >> 2; \
 \
     for (j = 0; j < size; j++) \
         memcpy(dst + j*stride, v + size*2 - 2 - j*2, size); \
@@ -786,7 +786,7 @@ def_vert_left(32)
 static void hor_up_4x4_c(uint8_t *dst, ptrdiff_t stride,
                          const uint8_t *left, const uint8_t *top)
 {
-    int l0 = left[0], l1 = left[1], l2 = left[2], l3 = left[3];
+    int l0 = left[3], l1 = left[2], l2 = left[1], l3 = left[0];
 
     DST(0,0) = (l0 + l1 + 1) >> 1;
     DST(1,0) = (l0 + l1 * 2 + l2 + 2) >> 2;
@@ -805,17 +805,17 @@ static void hor_up_##size##x##size##_c(uint8_t *dst, ptrdiff_t stride, \
     uint8_t v[size*2 - 2]; \
 \
     for (i = 0; i < size - 2; i++) { \
-        v[i*2    ] = (left[i] + left[i + 1] + 1) >> 1; \
-        v[i*2 + 1] = (left[i] + left[i + 1] * 2 + left[i + 2] + 2) >> 2; \
+        v[i*2    ] = (left[size - i - 1] + left[size - i - 2] + 1) >> 1; \
+        v[i*2 + 1] = (left[size - i - 1] + left[size - i - 2] * 2 + left[size - i - 3] + 2) >> 2; \
     } \
-    v[size*2 - 4] = (left[size - 2] + left[size - 1] + 1) >> 1; \
-    v[size*2 - 3] = (left[size - 2] + left[size - 1] * 3 + 2) >> 2; \
+    v[size*2 - 4] = (left[1] + left[0] + 1) >> 1; \
+    v[size*2 - 3] = (left[1] + left[0] * 3 + 2) >> 2; \
 \
     for (j = 0; j < size / 2; j++) \
         memcpy(dst + j*stride, v + j*2, size); \
     for (j = size / 2; j < size; j++) { \
         memcpy(dst + j*stride, v + j*2, size*2 - 2 - j*2); \
-        memset(dst + j*stride + size*2 - 2 - j*2, left[size - 1], \
+        memset(dst + j*stride + size*2 - 2 - j*2, left[0], \
                2 + j*2 - size); \
     } \
 }
@@ -853,13 +853,29 @@ static av_cold void vp9dsp_intrapred_init(VP9DSPContext *dsp)
 #undef init_intra_pred
 }
 
-#define itxfm_wrapper(type_a, type_b, sz, bits) \
+#define itxfm_wrapper(type_a, type_b, sz, bits, has_dconly) \
 static void type_a##_##type_b##_##sz##x##sz##_add_c(uint8_t *dst, \
                                                     ptrdiff_t stride, \
                                                     int16_t *block, int eob) \
 { \
     int i, j; \
     int16_t tmp[sz * sz], out[sz]; \
+\
+    if (has_dconly && eob == 1) { \
+        const int t  = (((block[0] * 11585 + (1 << 13)) >> 14) \
+                                   * 11585 + (1 << 13)) >> 14; \
+        block[0] = 0; \
+        for (i = 0; i < sz; i++) { \
+            for (j = 0; j < sz; j++) \
+                dst[j * stride] = av_clip_uint8(dst[j * stride] + \
+                                                (bits ? \
+                                                 (t + (1 << (bits - 1))) >> bits : \
+                                                 t)); \
+            dst++; \
+        } \
+        return; \
+    } \
+\
     for (i = 0; i < sz; i++) \
         type_a##sz##_1d(block + i, sz, tmp + i * sz, 0); \
     memset(block, 0, sz * sz * sizeof(*block)); \
@@ -875,10 +891,10 @@ static void type_a##_##type_b##_##sz##x##sz##_add_c(uint8_t *dst, \
 }
 
 #define itxfm_wrap(sz, bits) \
-itxfm_wrapper(idct,  idct,  sz, bits) \
-itxfm_wrapper(iadst, idct,  sz, bits) \
-itxfm_wrapper(idct,  iadst, sz, bits) \
-itxfm_wrapper(iadst, iadst, sz, bits)
+itxfm_wrapper(idct,  idct,  sz, bits, 1) \
+itxfm_wrapper(iadst, idct,  sz, bits, 0) \
+itxfm_wrapper(idct,  iadst, sz, bits, 0) \
+itxfm_wrapper(iadst, iadst, sz, bits, 0)
 
 #define IN(x) in[x * stride]
 
@@ -1397,7 +1413,7 @@ static av_always_inline void idct32_1d(const int16_t *in, ptrdiff_t stride,
     out[31] = t0   - t31;
 }
 
-itxfm_wrapper(idct, idct, 32, 6)
+itxfm_wrapper(idct, idct, 32, 6, 1)
 
 static av_always_inline void iwht4_1d(const int16_t *in, ptrdiff_t stride,
                                       int16_t *out, int pass)
@@ -1430,7 +1446,7 @@ static av_always_inline void iwht4_1d(const int16_t *in, ptrdiff_t stride,
     out[3] = t3;
 }
 
-itxfm_wrapper(iwht, iwht, 4, 0)
+itxfm_wrapper(iwht, iwht, 4, 0, 0)
 
 #undef IN
 #undef itxfm_wrapper
@@ -1460,8 +1476,7 @@ static av_cold void vp9dsp_itxfm_init(VP9DSPContext *dsp)
 #undef init_idct
 }
 
-static av_always_inline void loop_filter(uint8_t *dst,  ptrdiff_t stride,
-                                         int E, int I, int H,
+static av_always_inline void loop_filter(uint8_t *dst, int E, int I, int H,
                                          ptrdiff_t stridea, ptrdiff_t strideb,
                                          int wd)
 {
@@ -1573,7 +1588,7 @@ static void loop_filter_##dir##_##wd##_8_c(uint8_t *dst, \
                                            ptrdiff_t stride, \
                                            int E, int I, int H) \
 { \
-    loop_filter(dst, stride, E, I, H, stridea, strideb, wd); \
+    loop_filter(dst, E, I, H, stridea, strideb, wd); \
 }
 
 #define lf_8_fns(wd) \

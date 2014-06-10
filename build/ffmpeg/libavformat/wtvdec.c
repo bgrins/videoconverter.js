@@ -153,6 +153,7 @@ static AVIOContext * wtvfile_open_sector(int first_sector, uint64_t length, int 
     AVIOContext *pb;
     WtvFile *wf;
     uint8_t *buffer;
+    int64_t size;
 
     if (seek_by_sector(s->pb, first_sector, 0) < 0)
         return NULL;
@@ -205,7 +206,8 @@ static AVIOContext * wtvfile_open_sector(int first_sector, uint64_t length, int 
         return NULL;
     }
 
-    if ((int64_t)wf->sectors[wf->nb_sectors - 1] << WTV_SECTOR_BITS > avio_tell(s->pb))
+    size = avio_size(s->pb);
+    if (size >= 0 && (int64_t)wf->sectors[wf->nb_sectors - 1] << WTV_SECTOR_BITS > size)
         av_log(s, AV_LOG_WARNING, "truncated file\n");
 
     /* check length */
@@ -369,10 +371,6 @@ static const ff_asf_guid mediasubtype_dtvccdata =
     {0xAA,0xDD,0x2A,0xF5,0xF0,0x36,0xF5,0x43,0x95,0xEA,0x6D,0x86,0x64,0x84,0x26,0x2A};
 static const ff_asf_guid mediasubtype_mpeg2_sections =
     {0x79,0x85,0x9F,0x4A,0xF8,0x6B,0x92,0x43,0x8A,0x6D,0xD2,0xDD,0x09,0xFA,0x78,0x61};
-
-/* Formats */
-static const ff_asf_guid format_videoinfo2 =
-    {0xA0,0x76,0x2A,0xF7,0x0A,0xEB,0xD0,0x11,0xAC,0xE4,0x00,0x00,0xC0,0xCC,0x16,0xBA};
 
 static int read_probe(AVProbeData *p)
 {
@@ -689,7 +687,7 @@ static AVStream * parse_media_type(AVFormatContext *s, AVStream *st, int sid,
         st = new_stream(s, st, sid, AVMEDIA_TYPE_VIDEO);
         if (!st)
             return NULL;
-        if (!ff_guidcmp(formattype, format_videoinfo2)) {
+        if (!ff_guidcmp(formattype, ff_format_videoinfo2)) {
             int consumed = parse_videoinfoheader2(s, st);
             avio_skip(pb, FFMAX(size - consumed, 0));
         } else if (!ff_guidcmp(formattype, ff_format_mpeg2_video)) {

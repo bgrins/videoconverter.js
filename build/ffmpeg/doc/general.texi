@@ -122,6 +122,20 @@ x264 is under the GNU Public License Version 2 or later
 details), you must upgrade FFmpeg's license to GPL in order to use it.
 @end float
 
+@section x265
+
+FFmpeg can make use of the x265 library for HEVC encoding.
+
+Go to @url{http://x265.org/developers.html} and follow the instructions
+for installing the library. Then pass @code{--enable-libx265} to configure
+to enable it.
+
+@float note
+x265 is under the GNU Public License Version 2 or later
+(see @url{http://www.gnu.org/licenses/old-licenses/gpl-2.0.html} for
+details), you must upgrade FFmpeg's license to GPL in order to use it.
+@end float
+
 @section libilbc
 
 iLBC is a narrowband speech codec that has been made freely available
@@ -146,6 +160,27 @@ enable it.
 libzvbi is licensed under the GNU General Public License Version 2 or later
 (see @url{http://www.gnu.org/licenses/old-licenses/gpl-2.0.html} for details),
 you must upgrade FFmpeg's license to GPL in order to use it.
+@end float
+
+@section AviSynth
+
+FFmpeg can read AviSynth scripts as input. To enable support, pass
+@code{--enable-avisynth} to configure.  The correct headers are
+included in compat/avisynth/, which allows the user to enable support
+without needing to search for these headers themselves.
+
+For Windows, supported AviSynth variants are
+@url{http://avisynth.nl, AviSynth 2.5 or 2.6} for 32-bit builds and
+@url{http://avs-plus.net, AviSynth+ 0.1} for 32-bit and 64-bit builds.
+
+For Linux and OS X, the supported AviSynth variant is
+@url{https://github.com/avxsynth/avxsynth, AvxSynth}.
+
+@float NOTE
+AviSynth and AvxSynth are loaded dynamically.  Distributors can build FFmpeg
+with @code{--enable-avisynth}, and the binaries will work regardless of the
+end user having AviSynth or AvxSynth installed - they'll only need to be
+installed to use AviSynth scripts (obviously).
 @end float
 
 
@@ -301,6 +336,8 @@ library:
     @tab also known as DVB Transport Stream
 @item MPEG-4                    @tab X @tab X
     @tab MPEG-4 is a variant of QuickTime.
+@item Mirillis FIC video        @tab   @tab X
+    @tab No cursor rendering.
 @item MIME multipart JPEG       @tab X @tab
 @item MSN TCP webcam            @tab   @tab X
     @tab Used by MSN Messenger webcam streams.
@@ -340,7 +377,7 @@ library:
 @item raw H.261                 @tab X @tab X
 @item raw H.263                 @tab X @tab X
 @item raw H.264                 @tab X @tab X
-@item raw HEVC                  @tab   @tab X
+@item raw HEVC                  @tab X @tab X
 @item raw Ingenient MJPEG       @tab   @tab X
 @item raw MJPEG                 @tab X @tab X
 @item raw MLP                   @tab   @tab X
@@ -491,8 +528,8 @@ following image formats are supported:
     @tab YUV, JPEG and some extension is not supported yet.
 @item Truevision Targa  @tab X @tab X
     @tab Targa (.TGA) image format
-@item WebP         @tab @tab X
-    @tab WebP image format
+@item WebP         @tab E @tab X
+    @tab WebP image format, encoding supported through external library libwebp
 @item XBM  @tab X @tab X
     @tab X BitMap image format
 @item XFace @tab X @tab X
@@ -610,7 +647,8 @@ following image formats are supported:
 @item H.263+ / H.263-1998 / H.263 version 2  @tab  X  @tab  X
 @item H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10  @tab  E  @tab  X
     @tab encoding supported through external library libx264
-@item HEVC                   @tab     @tab  X
+@item HEVC                   @tab  X  @tab  X
+    @tab encoding supported through the external library libx265
 @item HNM version 4          @tab     @tab  X
 @item HuffYUV                @tab  X  @tab  X
 @item HuffYUV FFmpeg variant @tab  X  @tab  X
@@ -663,7 +701,6 @@ following image formats are supported:
 @item Mobotix MxPEG video    @tab     @tab  X
 @item Motion Pixels video    @tab     @tab  X
 @item MPEG-1 video           @tab  X  @tab  X
-@item MPEG-1/2 video XvMC (X-Video Motion Compensation)  @tab     @tab  X
 @item MPEG-2 video           @tab  X  @tab  X
 @item MPEG-4 part 2          @tab  X  @tab  X
     @tab libxvidcore can be used alternatively for encoding.
@@ -834,6 +871,7 @@ following image formats are supported:
     @tab QuickTime fourcc 'alac'
 @item ATRAC1                 @tab     @tab  X
 @item ATRAC3                 @tab     @tab  X
+@item ATRAC3+                @tab     @tab  X
 @item Bink Audio             @tab     @tab  X
     @tab Used in Bink and Smacker files in many games.
 @item CELT                   @tab     @tab  E
@@ -944,7 +982,6 @@ following image formats are supported:
 @item Vorbis                 @tab  E  @tab  X
     @tab A native but very primitive encoder exists.
 @item Voxware MetaSound      @tab     @tab  X
-    @tab imperfect and incomplete support
 @item WavPack                @tab  X  @tab  X
 @item Westwood Audio (SND1)  @tab     @tab  X
 @item Windows Media Audio 1  @tab  X  @tab  X
@@ -998,6 +1035,7 @@ performance on systems without hardware floating point support).
 @multitable @columnfractions .4 .1
 @item Name         @tab Support
 @item file         @tab X
+@item FTP          @tab X
 @item Gopher       @tab X
 @item HLS          @tab X
 @item HTTP         @tab X
@@ -1013,6 +1051,7 @@ performance on systems without hardware floating point support).
 @item RTMPTS       @tab X
 @item RTP          @tab X
 @item SCTP         @tab X
+@item SFTP         @tab E
 @item TCP          @tab X
 @item TLS          @tab X
 @item UDP          @tab X
@@ -1032,13 +1071,14 @@ performance on systems without hardware floating point support).
 @item caca              @tab        @tab X
 @item DV1394            @tab X      @tab
 @item Lavfi virtual device @tab X   @tab
-@item Linux framebuffer @tab X      @tab
+@item Linux framebuffer @tab X      @tab X
 @item JACK              @tab X      @tab
 @item LIBCDIO           @tab X
 @item LIBDC1394         @tab X      @tab
 @item OpenAL            @tab X
+@item OpenGL            @tab        @tab X
 @item OSS               @tab X      @tab X
-@item Pulseaudio        @tab X      @tab
+@item PulseAudio        @tab X      @tab X
 @item SDL               @tab        @tab X
 @item Video4Linux2      @tab X      @tab X
 @item VfW capture       @tab X      @tab

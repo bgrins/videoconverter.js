@@ -24,12 +24,9 @@
 POUT          .req    a1
 PIN           .req    a2
 PCOEF         .req    a3
-DECIFACTOR    .req    a4
 OLDFPSCR      .req    a4
 COUNTER       .req    ip
 
-SCALE32       .req    s28  @ use vector of 4 in place of 9th scalar when decifactor=32 / JMAX=8
-SCALE64       .req    s0   @ spare register in scalar bank when decifactor=64 / JMAX=4
 IN0           .req    s4
 IN1           .req    s5
 IN2           .req    s6
@@ -76,9 +73,6 @@ POST3         .req    s27
         vldr    COEF4, [PCOEF, #X + (0*JMAX + 1) * Y]
         vldr    COEF5, [PCOEF, #X + (1*JMAX + 1) * Y]
         vldr    COEF6, [PCOEF, #X + (2*JMAX + 1) * Y]
- .endif
- .ifnc "\tail",""
-        vmul.f  POST0, POST0, SCALE\decifactor  @ vector operation (SCALE may be scalar)
  .endif
  .ifnc "\head",""
         vldr    COEF7, [PCOEF, #X + (3*JMAX + 1) * Y]
@@ -129,10 +123,17 @@ POST3         .req    s27
 .endm
 
 .macro dca_lfe_fir  decifactor
+function ff_dca_lfe_fir\decifactor\()_vfp, export=1
+        fmrx    OLDFPSCR, FPSCR
+        ldr     ip, =0x03030000         @ RunFast mode, short vectors of length 4, stride 1
+        fmxr    FPSCR, ip
+        vldr    IN0, [PIN, #-0*4]
+        vldr    IN1, [PIN, #-1*4]
+        vldr    IN2, [PIN, #-2*4]
+        vldr    IN3, [PIN, #-3*4]
  .if \decifactor == 32
   .set JMAX, 8
         vpush   {s16-s31}
-        vmov    SCALE32, s0             @ duplicate scalar across vector
         vldr    IN4, [PIN, #-4*4]
         vldr    IN5, [PIN, #-5*4]
         vldr    IN6, [PIN, #-6*4]
@@ -165,37 +166,19 @@ POST3         .req    s27
  .endif
         fmxr    FPSCR, OLDFPSCR
         bx      lr
+endfunc
 .endm
 
-
-/* void ff_dca_lfe_fir_vfp(float *out, const float *in, const float *coefs,
- *                         int decifactor, float scale)
- */
-function ff_dca_lfe_fir_vfp, export=1
-        teq     DECIFACTOR, #32
-        fmrx    OLDFPSCR, FPSCR
-        ldr     ip, =0x03030000         @ RunFast mode, short vectors of length 4, stride 1
-        fmxr    FPSCR, ip
-NOVFP   vldr    s0, [sp]
-        vldr    IN0, [PIN, #-0*4]
-        vldr    IN1, [PIN, #-1*4]
-        vldr    IN2, [PIN, #-2*4]
-        vldr    IN3, [PIN, #-3*4]
-        beq     32f
-64:     dca_lfe_fir  64
+        dca_lfe_fir  64
  .ltorg
-32:     dca_lfe_fir  32
-endfunc
+        dca_lfe_fir  32
 
         .unreq  POUT
         .unreq  PIN
         .unreq  PCOEF
-        .unreq  DECIFACTOR
         .unreq  OLDFPSCR
         .unreq  COUNTER
 
-        .unreq  SCALE32
-        .unreq  SCALE64
         .unreq  IN0
         .unreq  IN1
         .unreq  IN2

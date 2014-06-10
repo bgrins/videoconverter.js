@@ -19,7 +19,7 @@
 #ifndef AVCODEC_FFT_INTERNAL_H
 #define AVCODEC_FFT_INTERNAL_H
 
-#if CONFIG_FFT_FLOAT
+#if FFT_FLOAT
 
 #define FIX15(v) (v)
 #define sqrthalf (float)M_SQRT1_2
@@ -38,7 +38,7 @@
 
 #define SCALE_FLOAT(a, bits) lrint((a) * (double)(1 << (bits)))
 
-#if CONFIG_FFT_FIXED_32
+#if FFT_FIXED_32
 
 #define CMUL(dre, dim, are, aim, bre, bim) do {             \
         int64_t accu;                                     \
@@ -52,7 +52,7 @@
 
 #define FIX15(a) av_clip(SCALE_FLOAT(a, 31), -2147483647, 2147483647)
 
-#else /* CONFIG_FFT_FIXED_32 */
+#else /* FFT_FIXED_32 */
 
 #include "fft.h"
 #include "mathops.h"
@@ -79,9 +79,9 @@ void ff_mdct_calcw_c(FFTContext *s, FFTDouble *output, const FFTSample *input);
 #define CMULL(dre, dim, are, aim, bre, bim)     \
     CMULS(dre, dim, are, aim, bre, bim, 0)
 
-#endif /* CONFIG_FFT_FIXED_32 */
+#endif /* FFT_FIXED_32 */
 
-#endif /* CONFIG_FFT_FLOAT */
+#endif /* FFT_FLOAT */
 
 #define ff_imdct_calc_c FFT_NAME(ff_imdct_calc_c)
 #define ff_imdct_half_c FFT_NAME(ff_imdct_half_c)

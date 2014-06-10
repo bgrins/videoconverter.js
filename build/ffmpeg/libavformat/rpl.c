@@ -19,11 +19,13 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <stdint.h>
+#include <stdlib.h>
+
 #include "libavutil/avstring.h"
 #include "libavutil/dict.h"
 #include "avformat.h"
 #include "internal.h"
-#include <stdlib.h>
 
 #define RPL_SIGNATURE "ARMovie\x0A"
 #define RPL_SIGNATURE_SIZE 8
@@ -252,8 +254,10 @@ static int rpl_read_header(AVFormatContext *s)
         int64_t offset, video_size, audio_size;
         error |= read_line(pb, line, sizeof(line));
         if (3 != sscanf(line, "%"SCNd64" , %"SCNd64" ; %"SCNd64,
-                        &offset, &video_size, &audio_size))
+                        &offset, &video_size, &audio_size)) {
             error = -1;
+            continue;
+        }
         av_add_index_entry(vst, offset, i * rpl->frames_per_chunk,
                            video_size, rpl->frames_per_chunk, 0);
         if (ast)

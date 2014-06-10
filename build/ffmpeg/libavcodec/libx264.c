@@ -23,6 +23,7 @@
 #include "libavutil/opt.h"
 #include "libavutil/mem.h"
 #include "libavutil/pixdesc.h"
+#include "libavutil/stereo3d.h"
 #include "avcodec.h"
 #include "internal.h"
 
@@ -44,7 +45,6 @@ typedef struct X264Context {
     x264_picture_t  pic;
     uint8_t        *sei;
     int             sei_size;
-    AVFrame         out_pic;
     char *preset;
     char *tune;
     char *profile;
@@ -162,6 +162,7 @@ static int X264_frame(AVCodecContext *ctx, AVPacket *pkt, const AVFrame *frame,
     x264_nal_t *nal;
     int nnal, i, ret;
     x264_picture_t pic_out = {0};
+    AVFrameSideData *side_data;
 
     x264_picture_init( &x4->pic );
     x4->pic.img.i_csp   = x4->params.i_csp;
@@ -191,8 +192,42 @@ static int X264_frame(AVCodecContext *ctx, AVPacket *pkt, const AVFrame *frame,
             x4->params.vui.i_sar_width  = ctx->sample_aspect_ratio.num;
             x264_encoder_reconfig(x4->enc, &x4->params);
         }
-    }
 
+        side_data = av_frame_get_side_data(frame, AV_FRAME_DATA_STEREO3D);
+        if (side_data) {
+            AVStereo3D *stereo = (AVStereo3D *)side_data->data;
+            int fpa_type;
+
+            switch (stereo->type) {
+            case AV_STEREO3D_CHECKERBOARD:
+                fpa_type = 0;
+                break;
+            case AV_STEREO3D_LINES:
+                fpa_type = 1;
+                break;
+            case AV_STEREO3D_COLUMNS:
+                fpa_type = 2;
+                break;
+            case AV_STEREO3D_SIDEBYSIDE:
+                fpa_type = 3;
+                break;
+            case AV_STEREO3D_TOPBOTTOM:
+                fpa_type = 4;
+                break;
+            case AV_STEREO3D_FRAMESEQUENCE:
+                fpa_type = 5;
+                break;
+            default:
+                fpa_type = -1;
+                break;
+            }
+
+            if (fpa_type != x4->params.i_frame_packing) {
+                x4->params.i_frame_packing = fpa_type;
+                x264_encoder_reconfig(x4->enc, &x4->params);
+            }
+        }
+    }
     do {
         if (x264_encoder_encode(x4->enc, &nal, &nnal, frame? &x4->pic: NULL, &pic_out) < 0)
             return -1;
@@ -208,20 +243,20 @@ static int X264_frame(AVCodecContext *ctx, AVPacket *pkt, const AVFrame *frame,
     switch (pic_out.i_type) {
     case X264_TYPE_IDR:
     case X264_TYPE_I:
-        x4->out_pic.pict_type = AV_PICTURE_TYPE_I;
+        ctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
         break;
     case X264_TYPE_P:
-        x4->out_pic.pict_type = AV_PICTURE_TYPE_P;
+        ctx->coded_frame->pict_type = AV_PICTURE_TYPE_P;
         break;
     case X264_TYPE_B:
     case X264_TYPE_BREF:
-        x4->out_pic.pict_type = AV_PICTURE_TYPE_B;
+        ctx->coded_frame->pict_type = AV_PICTURE_TYPE_B;
         break;
     }
 
     pkt->flags |= AV_PKT_FLAG_KEY*pic_out.b_keyframe;
     if (ret)
-        x4->out_pic.quality = (pic_out.i_qpplus1 - 1) * FF_QP2LAMBDA;
+        ctx->coded_frame->quality = (pic_out.i_qpplus1 - 1) * FF_QP2LAMBDA;
 
     *got_packet = ret;
     return 0;
@@ -236,6 +271,8 @@ static av_cold int X264_close(AVCodecContext *avctx)
 
     if (x4->enc)
         x264_encoder_close(x4->enc);
+
+    av_frame_free(&avctx->coded_frame);
 
     return 0;
 }
@@ -353,19 +390,6 @@ static av_cold int X264_init(AVCodecContext *avctx)
     }
 
     OPT_STR("level", x4->level);
-
-    if(x4->x264opts){
-        const char *p= x4->x264opts;
-        while(p){
-            char param[256]={0}, val[256]={0};
-            if(sscanf(p, "%255[^:=]=%255[^:]", param, val) == 1){
-                OPT_STR(param, "1");
-            }else
-                OPT_STR(param, val);
-            p= strchr(p, ':');
-            p+=!!p;
-        }
-    }
 
     if (avctx->i_quant_factor > 0)
         x4->params.rc.f_ip_factor         = 1 / fabs(avctx->i_quant_factor);
@@ -520,8 +544,10 @@ static av_cold int X264_init(AVCodecContext *avctx)
     av_reduce(&sw, &sh, avctx->sample_aspect_ratio.num, avctx->sample_aspect_ratio.den, 4096);
     x4->params.vui.i_sar_width  = sw;
     x4->params.vui.i_sar_height = sh;
-    x4->params.i_fps_num = x4->params.i_timebase_den = avctx->time_base.den;
-    x4->params.i_fps_den = x4->params.i_timebase_num = avctx->time_base.num;
+    x4->params.i_timebase_den = avctx->time_base.den;
+    x4->params.i_timebase_num = avctx->time_base.num;
+    x4->params.i_fps_num = avctx->time_base.den;
+    x4->params.i_fps_den = avctx->time_base.num * avctx->ticks_per_frame;
 
     x4->params.analyse.b_psnr = avctx->flags & CODEC_FLAG_PSNR;
 
@@ -537,10 +563,31 @@ static av_cold int X264_init(AVCodecContext *avctx)
 
     x4->params.vui.b_fullrange = avctx->pix_fmt == AV_PIX_FMT_YUVJ420P ||
                                  avctx->pix_fmt == AV_PIX_FMT_YUVJ422P ||
-                                 avctx->pix_fmt == AV_PIX_FMT_YUVJ444P;
+                                 avctx->pix_fmt == AV_PIX_FMT_YUVJ444P ||
+                                 avctx->color_range == AVCOL_RANGE_JPEG;
+
+    if (avctx->colorspace != AVCOL_SPC_UNSPECIFIED)
+        x4->params.vui.i_colmatrix = avctx->colorspace;
+    if (avctx->color_primaries != AVCOL_PRI_UNSPECIFIED)
+        x4->params.vui.i_colorprim = avctx->color_primaries;
+    if (avctx->color_trc != AVCOL_TRC_UNSPECIFIED)
+        x4->params.vui.i_transfer  = avctx->color_trc;
 
     if (avctx->flags & CODEC_FLAG_GLOBAL_HEADER)
         x4->params.b_repeat_headers = 0;
+
+    if(x4->x264opts){
+        const char *p= x4->x264opts;
+        while(p){
+            char param[256]={0}, val[256]={0};
+            if(sscanf(p, "%255[^:=]=%255[^:]", param, val) == 1){
+                OPT_STR(param, "1");
+            }else
+                OPT_STR(param, val);
+            p= strchr(p, ':');
+            p+=!!p;
+        }
+    }
 
     if (x4->x264_params) {
         AVDictionary *dict    = NULL;
@@ -570,7 +617,9 @@ static av_cold int X264_init(AVCodecContext *avctx)
     if (!x4->enc)
         return -1;
 
-    avctx->coded_frame = &x4->out_pic;
+    avctx->coded_frame = av_frame_alloc();
+    if (!avctx->coded_frame)
+        return AVERROR(ENOMEM);
 
     if (avctx->flags & CODEC_FLAG_GLOBAL_HEADER) {
         x264_nal_t *nal;

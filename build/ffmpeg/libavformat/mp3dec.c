@@ -67,6 +67,8 @@ static int mp3_read_probe(AVProbeData *p)
 
     for(; buf < end; buf= buf2+1) {
         buf2 = buf;
+        if(ff_mpa_check_header(AV_RB32(buf2)))
+            continue;
 
         for(frames = 0; buf2 < end; frames++) {
             header = AV_RB32(buf2);
@@ -163,6 +165,10 @@ static int mp3_parse_vbr_tags(AVFormatContext *s, AVStream *st, int64_t base)
             mp3->start_pad = v>>12;
             mp3->  end_pad = v&4095;
             st->skip_samples = mp3->start_pad + 528 + 1;
+            if (!st->start_time)
+                st->start_time = av_rescale_q(st->skip_samples,
+                                              (AVRational){1, c.sample_rate},
+                                              st->time_base);
             av_log(s, AV_LOG_DEBUG, "pad %d %d\n", mp3->start_pad, mp3->  end_pad);
         }
     }
@@ -312,6 +318,8 @@ static int mp3_seek(AVFormatContext *s, int stream_index, int64_t timestamp,
         return -1;
     }
 
+    if (dir < 0)
+        avio_seek(s->pb, FFMAX(ie->pos - 4096, 0), SEEK_SET);
     ret = avio_seek(s->pb, ie->pos, SEEK_SET);
     if (ret < 0)
         return ret;

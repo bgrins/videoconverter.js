@@ -1122,8 +1122,7 @@ static int asf_parse_packet(AVFormatContext *s, AVIOContext *pb, AVPacket *pkt)
         if (url_feof(pb))
             return AVERROR_EOF;
 
-        if (asf->packet_size_left < FRAME_HEADER_SIZE ||
-            asf->packet_segments < 1) {
+        if (asf->packet_size_left < FRAME_HEADER_SIZE) {
             int ret = asf->packet_size_left + asf->packet_padsize;
 
             assert(ret >= 0);
@@ -1138,7 +1137,7 @@ static int asf_parse_packet(AVFormatContext *s, AVIOContext *pb, AVPacket *pkt)
         }
         if (asf->packet_time_start == 0) {
             if (asf_read_frame_header(s, pb) < 0) {
-                asf->packet_segments = 0;
+                asf->packet_time_start = asf->packet_segments = 0;
                 continue;
             }
             if (asf->stream_index < 0 ||
@@ -1159,6 +1158,16 @@ static int asf_parse_packet(AVFormatContext *s, AVIOContext *pb, AVPacket *pkt)
         }
         asf_st = asf->asf_st;
         av_assert0(asf_st);
+
+        if (!asf_st->frag_offset && asf->packet_frag_offset) {
+            av_dlog(s, "skipping asf data pkt with fragment offset for "
+                    "stream:%d, expected:%d but got %d from pkt)\n",
+                    asf->stream_index, asf_st->frag_offset,
+                    asf->packet_frag_offset);
+            avio_skip(pb, asf->packet_frag_size);
+            asf->packet_size_left -= asf->packet_frag_size;
+            continue;
+        }
 
         if (asf->packet_replic_size == 1) {
             // frag_offset is here used as the beginning timestamp
@@ -1192,6 +1201,7 @@ static int asf_parse_packet(AVFormatContext *s, AVIOContext *pb, AVPacket *pkt)
             asf_st->pkt.dts          = asf->packet_frag_timestamp - asf->hdr.preroll;
             asf_st->pkt.stream_index = asf->stream_index;
             asf_st->pkt.pos          = asf_st->packet_pos = asf->packet_pos;
+            asf_st->pkt_clean        = 0;
 
             if (asf_st->pkt.data && asf_st->palette_changed) {
                 uint8_t *pal;
@@ -1230,6 +1240,11 @@ static int asf_parse_packet(AVFormatContext *s, AVIOContext *pb, AVPacket *pkt)
                    asf->packet_frag_offset, asf->packet_frag_size,
                    asf_st->pkt.size);
             continue;
+        }
+
+        if (asf->packet_frag_offset != asf_st->frag_offset && !asf_st->pkt_clean) {
+            memset(asf_st->pkt.data + asf_st->frag_offset, 0, asf_st->pkt.size - asf_st->frag_offset);
+            asf_st->pkt_clean = 1;
         }
 
         ret = avio_read(pb, asf_st->pkt.data + asf->packet_frag_offset,
@@ -1349,7 +1364,6 @@ static void asf_reset_header(AVFormatContext *s)
     int i;
 
     asf->packet_size_left      = 0;
-    asf->packet_segments       = 0;
     asf->packet_flags          = 0;
     asf->packet_property       = 0;
     asf->packet_timestamp      = 0;
@@ -1452,30 +1466,30 @@ static int64_t asf_read_pts(AVFormatContext *s, int stream_index,
     return pts;
 }
 
-static void asf_build_simple_index(AVFormatContext *s, int stream_index)
+static int asf_build_simple_index(AVFormatContext *s, int stream_index)
 {
     ff_asf_guid g;
     ASFContext *asf     = s->priv_data;
     int64_t current_pos = avio_tell(s->pb);
+    int ret = 0;
 
-    if(avio_seek(s->pb, asf->data_object_offset + asf->data_object_size, SEEK_SET) < 0) {
-        asf->index_read= -1;
-        return;
+    if((ret = avio_seek(s->pb, asf->data_object_offset + asf->data_object_size, SEEK_SET)) < 0) {
+        return ret;
     }
 
-    ff_get_guid(s->pb, &g);
+    if ((ret = ff_get_guid(s->pb, &g)) < 0)
+        goto end;
 
     /* the data object can be followed by other top-level objects,
      * skip them until the simple index object is reached */
     while (ff_guidcmp(&g, &ff_asf_simple_index_header)) {
         int64_t gsize = avio_rl64(s->pb);
         if (gsize < 24 || url_feof(s->pb)) {
-            avio_seek(s->pb, current_pos, SEEK_SET);
-            asf->index_read= -1;
-            return;
+            goto end;
         }
         avio_skip(s->pb, gsize - 24);
-        ff_get_guid(s->pb, &g);
+        if ((ret = ff_get_guid(s->pb, &g)) < 0)
+            goto end;
     }
 
     {
@@ -1483,7 +1497,8 @@ static void asf_build_simple_index(AVFormatContext *s, int stream_index)
         int pct, ict;
         int i;
         int64_t av_unused gsize = avio_rl64(s->pb);
-        ff_get_guid(s->pb, &g);
+        if ((ret = ff_get_guid(s->pb, &g)) < 0)
+            goto end;
         itime = avio_rl64(s->pb);
         pct   = avio_rl32(s->pb);
         ict   = avio_rl32(s->pb);
@@ -1506,7 +1521,12 @@ static void asf_build_simple_index(AVFormatContext *s, int stream_index)
         }
         asf->index_read = ict > 1;
     }
+end:
+//     if (url_feof(s->pb)) {
+//         ret = 0;
+//     }
     avio_seek(s->pb, current_pos, SEEK_SET);
+    return ret;
 }
 
 static int asf_read_seek(AVFormatContext *s, int stream_index,
@@ -1514,6 +1534,7 @@ static int asf_read_seek(AVFormatContext *s, int stream_index,
 {
     ASFContext *asf = s->priv_data;
     AVStream *st    = s->streams[stream_index];
+    int ret = 0;
 
     if (s->packet_size <= 0)
         return -1;
@@ -1527,10 +1548,20 @@ static int asf_read_seek(AVFormatContext *s, int stream_index,
             return ret;
     }
 
-    if (!asf->index_read)
-        asf_build_simple_index(s, stream_index);
+    /* explicitly handle the case of seeking to 0 */
+    if (!pts) {
+        asf_reset_header(s);
+        avio_seek(s->pb, s->data_offset, SEEK_SET);
+        return 0;
+    }
 
-    if ((asf->index_read > 0 && st->index_entries)) {
+    if (!asf->index_read) {
+        ret = asf_build_simple_index(s, stream_index);
+        if (ret < 0)
+            asf->index_read = -1;
+    }
+
+    if (asf->index_read > 0 && st->index_entries) {
         int index = av_index_search_timestamp(st, pts, flags);
         if (index >= 0) {
             /* find the position */

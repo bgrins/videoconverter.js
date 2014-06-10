@@ -1,0 +1,21 @@
+diff --git a/nestegg/src/nestegg.c b/nestegg/src/nestegg.c
+index 4fb10e7..b6bc460 100644
+--- a/nestegg/src/nestegg.c
++++ b/nestegg/src/nestegg.c
+@@ -934,7 +934,7 @@ static int
+ ne_read_simple(nestegg * ctx, struct ebml_element_desc * desc, size_t length)
+ {
+   struct ebml_type * storage;
+-  int r;
++  int r = 0;
+ 
+   storage = (struct ebml_type *) (ctx->ancestor->data + desc->offset);
+ 
+@@ -968,7 +968,6 @@ ne_read_simple(nestegg * ctx, struct ebml_element_desc * desc, size_t length)
+   case TYPE_MASTER:
+   case TYPE_UNKNOWN:
+     assert(0);
+-    r = 0;
+     break;
+   }
+ 

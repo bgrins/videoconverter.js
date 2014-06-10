@@ -96,7 +96,7 @@ static av_cold int utvideo_decode_init(AVCodecContext *avctx)
     }
 
     /* Allocate the output frame */
-    avctx->coded_frame = avcodec_alloc_frame();
+    avctx->coded_frame = av_frame_alloc();
 
     /* Ut Video only supports 8-bit */
     avctx->bits_per_raw_sample = 8;
@@ -164,7 +164,7 @@ static int utvideo_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     *got_frame = 1;
-    *(AVFrame *)data = *pic;
+    av_frame_move_ref((AVFrame*)data, pic);
 
     return avpkt->size;
 }
@@ -174,7 +174,7 @@ static av_cold int utvideo_decode_close(AVCodecContext *avctx)
     UtVideoContext *utv = (UtVideoContext *)avctx->priv_data;
 
     /* Free output */
-    av_freep(&avctx->coded_frame);
+    av_frame_free(&avctx->coded_frame);
     av_freep(&utv->buffer);
 
     /* Finish decoding and clean up the instance */

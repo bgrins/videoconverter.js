@@ -43,16 +43,12 @@ extern const char program_name[];
  */
 extern const int program_birth_year;
 
-/**
- * this year, defined by the program for show_banner()
- */
-extern const int this_year;
-
 extern AVCodecContext *avcodec_opts[AVMEDIA_TYPE_NB];
 extern AVFormatContext *avformat_opts;
 extern struct SwsContext *sws_opts;
 extern AVDictionary *swr_opts;
 extern AVDictionary *format_opts, *codec_opts, *resample_opts;
+extern int hide_banner;
 
 /**
  * Register a program-specific cleanup routine.
@@ -103,7 +99,11 @@ int opt_max_alloc(void *optctx, const char *opt, const char *arg);
 
 int opt_codec_debug(void *optctx, const char *opt, const char *arg);
 
+#if CONFIG_OPENCL
 int opt_opencl(void *optctx, const char *opt, const char *arg);
+
+int opt_opencl_bench(void *optctx, const char *opt, const char *arg);
+#endif
 
 /**
  * Limit the execution time.
@@ -413,6 +413,13 @@ void show_banner(int argc, char **argv, const OptionDef *options);
  * This option processing function does not utilize the arguments.
  */
 int show_version(void *optctx, const char *opt, const char *arg);
+
+/**
+ * Print the build configuration of the program to stdout. The contents
+ * depend on the definition of FFMPEG_CONFIGURATION.
+ * This option processing function does not utilize the arguments.
+ */
+int show_buildconf(void *optctx, const char *opt, const char *arg);
 
 /**
  * Print the license of the program to stdout. The license depends on

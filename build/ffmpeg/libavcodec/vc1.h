@@ -175,6 +175,21 @@ enum FrameCodingMode {
     ILACE_FIELD         ///<  in the bitstream is reported as 11b
 };
 
+/**
+ * Imode types
+ * @{
+ */
+enum Imode {
+    IMODE_RAW,
+    IMODE_NORM2,
+    IMODE_DIFF2,
+    IMODE_NORM6,
+    IMODE_DIFF6,
+    IMODE_ROWSKIP,
+    IMODE_COLSKIP
+};
+/** @} */ //imode defines
+
 /** The VC1 Context
  * @todo Change size wherever another size is more efficient
  * Many members are only used for Advanced Profile
@@ -300,7 +315,7 @@ typedef struct VC1Context{
     uint8_t  aux_luty[2][256],  aux_lutuv[2][256];  ///< lookup tables used for intensity compensation
     uint8_t next_luty[2][256], next_lutuv[2][256];  ///< lookup tables used for intensity compensation
     uint8_t (*curr_luty)[256]  ,(*curr_lutuv)[256];
-    int last_use_ic, curr_use_ic, next_use_ic, aux_use_ic;
+    int last_use_ic, *curr_use_ic, next_use_ic, aux_use_ic;
     int rnd;                        ///< rounding control
 
     /** Frame decoding info for S/M profiles only */
@@ -378,7 +393,7 @@ typedef struct VC1Context{
     //@{
     int new_sprite;
     int two_sprites;
-    AVFrame sprite_output_frame;
+    AVFrame *sprite_output_frame;
     int output_width, output_height, sprite_width, sprite_height;
     uint8_t* sr_rows[2][2];      ///< Sprite resizer line cache
     //@}
@@ -399,6 +414,7 @@ typedef struct VC1Context{
     int end_mb_x;                ///< Horizontal macroblock limit (used only by mss2)
 
     int parse_only;              ///< Context is used within parser
+    int resync_marker;           ///< could this stream contain resync markers
 } VC1Context;
 
 /** Find VC-1 marker in buffer

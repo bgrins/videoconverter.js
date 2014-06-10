@@ -68,7 +68,8 @@ static int split_field_copy(Picture *dest, Picture *src, int parity, int id_add)
     return match;
 }
 
-static int build_def_list(Picture *def, Picture **in, int len, int is_long, int sel)
+static int build_def_list(Picture *def, int def_len,
+                          Picture **in, int len, int is_long, int sel)
 {
     int  i[2] = { 0 };
     int index = 0;
@@ -79,10 +80,12 @@ static int build_def_list(Picture *def, Picture **in, int len, int is_long, int 
         while (i[1] < len && !(in[i[1]] && (in[i[1]]->reference & (sel ^ 3))))
             i[1]++;
         if (i[0] < len) {
+            av_assert0(index < def_len);
             in[i[0]]->pic_id = is_long ? i[0] : in[i[0]]->frame_num;
             split_field_copy(&def[index++], in[i[0]++], sel, 1);
         }
         if (i[1] < len) {
+            av_assert0(index < def_len);
             in[i[1]]->pic_id = is_long ? i[1] : in[i[1]]->frame_num;
             split_field_copy(&def[index++], in[i[1]++], sel ^ 3, 0);
         }
@@ -131,8 +134,12 @@ int ff_h264_fill_default_ref_list(H264Context *h)
             len  = add_sorted(sorted,       h->short_ref, h->short_ref_count, cur_poc, 1 ^ list);
             len += add_sorted(sorted + len, h->short_ref, h->short_ref_count, cur_poc, 0 ^ list);
             av_assert0(len <= 32);
-            len  = build_def_list(h->default_ref_list[list],       sorted,      len, 0, h->picture_structure);
-            len += build_def_list(h->default_ref_list[list] + len, h->long_ref, 16,  1, h->picture_structure);
+
+            len  = build_def_list(h->default_ref_list[list], FF_ARRAY_ELEMS(h->default_ref_list[0]),
+                                  sorted, len, 0, h->picture_structure);
+            len += build_def_list(h->default_ref_list[list] + len,
+                                  FF_ARRAY_ELEMS(h->default_ref_list[0]) - len,
+                                  h->long_ref, 16, 1, h->picture_structure);
             av_assert0(len <= 32);
 
             if (len < h->ref_count[list])
@@ -141,7 +148,9 @@ int ff_h264_fill_default_ref_list(H264Context *h)
         }
 
         if (lens[0] == lens[1] && lens[1] > 1) {
-            for (i = 0; h->default_ref_list[0][i].f.data[0] == h->default_ref_list[1][i].f.data[0] && i < lens[0]; i++);
+            for (i = 0; i < lens[0] &&
+                        h->default_ref_list[0][i].f.buf[0]->buffer ==
+                        h->default_ref_list[1][i].f.buf[0]->buffer; i++);
             if (i == lens[0]) {
                 Picture tmp;
                 COPY_PICTURE(&tmp, &h->default_ref_list[1][0]);
@@ -150,9 +159,13 @@ int ff_h264_fill_default_ref_list(H264Context *h)
             }
         }
     } else {
-        len  = build_def_list(h->default_ref_list[0],       h->short_ref, h->short_ref_count, 0, h->picture_structure);
-        len += build_def_list(h->default_ref_list[0] + len, h-> long_ref, 16,                 1, h->picture_structure);
+        len  = build_def_list(h->default_ref_list[0], FF_ARRAY_ELEMS(h->default_ref_list[0]),
+                              h->short_ref, h->short_ref_count, 0, h->picture_structure);
+        len += build_def_list(h->default_ref_list[0] + len,
+                              FF_ARRAY_ELEMS(h->default_ref_list[0]) - len,
+                              h-> long_ref, 16, 1, h->picture_structure);
         av_assert0(len <= 32);
+
         if (len < h->ref_count[0])
             memset(&h->default_ref_list[0][len], 0, sizeof(Picture) * (h->ref_count[0] - len));
     }
@@ -229,88 +242,96 @@ int ff_h264_decode_ref_pic_list_reordering(H264Context *h)
                     return -1;
                 }
 
-                if (reordering_of_pic_nums_idc < 3) {
-                    if (reordering_of_pic_nums_idc < 2) {
-                        const unsigned int abs_diff_pic_num = get_ue_golomb(&h->gb) + 1;
-                        int frame_num;
+                switch (reordering_of_pic_nums_idc) {
+                case 0:
+                case 1: {
+                    const unsigned int abs_diff_pic_num = get_ue_golomb(&h->gb) + 1;
+                    int frame_num;
 
-                        if (abs_diff_pic_num > h->max_pic_num) {
-                            av_log(h->avctx, AV_LOG_ERROR, "abs_diff_pic_num overflow\n");
-                            return -1;
-                        }
-
-                        if (reordering_of_pic_nums_idc == 0)
-                            pred -= abs_diff_pic_num;
-                        else
-                            pred += abs_diff_pic_num;
-                        pred &= h->max_pic_num - 1;
-
-                        frame_num = pic_num_extract(h, pred, &pic_structure);
-
-                        for (i = h->short_ref_count - 1; i >= 0; i--) {
-                            ref = h->short_ref[i];
-                            assert(ref->reference);
-                            assert(!ref->long_ref);
-                            if (ref->frame_num == frame_num &&
-                                (ref->reference & pic_structure))
-                                break;
-                        }
-                        if (i >= 0)
-                            ref->pic_id = pred;
-                    } else {
-                        int long_idx;
-                        pic_id = get_ue_golomb(&h->gb); //long_term_pic_idx
-
-                        long_idx = pic_num_extract(h, pic_id, &pic_structure);
-
-                        if (long_idx > 31) {
-                            av_log(h->avctx, AV_LOG_ERROR, "long_term_pic_idx overflow\n");
-                            return -1;
-                        }
-                        ref = h->long_ref[long_idx];
-                        assert(!(ref && !ref->reference));
-                        if (ref && (ref->reference & pic_structure)) {
-                            ref->pic_id = pic_id;
-                            assert(ref->long_ref);
-                            i = 0;
-                        } else {
-                            i = -1;
-                        }
+                    if (abs_diff_pic_num > h->max_pic_num) {
+                        av_log(h->avctx, AV_LOG_ERROR,
+                               "abs_diff_pic_num overflow\n");
+                        return AVERROR_INVALIDDATA;
                     }
 
-                    if (i < 0) {
-                        av_log(h->avctx, AV_LOG_ERROR, "reference picture missing during reorder\n");
-                        memset(&h->ref_list[list][index], 0, sizeof(Picture)); //FIXME
-                    } else {
-                        for (i = index; i + 1 < h->ref_count[list]; i++) {
-                            if (ref->long_ref == h->ref_list[list][i].long_ref &&
-                                ref->pic_id   == h->ref_list[list][i].pic_id)
-                                break;
-                        }
-                        for (; i > index; i--) {
-                            COPY_PICTURE(&h->ref_list[list][i], &h->ref_list[list][i - 1]);
-                        }
-                        COPY_PICTURE(&h->ref_list[list][index], ref);
-                        if (FIELD_PICTURE(h)) {
-                            pic_as_field(&h->ref_list[list][index], pic_structure);
-                        }
+                    if (reordering_of_pic_nums_idc == 0)
+                        pred -= abs_diff_pic_num;
+                    else
+                        pred += abs_diff_pic_num;
+                    pred &= h->max_pic_num - 1;
+
+                    frame_num = pic_num_extract(h, pred, &pic_structure);
+
+                    for (i = h->short_ref_count - 1; i >= 0; i--) {
+                        ref = h->short_ref[i];
+                        assert(ref->reference);
+                        assert(!ref->long_ref);
+                        if (ref->frame_num == frame_num &&
+                            (ref->reference & pic_structure))
+                            break;
                     }
+                    if (i >= 0)
+                        ref->pic_id = pred;
+                    break;
+                }
+                case 2: {
+                    int long_idx;
+                    pic_id = get_ue_golomb(&h->gb); // long_term_pic_idx
+
+                    long_idx = pic_num_extract(h, pic_id, &pic_structure);
+
+                    if (long_idx > 31) {
+                        av_log(h->avctx, AV_LOG_ERROR,
+                               "long_term_pic_idx overflow\n");
+                        return AVERROR_INVALIDDATA;
+                    }
+                    ref = h->long_ref[long_idx];
+                    assert(!(ref && !ref->reference));
+                    if (ref && (ref->reference & pic_structure)) {
+                        ref->pic_id = pic_id;
+                        assert(ref->long_ref);
+                        i = 0;
+                    } else {
+                        i = -1;
+                    }
+                    break;
+                }
+                default:
+                    av_log(h->avctx, AV_LOG_ERROR,
+                           "illegal reordering_of_pic_nums_idc\n");
+                    return AVERROR_INVALIDDATA;
+                }
+
+                if (i < 0) {
+                    av_log(h->avctx, AV_LOG_ERROR,
+                           "reference picture missing during reorder\n");
+                    memset(&h->ref_list[list][index], 0, sizeof(Picture)); // FIXME
                 } else {
-                    av_log(h->avctx, AV_LOG_ERROR, "illegal reordering_of_pic_nums_idc\n");
-                    return -1;
+                    for (i = index; i + 1 < h->ref_count[list]; i++) {
+                        if (ref->long_ref == h->ref_list[list][i].long_ref &&
+                            ref->pic_id   == h->ref_list[list][i].pic_id)
+                            break;
+                    }
+                    for (; i > index; i--) {
+                        COPY_PICTURE(&h->ref_list[list][i], &h->ref_list[list][i - 1]);
+                    }
+                    COPY_PICTURE(&h->ref_list[list][index], ref);
+                    if (FIELD_PICTURE(h)) {
+                        pic_as_field(&h->ref_list[list][index], pic_structure);
+                    }
                 }
             }
         }
     }
     for (list = 0; list < h->list_count; list++) {
         for (index = 0; index < h->ref_count[list]; index++) {
-            if (   !h->ref_list[list][index].f.data[0]
+            if (   !h->ref_list[list][index].f.buf[0]
                 || (!FIELD_PICTURE(h) && (h->ref_list[list][index].reference&3) != 3)) {
                 int i;
                 av_log(h->avctx, AV_LOG_ERROR, "Missing reference picture, default is %d\n", h->default_ref_list[list][0].poc);
                 for (i = 0; i < FF_ARRAY_ELEMS(h->last_pocs); i++)
                     h->last_pocs[i] = INT_MIN;
-                if (h->default_ref_list[list][0].f.data[0]
+                if (h->default_ref_list[list][0].f.buf[0]
                     && !(!FIELD_PICTURE(h) && (h->default_ref_list[list][0].reference&3) != 3))
                     COPY_PICTURE(&h->ref_list[list][index], &h->default_ref_list[list][0]);
                 else
@@ -562,6 +583,7 @@ int ff_generate_sliding_window_mmcos(H264Context *h, int first_slice)
 int ff_h264_execute_ref_pic_marking(H264Context *h, MMCO *mmco, int mmco_count)
 {
     int i, av_uninit(j);
+    int pps_count;
     int current_ref_assigned = 0, err = 0;
     Picture *av_uninit(pic);
 
@@ -623,6 +645,10 @@ int ff_h264_execute_ref_pic_marking(H264Context *h, MMCO *mmco, int mmco_count)
                      * Report the problem and keep the pair where it is,
                      * and mark this field valid.
                      */
+            if (h->short_ref[0] == h->cur_pic_ptr) {
+                av_log(h->avctx, AV_LOG_ERROR, "mmco: cannot assign current picture to short and long at the same time\n");
+                remove_short_at_index(h, 0);
+            }
 
             if (h->long_ref[mmco[i].long_arg] != h->cur_pic_ptr) {
                 if (h->cur_pic_ptr->long_ref) {
@@ -635,9 +661,6 @@ int ff_h264_execute_ref_pic_marking(H264Context *h, MMCO *mmco, int mmco_count)
                 }
                 av_assert0(!h->cur_pic_ptr->long_ref);
                 remove_long(h, mmco[i].long_arg, 0);
-                if (remove_short(h, h->cur_pic_ptr->frame_num, 0)) {
-                    av_log(h->avctx, AV_LOG_ERROR, "mmco: cannot assign current picture to short and long at the same time\n");
-                }
 
                 h->long_ref[mmco[i].long_arg]           = h->cur_pic_ptr;
                 h->long_ref[mmco[i].long_arg]->long_ref = 1;
@@ -729,10 +752,27 @@ int ff_h264_execute_ref_pic_marking(H264Context *h, MMCO *mmco, int mmco_count)
         }
     }
 
+    for (i = 0; i<h->short_ref_count; i++) {
+        pic = h->short_ref[i];
+        if (pic->invalid_gap) {
+            int d = (h->cur_pic_ptr->frame_num - pic->frame_num) & ((1 << h->sps.log2_max_frame_num)-1);
+            if (d > h->sps.ref_frame_count)
+                remove_short(h, pic->frame_num, 0);
+        }
+    }
+
     print_short_term(h);
     print_long_term(h);
 
-    if(err >= 0 && h->long_ref_count==0 && h->short_ref_count<=2 && h->pps.ref_count[0]<=2 + (h->picture_structure != PICT_FRAME) && h->cur_pic_ptr->f.pict_type == AV_PICTURE_TYPE_I){
+    pps_count = 0;
+    for (i = 0; i < FF_ARRAY_ELEMS(h->pps_buffers); i++)
+        pps_count += !!h->pps_buffers[i];
+
+    if (   err >= 0
+        && h->long_ref_count==0
+        && (h->short_ref_count<=2 || h->pps.ref_count[0] <= 1 && h->pps.ref_count[1] <= 1 && pps_count == 1)
+        && h->pps.ref_count[0]<=2 + (h->picture_structure != PICT_FRAME)
+        && h->cur_pic_ptr->f.pict_type == AV_PICTURE_TYPE_I){
         h->cur_pic_ptr->recovered |= 1;
         if(!h->avctx->has_b_frames)
             h->frame_recovered |= FRAME_RECOVERED_SEI;

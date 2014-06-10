@@ -69,6 +69,16 @@ enum var_name {
     VAR_VARS_NB
 };
 
+enum EOFAction {
+    EOF_ACTION_REPEAT,
+    EOF_ACTION_ENDALL,
+    EOF_ACTION_PASS
+};
+
+static const char *eof_action_str[] = {
+    "repeat", "endall", "pass"
+};
+
 #define MAIN    0
 #define OVERLAY 1
 
@@ -92,7 +102,7 @@ typedef struct {
     uint8_t overlay_is_packed_rgb;
     uint8_t overlay_rgba_map[4];
     uint8_t overlay_has_alpha;
-    enum OverlayFormat { OVERLAY_FORMAT_YUV420, OVERLAY_FORMAT_YUV444, OVERLAY_FORMAT_RGB, OVERLAY_FORMAT_NB} format;
+    enum OverlayFormat { OVERLAY_FORMAT_YUV420, OVERLAY_FORMAT_YUV422, OVERLAY_FORMAT_YUV444, OVERLAY_FORMAT_RGB, OVERLAY_FORMAT_NB} format;
     enum EvalMode { EVAL_MODE_INIT, EVAL_MODE_FRAME, EVAL_MODE_NB } eval_mode;
 
     FFDualInputContext dinput;
@@ -103,6 +113,9 @@ typedef struct {
 
     double var_values[VAR_VARS_NB];
     char *x_expr, *y_expr;
+
+    enum EOFAction eof_action;  ///< action to take on EOF from source
+
     AVExpr *x_pexpr, *y_pexpr;
 } OverlayContext;
 
@@ -191,6 +204,13 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUVA420P, AV_PIX_FMT_NONE
     };
 
+    static const enum AVPixelFormat main_pix_fmts_yuv422[] = {
+        AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUVA422P, AV_PIX_FMT_NONE
+    };
+    static const enum AVPixelFormat overlay_pix_fmts_yuv422[] = {
+        AV_PIX_FMT_YUVA422P, AV_PIX_FMT_NONE
+    };
+
     static const enum AVPixelFormat main_pix_fmts_yuv444[] = {
         AV_PIX_FMT_YUV444P, AV_PIX_FMT_YUVA444P, AV_PIX_FMT_NONE
     };
@@ -217,6 +237,10 @@ static int query_formats(AVFilterContext *ctx)
     case OVERLAY_FORMAT_YUV420:
         main_formats    = ff_make_format_list(main_pix_fmts_yuv420);
         overlay_formats = ff_make_format_list(overlay_pix_fmts_yuv420);
+        break;
+    case OVERLAY_FORMAT_YUV422:
+        main_formats    = ff_make_format_list(main_pix_fmts_yuv422);
+        overlay_formats = ff_make_format_list(overlay_pix_fmts_yuv422);
         break;
     case OVERLAY_FORMAT_YUV444:
         main_formats    = ff_make_format_list(main_pix_fmts_yuv444);
@@ -298,11 +322,12 @@ static int config_input_overlay(AVFilterLink *inlink)
     }
 
     av_log(ctx, AV_LOG_VERBOSE,
-           "main w:%d h:%d fmt:%s overlay w:%d h:%d fmt:%s\n",
+           "main w:%d h:%d fmt:%s overlay w:%d h:%d fmt:%s eof_action:%s\n",
            ctx->inputs[MAIN]->w, ctx->inputs[MAIN]->h,
            av_get_pix_fmt_name(ctx->inputs[MAIN]->format),
            ctx->inputs[OVERLAY]->w, ctx->inputs[OVERLAY]->h,
-           av_get_pix_fmt_name(ctx->inputs[OVERLAY]->format));
+           av_get_pix_fmt_name(ctx->inputs[OVERLAY]->format),
+           eof_action_str[s->eof_action]);
     return 0;
 }
 
@@ -570,6 +595,15 @@ static av_cold int init(AVFilterContext *ctx)
                "The rgb option is deprecated and is overriding the format option, use format instead\n");
         s->format = OVERLAY_FORMAT_RGB;
     }
+    if (!s->dinput.repeatlast || s->eof_action == EOF_ACTION_PASS) {
+        s->dinput.repeatlast = 0;
+        s->eof_action = EOF_ACTION_PASS;
+    }
+    if (s->dinput.shortest || s->eof_action == EOF_ACTION_ENDALL) {
+        s->dinput.shortest = 1;
+        s->eof_action = EOF_ACTION_ENDALL;
+    }
+
     s->dinput.process = do_blend;
     return 0;
 }
@@ -580,6 +614,12 @@ static av_cold int init(AVFilterContext *ctx)
 static const AVOption overlay_options[] = {
     { "x", "set the x expression", OFFSET(x_expr), AV_OPT_TYPE_STRING, {.str = "0"}, CHAR_MIN, CHAR_MAX, FLAGS },
     { "y", "set the y expression", OFFSET(y_expr), AV_OPT_TYPE_STRING, {.str = "0"}, CHAR_MIN, CHAR_MAX, FLAGS },
+    { "eof_action", "Action to take when encountering EOF from secondary input ",
+        OFFSET(eof_action), AV_OPT_TYPE_INT, { .i64 = EOF_ACTION_REPEAT },
+        EOF_ACTION_REPEAT, EOF_ACTION_PASS, .flags = FLAGS, "eof_action" },
+        { "repeat", "Repeat the previous frame.",   0, AV_OPT_TYPE_CONST, { .i64 = EOF_ACTION_REPEAT }, .flags = FLAGS, "eof_action" },
+        { "endall", "End both streams.",            0, AV_OPT_TYPE_CONST, { .i64 = EOF_ACTION_ENDALL }, .flags = FLAGS, "eof_action" },
+        { "pass",   "Pass through the main input.", 0, AV_OPT_TYPE_CONST, { .i64 = EOF_ACTION_PASS },   .flags = FLAGS, "eof_action" },
     { "eval", "specify when to evaluate expressions", OFFSET(eval_mode), AV_OPT_TYPE_INT, {.i64 = EVAL_MODE_FRAME}, 0, EVAL_MODE_NB-1, FLAGS, "eval" },
          { "init",  "eval expressions once during initialization", 0, AV_OPT_TYPE_CONST, {.i64=EVAL_MODE_INIT},  .flags = FLAGS, .unit = "eval" },
          { "frame", "eval expressions per-frame",                  0, AV_OPT_TYPE_CONST, {.i64=EVAL_MODE_FRAME}, .flags = FLAGS, .unit = "eval" },
@@ -587,6 +627,7 @@ static const AVOption overlay_options[] = {
     { "shortest", "force termination when the shortest input terminates", OFFSET(dinput.shortest), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, FLAGS },
     { "format", "set output format", OFFSET(format), AV_OPT_TYPE_INT, {.i64=OVERLAY_FORMAT_YUV420}, 0, OVERLAY_FORMAT_NB-1, FLAGS, "format" },
         { "yuv420", "", 0, AV_OPT_TYPE_CONST, {.i64=OVERLAY_FORMAT_YUV420}, .flags = FLAGS, .unit = "format" },
+        { "yuv422", "", 0, AV_OPT_TYPE_CONST, {.i64=OVERLAY_FORMAT_YUV422}, .flags = FLAGS, .unit = "format" },
         { "yuv444", "", 0, AV_OPT_TYPE_CONST, {.i64=OVERLAY_FORMAT_YUV444}, .flags = FLAGS, .unit = "format" },
         { "rgb",    "", 0, AV_OPT_TYPE_CONST, {.i64=OVERLAY_FORMAT_RGB},    .flags = FLAGS, .unit = "format" },
     { "repeatlast", "repeat overlay of the last overlay frame", OFFSET(dinput.repeatlast), AV_OPT_TYPE_INT, {.i64=1}, 0, 1, FLAGS },

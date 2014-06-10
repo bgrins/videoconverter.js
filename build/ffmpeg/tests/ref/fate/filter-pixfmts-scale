@@ -26,8 +26,8 @@ gbrp14le            eb6cb4555edb175d807fe1b5382d2fc7
 gbrp9be             2c9adb80abc16546cac69b4872aaf557
 gbrp9le             fcfa1684553e3e185179462bca347649
 gray                c45dcee08887f43dc463f79d7ecd7d68
-gray16be            70064f9acdc5e3935ccda67e765bf2fb
-gray16le            578241fb43029e5ae841a3c94d940dce
+gray16be            52a6ff8ba7fe11032f370c0888d87fc4
+gray16le            e78f07e83698651639743f2f8501c51c
 monob               91ec2a25b13f6ca34d42da778b217de0
 monow               a991455fda8f60f373aeb744456996b9
 nv12                0617f1e13ae4a43d4cb49282b9c02f71
@@ -49,8 +49,8 @@ rgba                aec2346373d91abdc8c0301b44513128
 rgba64be            5ce6f591ac8be4edcf5c3350d2d2d3f5
 rgba64le            12baab5162019de2053db39a3bfca868
 uyvy422             479105bc4c7fbb4a33ca8745aa8c2de8
-xyz12be             6769a0b3b3b6d7a674542c8cd3e3644e
-xyz12le             b4f967df71db5c38c222f9236c341031
+xyz12be             8b9767926ff233a5820f99923e8331df
+xyz12le             a76c6cd0b058ade67104a8bb3217aaef
 yuv410p             d0daa93f5cee83360e219e39563ab6da
 yuv411p             e5c8f3ca024a88dd07e0a92db3e2133d
 yuv420p             485d9af8608f926ffffbf42230b4150d

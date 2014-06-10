@@ -95,7 +95,7 @@ static int build_filter(ResampleContext *c, void *filter, double factor, int tap
                         int filter_type, int kaiser_beta){
     int ph, i;
     double x, y, w;
-    double *tab = av_malloc(tap_count * sizeof(*tab));
+    double *tab = av_malloc_array(tap_count,  sizeof(*tab));
     const int center= (tap_count-1)/2;
 
     if (!tab)
@@ -227,6 +227,11 @@ static ResampleContext *resample_init(ResampleContext *c, int out_rate, int in_r
         default:
             av_log(NULL, AV_LOG_ERROR, "Unsupported sample format\n");
             av_assert0(0);
+        }
+
+        if (filter_size/factor > INT32_MAX/256) {
+            av_log(NULL, AV_LOG_ERROR, "Filter length too large\n");
+            goto error;
         }
 
         c->phase_shift   = phase_shift;

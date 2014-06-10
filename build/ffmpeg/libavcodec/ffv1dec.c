@@ -260,7 +260,7 @@ static void decode_rgb_frame(FFV1Context *s, uint8_t *src[3], int w, int h, int 
             if (s->slice_coding_mode != 1) {
                 b -= offset;
                 r -= offset;
-                g -= (b + r) >> 2;
+                g -= (b * s->slice_rct_by_coef + r * s->slice_rct_ry_coef) >> 2;
                 b += g;
                 r += g;
             }
@@ -333,6 +333,14 @@ static int decode_slice_header(FFV1Context *f, FFV1Context *fs)
     if (fs->version > 3) {
         fs->slice_reset_contexts = get_rac(c, state);
         fs->slice_coding_mode = get_symbol(c, state, 0);
+        if (fs->slice_coding_mode != 1) {
+            fs->slice_rct_by_coef = get_symbol(c, state, 0);
+            fs->slice_rct_ry_coef = get_symbol(c, state, 0);
+            if ((uint64_t)fs->slice_rct_by_coef + (uint64_t)fs->slice_rct_ry_coef > 4) {
+                av_log(f->avctx, AV_LOG_ERROR, "slice_rct_y_coef out of range\n");
+                return AVERROR_INVALIDDATA;
+            }
+        }
     }
     return 0;
 }
@@ -380,6 +388,9 @@ static int decode_slice(AVCodecContext *c, void *arg)
             }
         }
     }
+
+    fs->slice_rct_by_coef = 1;
+    fs->slice_rct_ry_coef = 1;
 
     if (f->version > 2) {
         if (ffv1_init_slice_state(f, fs) < 0)
@@ -938,12 +949,12 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPac
             uint8_t *dst[4];
             ff_thread_await_progress(&f->last_picture, INT_MAX, 0);
             for (j = 0; j < 4; j++) {
-                int sh = (j==1 || j==2) ? f->chroma_h_shift : 0;
-                int sv = (j==1 || j==2) ? f->chroma_v_shift : 0;
-                dst[j] = p->data[j] + p->linesize[j]*
-                         (fs->slice_y>>sv) + (fs->slice_x>>sh);
-                src[j] = f->last_picture.f->data[j] + f->last_picture.f->linesize[j]*
-                         (fs->slice_y>>sv) + (fs->slice_x>>sh);
+                int sh = (j == 1 || j == 2) ? f->chroma_h_shift : 0;
+                int sv = (j == 1 || j == 2) ? f->chroma_v_shift : 0;
+                dst[j] = p->data[j] + p->linesize[j] *
+                         (fs->slice_y >> sv) + (fs->slice_x >> sh);
+                src[j] = f->last_picture.f->data[j] + f->last_picture.f->linesize[j] *
+                         (fs->slice_y >> sv) + (fs->slice_x >> sh);
             }
             av_image_copy(dst, p->linesize, (const uint8_t **)src,
                           f->last_picture.f->linesize,

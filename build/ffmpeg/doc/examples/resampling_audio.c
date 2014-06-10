@@ -21,7 +21,7 @@
  */
 
 /**
- * @example doc/examples/resampling_audio.c
+ * @example resampling_audio.c
  * libswresample API use example.
  */
 
@@ -62,7 +62,7 @@ static int get_format_from_sample_fmt(const char **fmt,
 /**
  * Fill dst buffer with nb_samples, generated starting from t.
  */
-void fill_samples(double *dst, int nb_samples, int nb_channels, int sample_rate, double *t)
+static void fill_samples(double *dst, int nb_samples, int nb_channels, int sample_rate, double *t)
 {
     int i, j;
     double tincr = 1.0 / sample_rate, *dstp = dst;
@@ -184,6 +184,10 @@ int main(int argc, char **argv)
         }
         dst_bufsize = av_samples_get_buffer_size(&dst_linesize, dst_nb_channels,
                                                  ret, dst_sample_fmt, 1);
+        if (dst_bufsize < 0) {
+            fprintf(stderr, "Could not get sample buffer size\n");
+            goto end;
+        }
         printf("t:%f in:%d out:%d\n", t, src_nb_samples, ret);
         fwrite(dst_data[0], 1, dst_bufsize, dst_file);
     } while (t < 10);

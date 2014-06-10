@@ -47,11 +47,16 @@ typedef struct ThpDemuxContext {
 
 static int thp_probe(AVProbeData *p)
 {
+    double d;
     /* check file header */
-    if (AV_RL32(p->buf) == MKTAG('T', 'H', 'P', '\0'))
-        return AVPROBE_SCORE_MAX;
-    else
+    if (AV_RL32(p->buf) != MKTAG('T', 'H', 'P', '\0'))
         return 0;
+
+    d = av_int2float(AV_RB32(p->buf + 16));
+    if (d < 0.1 || d > 1000 || isnan(d))
+        return AVPROBE_SCORE_MAX/4;
+
+    return AVPROBE_SCORE_MAX;
 }
 
 static int thp_read_header(AVFormatContext *s)
@@ -109,7 +114,6 @@ static int thp_read_header(AVFormatContext *s)
             st->codec->codec_tag = 0;  /* no fourcc */
             st->codec->width = avio_rb32(pb);
             st->codec->height = avio_rb32(pb);
-            st->codec->sample_rate = av_q2d(thp->fps);
             st->nb_frames =
             st->duration = thp->framecnt;
             thp->vst = st;

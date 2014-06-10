@@ -236,7 +236,6 @@ typedef struct DVBSubContext {
     DVBSubCLUT   *clut_list;
     DVBSubObject *object_list;
 
-    int display_list_size;
     DVBSubRegionDisplay *display_list;
     DVBSubDisplayDefinition *display_definition;
 } DVBSubContext;
@@ -368,11 +367,15 @@ static av_cold int dvbsub_init_decoder(AVCodecContext *avctx)
     int i, r, g, b, a = 0;
     DVBSubContext *ctx = avctx->priv_data;
 
-    if (!avctx->extradata || avctx->extradata_size != 4) {
-        av_log(avctx, AV_LOG_WARNING, "Invalid extradata, subtitle streams may be combined!\n");
+    if (!avctx->extradata || (avctx->extradata_size < 4) || ((avctx->extradata_size % 5 != 0) && (avctx->extradata_size != 4))) {
+        av_log(avctx, AV_LOG_WARNING, "Invalid DVB subtitles stream extradata!\n");
         ctx->composition_id = -1;
         ctx->ancillary_id   = -1;
     } else {
+        if (avctx->extradata_size > 5) {
+            av_log(avctx, AV_LOG_WARNING, "Decoding first DVB subtitles sub-stream\n");
+        }
+
         ctx->composition_id = AV_RB16(avctx->extradata);
         ctx->ancillary_id   = AV_RB16(avctx->extradata + 2);
     }
@@ -1179,7 +1182,6 @@ static void dvbsub_parse_page_segment(AVCodecContext *avctx,
 
     tmp_display_list = ctx->display_list;
     ctx->display_list = NULL;
-    ctx->display_list_size = 0;
 
     while (buf + 5 < buf_end) {
         region_id = *buf++;
@@ -1207,7 +1209,6 @@ static void dvbsub_parse_page_segment(AVCodecContext *avctx,
 
         display->next = ctx->display_list;
         ctx->display_list = display;
-        ctx->display_list_size++;
 
         av_dlog(avctx, "Region %d, (%d,%d)\n", region_id, display->x_pos, display->y_pos);
     }
@@ -1357,8 +1358,8 @@ static void dvbsub_parse_display_definition_segment(AVCodecContext *avctx,
 
     if (info_byte & 1<<3) { // display_window_flag
         display_def->x = bytestream_get_be16(&buf);
-        display_def->y = bytestream_get_be16(&buf);
         display_def->width  = bytestream_get_be16(&buf) - display_def->x + 1;
+        display_def->y = bytestream_get_be16(&buf);
         display_def->height = bytestream_get_be16(&buf) - display_def->y + 1;
     }
 }
@@ -1384,7 +1385,13 @@ static int dvbsub_display_end_segment(AVCodecContext *avctx, const uint8_t *buf,
         offset_y = display_def->y;
     }
 
-    sub->num_rects = ctx->display_list_size;
+    sub->num_rects = 0;
+    for (display = ctx->display_list; display; display = display->next)
+    {
+        region = get_region(ctx, display->region_id);
+        if (region && region->dirty)
+            sub->num_rects++;
+    }
 
     if (sub->num_rects > 0){
         sub->rects = av_mallocz(sizeof(*sub->rects) * sub->num_rects);
@@ -1437,8 +1444,6 @@ static int dvbsub_display_end_segment(AVCodecContext *avctx, const uint8_t *buf,
 
         i++;
     }
-
-    sub->num_rects = i;
     }
 #ifdef DEBUG
     save_display_set(ctx);

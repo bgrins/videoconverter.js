@@ -139,7 +139,7 @@ FATE_VIDEO-$(call DEMDEC, IDCIN, IDCIN) += fate-id-cin-video
 fate-id-cin-video: CMD = framecrc -i $(TARGET_SAMPLES)/idcin/idlog-2MB.cin -pix_fmt rgb24
 
 FATE_VIDEO-$(call ENCDEC, ROQ PGMYUV, ROQ IMAGE2) += fate-idroq-video-encode
-fate-idroq-video-encode: CMD = md5 -f image2 -vcodec pgmyuv -i $(TARGET_SAMPLES)/ffmpeg-synthetic/vsynth1/%02d.pgm -sws_flags +bitexact -vf pad=512:512:80:112 -f roq -t 0.2
+fate-idroq-video-encode: CMD = md5 -f image2 -vcodec pgmyuv -i $(TARGET_SAMPLES)/ffmpeg-synthetic/vsynth1/%02d.pgm -r 30 -sws_flags +bitexact -vf pad=512:512:80:112 -f roq -t 0.2
 
 FATE_IFF-$(CONFIG_IFF_BYTERUN1_DECODER) += fate-iff-byterun1
 fate-iff-byterun1: CMD = framecrc -i $(TARGET_SAMPLES)/iff/ASH.LBM -pix_fmt rgb24
@@ -163,7 +163,7 @@ FATE_VIDEO-$(call DEMDEC, MXF, JPEG2000) += fate-jpeg2000-dcinema
 fate-jpeg2000-dcinema: CMD = framecrc -flags +bitexact -i $(TARGET_SAMPLES)/jpeg2000/chiens_dcinema2K.mxf -pix_fmt xyz12le
 
 FATE_VIDEO-$(call DEMDEC, JV, JV) += fate-jv
-fate-jv: CMD = framecrc -i $(TARGET_SAMPLES)/jv/intro.jv -pix_fmt rgb24 -an
+fate-jv: CMD = framecrc -i $(TARGET_SAMPLES)/jv/intro.jv -an -pix_fmt rgb24
 
 FATE_VIDEO-$(call DEMDEC, AVI, KGV1) += fate-kgv1
 fate-kgv1: CMD = framecrc -i $(TARGET_SAMPLES)/kega/kgv1.avi -pix_fmt rgb555le -an
@@ -268,6 +268,9 @@ fate-vb: CMD = framecrc -i $(TARGET_SAMPLES)/SIFF/INTRO_B.VB -t 3 -pix_fmt rgb24
 
 FATE_VIDEO-$(call DEMDEC, AVI, VCR1) += fate-vcr1
 fate-vcr1: CMD = framecrc -i $(TARGET_SAMPLES)/vcr1/VCR1test.avi -an
+
+FATE_VIDEO-$(call DEMDEC, AVI, MPEG2VIDEO) += fate-vcr2
+fate-vcr2: CMD = framecrc -flags +bitexact -idct simple -i $(TARGET_SAMPLES)/vcr2/VCR2test.avi -an
 
 FATE_VIDEO-$(call DEMDEC, AVI, XL) += fate-videoxl
 fate-videoxl: CMD = framecrc -i $(TARGET_SAMPLES)/vixl/pig-vixl.avi
