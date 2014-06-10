@@ -1,4 +1,8 @@
 
+test ("Ping", function() {
+  ok(true, "Pong");
+});
+
 asyncTest("Basic worker is initialized", basicWorkerTest("../demo/worker.js"));
 asyncTest("All codecs worker is initialized", basicWorkerTest("../demo/worker-asm.js"));
 
