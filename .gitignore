@@ -5,6 +5,7 @@ thumbs.db
 *.o
 *.d
 
+
 build/dist
 build/ffmpeg/config.fate
 build/ffmpeg/config.h
@@ -29,6 +30,13 @@ build/ffmpeg/libpostproc/libpostproc.a
 build/ffmpeg/libpostproc/libpostproc.pc
 build/ffmpeg/libswresample/libswresample.pc
 build/ffmpeg/libswscale/libswscale.pc
+build/ffmpeg/doc/config.texi
+build/ffmpeg/doc/examples/pc-uninstalled/libavcodec.pc
+build/ffmpeg/doc/examples/pc-uninstalled/libavdevice.pc
+build/ffmpeg/doc/examples/pc-uninstalled/libavfilter.pc
+build/ffmpeg/doc/examples/pc-uninstalled/libavformat.pc
+build/ffmpeg/ffmpeg_g
+
 build/zlib/libz.a
 build/zlib/example
 build/zlib/example64
