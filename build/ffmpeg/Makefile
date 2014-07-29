@@ -4,6 +4,7 @@ include config.mak
 vpath %.c    $(SRC_PATH)
 vpath %.cpp  $(SRC_PATH)
 vpath %.h    $(SRC_PATH)
+vpath %.m    $(SRC_PATH)
 vpath %.S    $(SRC_PATH)
 vpath %.asm  $(SRC_PATH)
 vpath %.rc   $(SRC_PATH)
@@ -29,19 +30,23 @@ $(foreach prog,$(AVBASENAMES),$(eval OBJS-$(prog)-$(CONFIG_OPENCL) += cmdutils_o
 
 OBJS-ffmpeg                   += ffmpeg_opt.o ffmpeg_filter.o
 OBJS-ffmpeg-$(HAVE_VDPAU_X11) += ffmpeg_vdpau.o
+OBJS-ffmpeg-$(HAVE_DXVA2_LIB) += ffmpeg_dxva2.o
+OBJS-ffmpeg-$(CONFIG_VDA)     += ffmpeg_vda.o
+
 TESTTOOLS   = audiogen videogen rotozoom tiny_psnr tiny_ssim base64
 HOSTPROGS  := $(TESTTOOLS:%=tests/%) doc/print_options
 TOOLS       = qt-faststart trasher uncoded_frame
 TOOLS-$(CONFIG_ZLIB) += cws2fws
 
-FFLIBS-$(CONFIG_AVDEVICE) += avdevice
-FFLIBS-$(CONFIG_AVFILTER) += avfilter
-FFLIBS-$(CONFIG_AVFORMAT) += avformat
+# $(FFLIBS-yes) needs to be in linking order
+FFLIBS-$(CONFIG_AVDEVICE)   += avdevice
+FFLIBS-$(CONFIG_AVFILTER)   += avfilter
+FFLIBS-$(CONFIG_AVFORMAT)   += avformat
+FFLIBS-$(CONFIG_AVCODEC)    += avcodec
 FFLIBS-$(CONFIG_AVRESAMPLE) += avresample
-FFLIBS-$(CONFIG_AVCODEC)  += avcodec
-FFLIBS-$(CONFIG_POSTPROC) += postproc
-FFLIBS-$(CONFIG_SWRESAMPLE)+= swresample
-FFLIBS-$(CONFIG_SWSCALE)  += swscale
+FFLIBS-$(CONFIG_POSTPROC)   += postproc
+FFLIBS-$(CONFIG_SWRESAMPLE) += swresample
+FFLIBS-$(CONFIG_SWSCALE)    += swscale
 
 FFLIBS := avutil
 
@@ -72,9 +77,8 @@ config.h: .config
 
 SUBDIR_VARS := CLEANFILES EXAMPLES FFLIBS HOSTPROGS TESTPROGS TOOLS      \
                HEADERS ARCH_HEADERS BUILT_HEADERS SKIPHEADERS            \
-               ARMV5TE-OBJS ARMV6-OBJS VFP-OBJS NEON-OBJS                \
-               ALTIVEC-OBJS VIS-OBJS                                     \
-               MMX-OBJS YASM-OBJS                                        \
+               ARMV5TE-OBJS ARMV6-OBJS ARMV8-OBJS VFP-OBJS NEON-OBJS     \
+               ALTIVEC-OBJS MMX-OBJS YASM-OBJS                           \
                MIPSFPU-OBJS MIPSDSPR2-OBJS MIPSDSPR1-OBJS MIPS32R2-OBJS  \
                OBJS SLIBOBJS HOSTOBJS TESTOBJS
 

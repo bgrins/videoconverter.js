@@ -294,6 +294,7 @@ typedef struct MXFContext {
     uint64_t body_offset;
     uint32_t instance_number;
     uint8_t umid[16];        ///< unique material identifier
+    int channel_count;
 } MXFContext;
 
 static const uint8_t uuid_base[]            = { 0xAD,0xAB,0x44,0x24,0x2f,0x25,0x4d,0xc7,0x92,0xff,0x29,0xbd };
@@ -618,7 +619,7 @@ static void mxf_write_identification(AVFormatContext *s)
     mxf_write_metadata_key(pb, 0x013000);
     PRINT_KEY(s, "identification key", pb->buf_ptr - 16);
 
-    version = s->streams[0]->codec->flags & CODEC_FLAG_BITEXACT ?
+    version = s->flags & AVFMT_FLAG_BITEXACT ?
         "0.0.0" : AV_STRINGIFY(LIBAVFORMAT_VERSION);
     length = 84 + (strlen(company)+strlen(product)+strlen(version))*2; // utf-16
     klv_encode_ber_length(pb, length);
@@ -996,6 +997,8 @@ static void mxf_write_mpegvideo_desc(AVFormatContext *s, AVStream *st)
 static void mxf_write_generic_sound_common(AVFormatContext *s, AVStream *st, const UID key, unsigned size)
 {
     AVIOContext *pb = s->pb;
+    MXFContext *mxf = s->priv_data;
+    int show_warnings = !mxf->footer_partition_offset;
 
     mxf_write_generic_desc(s, st, key, size+5+12+8+8);
 
@@ -1009,7 +1012,21 @@ static void mxf_write_generic_sound_common(AVFormatContext *s, AVStream *st, con
     avio_wb32(pb, 1);
 
     mxf_write_local_tag(pb, 4, 0x3D07);
-    avio_wb32(pb, st->codec->channels);
+    if (mxf->channel_count == -1) {
+        if (show_warnings && (s->oformat == &ff_mxf_d10_muxer) && (st->codec->channels != 4) && (st->codec->channels != 8))
+            av_log(s, AV_LOG_WARNING, "the number of audio channels shall be 4 or 8 : the output will not comply to MXF D-10 specs, use -d10_channelcount to fix this\n");
+        avio_wb32(pb, st->codec->channels);
+    } else if (s->oformat == &ff_mxf_d10_muxer) {
+        if (show_warnings && (mxf->channel_count < st->codec->channels))
+            av_log(s, AV_LOG_WARNING, "d10_channelcount < actual number of audio channels : some channels will be discarded\n");
+        if (show_warnings && (mxf->channel_count != 4) && (mxf->channel_count != 8))
+            av_log(s, AV_LOG_WARNING, "d10_channelcount shall be set to 4 or 8 : the output will not comply to MXF D-10 specs\n");
+        avio_wb32(pb, mxf->channel_count);
+    } else {
+        if (show_warnings)
+            av_log(s, AV_LOG_ERROR, "-d10_channelcount requires MXF D-10 and will be ignored\n");
+        avio_wb32(pb, st->codec->channels);
+    }
 
     mxf_write_local_tag(pb, 4, 0x3D01);
     avio_wb32(pb, av_get_bits_per_sample(st->codec->codec_id));
@@ -1689,7 +1706,8 @@ static int mxf_write_header(AVFormatContext *s)
         }
 
         if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
-            AVRational rate, tbc = st->codec->time_base;
+            // TODO: should be avg_frame_rate
+            AVRational rate, tbc = st->time_base;
             // Default component depth to 8
             sc->component_depth = 8;
             mxf->timecode_base = (tbc.den + tbc.num/2) / tbc.num;
@@ -1777,7 +1795,7 @@ static int mxf_write_header(AVFormatContext *s)
         mxf->essence_container_count = 1;
     }
 
-    if (!(s->streams[0]->codec->flags & CODEC_FLAG_BITEXACT))
+    if (!(s->flags & AVFMT_FLAG_BITEXACT))
         mxf_gen_umid(s);
 
     for (i = 0; i < s->nb_streams; i++) {
@@ -2155,6 +2173,19 @@ static int mxf_interleave(AVFormatContext *s, AVPacket *out, AVPacket *pkt, int 
                                mxf_interleave_get_packet, mxf_compare_timestamps);
 }
 
+static const AVOption d10_options[] = {
+    { "d10_channelcount", "Force/set channelcount in generic sound essence descriptor",
+      offsetof(MXFContext, channel_count), AV_OPT_TYPE_INT, {.i64 = -1}, -1, 8, AV_OPT_FLAG_ENCODING_PARAM},
+    { NULL },
+};
+
+static const AVClass mxf_d10_muxer_class = {
+    .class_name     = "MXF-D10 muxer",
+    .item_name      = av_default_item_name,
+    .option         = d10_options,
+    .version        = LIBAVUTIL_VERSION_INT,
+};
+
 AVOutputFormat ff_mxf_muxer = {
     .name              = "mxf",
     .long_name         = NULL_IF_CONFIG_SMALL("MXF (Material eXchange Format)"),
@@ -2182,4 +2213,5 @@ AVOutputFormat ff_mxf_d10_muxer = {
     .write_trailer     = mxf_write_footer,
     .flags             = AVFMT_NOTIMESTAMPS,
     .interleave_packet = mxf_interleave,
+    .priv_class        = &mxf_d10_muxer_class,
 };

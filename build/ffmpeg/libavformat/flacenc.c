@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 #include "libavcodec/flac.h"
 #include "avformat.h"
@@ -31,6 +32,9 @@
 typedef struct FlacMuxerContext {
     const AVClass *class;
     int write_header;
+
+    /* updated streaminfo sent by the encoder at the end */
+    uint8_t *streaminfo;
 } FlacMuxerContext;
 
 static int flac_write_block_padding(AVIOContext *pb, unsigned int n_padding_bytes,
@@ -46,12 +50,12 @@ static int flac_write_block_comment(AVIOContext *pb, AVDictionary **m,
                                     int last_block, int bitexact)
 {
     const char *vendor = bitexact ? "ffmpeg" : LIBAVFORMAT_IDENT;
-    unsigned int len, count;
+    unsigned int len;
     uint8_t *p, *p0;
 
     ff_metadata_conv(m, ff_vorbiscomment_metadata_conv, NULL);
 
-    len = ff_vorbiscomment_length(*m, vendor, &count);
+    len = ff_vorbiscomment_length(*m, vendor);
     p0 = av_malloc(len+4);
     if (!p0)
         return AVERROR(ENOMEM);
@@ -59,7 +63,7 @@ static int flac_write_block_comment(AVIOContext *pb, AVDictionary **m,
 
     bytestream_put_byte(&p, last_block ? 0x84 : 0x04);
     bytestream_put_be24(&p, len);
-    ff_vorbiscomment_write(&p, m, vendor, count);
+    ff_vorbiscomment_write(&p, m, vendor);
 
     avio_write(pb, p0, len+4);
     av_freep(&p0);
@@ -93,12 +97,30 @@ static int flac_write_header(struct AVFormatContext *s)
      * size of a metadata block so we must clip this value to 2^24-1. */
     padding = av_clip_c(padding, 0, 16777215);
 
-    ret = ff_flac_write_header(s->pb, codec, 0);
+    ret = ff_flac_write_header(s->pb, codec->extradata,
+                               codec->extradata_size, 0);
     if (ret)
         return ret;
 
+    /* add the channel layout tag */
+    if (codec->channel_layout &&
+        !(codec->channel_layout & ~0x3ffffULL) &&
+        !ff_flac_is_native_layout(codec->channel_layout)) {
+        AVDictionaryEntry *chmask = av_dict_get(s->metadata, "WAVEFORMATEXTENSIBLE_CHANNEL_MASK",
+                                                NULL, 0);
+
+        if (chmask) {
+            av_log(s, AV_LOG_WARNING, "A WAVEFORMATEXTENSIBLE_CHANNEL_MASK is "
+                   "already present, this muxer will not overwrite it.\n");
+        } else {
+            uint8_t buf[32];
+            snprintf(buf, sizeof(buf), "0x%"PRIx64, codec->channel_layout);
+            av_dict_set(&s->metadata, "WAVEFORMATEXTENSIBLE_CHANNEL_MASK", buf, 0);
+        }
+    }
+
     ret = flac_write_block_comment(s->pb, &s->metadata, !padding,
-                                   codec->flags & CODEC_FLAG_BITEXACT);
+                                   s->flags & AVFMT_FLAG_BITEXACT);
     if (ret)
         return ret;
 
@@ -115,16 +137,13 @@ static int flac_write_header(struct AVFormatContext *s)
 static int flac_write_trailer(struct AVFormatContext *s)
 {
     AVIOContext *pb = s->pb;
-    uint8_t *streaminfo;
-    enum FLACExtradataFormat format;
     int64_t file_size;
     FlacMuxerContext *c = s->priv_data;
+    uint8_t *streaminfo = c->streaminfo ? c->streaminfo :
+                                          s->streams[0]->codec->extradata;
 
-    if (!c->write_header)
+    if (!c->write_header || !streaminfo)
         return 0;
-
-    if (!avpriv_flac_is_extradata_valid(s->streams[0]->codec, &format, &streaminfo))
-        return -1;
 
     if (pb->seekable) {
         /* rewrite the STREAMINFO header block data */
@@ -136,12 +155,32 @@ static int flac_write_trailer(struct AVFormatContext *s)
     } else {
         av_log(s, AV_LOG_WARNING, "unable to rewrite FLAC header.\n");
     }
+
+    av_freep(&c->streaminfo);
+
     return 0;
 }
 
 static int flac_write_packet(struct AVFormatContext *s, AVPacket *pkt)
 {
-    avio_write(s->pb, pkt->data, pkt->size);
+    FlacMuxerContext *c = s->priv_data;
+    uint8_t *streaminfo;
+    int streaminfo_size;
+
+    /* check for updated streaminfo */
+    streaminfo = av_packet_get_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA,
+                                         &streaminfo_size);
+    if (streaminfo && streaminfo_size == FLAC_STREAMINFO_SIZE) {
+        av_freep(&c->streaminfo);
+
+        c->streaminfo = av_malloc(FLAC_STREAMINFO_SIZE);
+        if (!c->streaminfo)
+            return AVERROR(ENOMEM);
+        memcpy(c->streaminfo, streaminfo, FLAC_STREAMINFO_SIZE);
+    }
+
+    if (pkt->size)
+        avio_write(s->pb, pkt->data, pkt->size);
     return 0;
 }
 

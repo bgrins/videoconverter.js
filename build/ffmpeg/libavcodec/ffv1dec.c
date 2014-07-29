@@ -330,6 +330,15 @@ static int decode_slice_header(FFV1Context *f, FFV1Context *fs)
     }
     f->cur->sample_aspect_ratio.num = get_symbol(c, state, 0);
     f->cur->sample_aspect_ratio.den = get_symbol(c, state, 0);
+
+    if (av_image_check_sar(f->width, f->height,
+                           f->cur->sample_aspect_ratio) < 0) {
+        av_log(f->avctx, AV_LOG_WARNING, "ignoring invalid SAR: %u/%u\n",
+               f->cur->sample_aspect_ratio.num,
+               f->cur->sample_aspect_ratio.den);
+        f->cur->sample_aspect_ratio = (AVRational){ 0, 1 };
+    }
+
     if (fs->version > 3) {
         fs->slice_reset_contexts = get_rac(c, state);
         fs->slice_coding_mode = get_symbol(c, state, 0);
@@ -342,6 +351,7 @@ static int decode_slice_header(FFV1Context *f, FFV1Context *fs)
             }
         }
     }
+
     return 0;
 }
 
@@ -380,10 +390,10 @@ static int decode_slice(AVCodecContext *c, void *arg)
             pdst->vlc_state = NULL;
 
             if (fssrc->ac) {
-                pdst->state = av_malloc(CONTEXT_SIZE * psrc->context_count);
+                pdst->state = av_malloc_array(CONTEXT_SIZE,  psrc->context_count);
                 memcpy(pdst->state, psrc->state, CONTEXT_SIZE * psrc->context_count);
             } else {
-                pdst->vlc_state = av_malloc(sizeof(*pdst->vlc_state) * psrc->context_count);
+                pdst->vlc_state = av_malloc_array(sizeof(*pdst->vlc_state), psrc->context_count);
                 memcpy(pdst->vlc_state, psrc->vlc_state, sizeof(*pdst->vlc_state) * psrc->context_count);
             }
         }

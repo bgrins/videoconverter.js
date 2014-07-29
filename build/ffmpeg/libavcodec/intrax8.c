@@ -25,6 +25,7 @@
 #include "avcodec.h"
 #include "error_resilience.h"
 #include "get_bits.h"
+#include "idctdsp.h"
 #include "mpegvideo.h"
 #include "msmpeg4data.h"
 #include "intrax8huf.h"
@@ -303,7 +304,7 @@ static int x8_setup_spatial_predictor(IntraX8Context * const w, const int chroma
     int quant;
 
     w->dsp.setup_spatial_compensation(s->dest[chroma], s->edge_emu_buffer,
-                                      s->current_picture.f.linesize[chroma>0],
+                                      s->current_picture.f->linesize[chroma>0],
                                       &range, &sum, w->edges);
     if(chroma){
         w->orient=w->chroma_orient;
@@ -535,7 +536,7 @@ static int x8_decode_intra_mb(IntraX8Context* const w, const int chroma){
     int sign;
 
     av_assert2(w->orient<12);
-    s->dsp.clear_block(s->block[0]);
+    s->bdsp.clear_block(s->block[0]);
 
     if(chroma){
         dc_mode=2;
@@ -612,7 +613,7 @@ static int x8_decode_intra_mb(IntraX8Context* const w, const int chroma){
             dc_level+= (w->predicted_dc*divide_quant + (1<<12) )>>13;
 
             dsp_x8_put_solidcolor( av_clip_uint8((dc_level*dc_quant+4)>>3),
-                                   s->dest[chroma], s->current_picture.f.linesize[!!chroma]);
+                                   s->dest[chroma], s->current_picture.f->linesize[!!chroma]);
 
             goto block_placed;
         }
@@ -636,16 +637,16 @@ static int x8_decode_intra_mb(IntraX8Context* const w, const int chroma){
     }
 
     if(w->flat_dc){
-        dsp_x8_put_solidcolor(w->predicted_dc, s->dest[chroma], s->current_picture.f.linesize[!!chroma]);
+        dsp_x8_put_solidcolor(w->predicted_dc, s->dest[chroma], s->current_picture.f->linesize[!!chroma]);
     }else{
         w->dsp.spatial_compensation[w->orient]( s->edge_emu_buffer,
                                             s->dest[chroma],
-                                            s->current_picture.f.linesize[!!chroma] );
+                                            s->current_picture.f->linesize[!!chroma] );
     }
     if(!zeros_only)
-        w->wdsp.idct_add (s->dest[chroma],
-                          s->current_picture.f.linesize[!!chroma],
-                          s->block[0] );
+        w->wdsp.idct_add(s->dest[chroma],
+                         s->current_picture.f->linesize[!!chroma],
+                         s->block[0]);
 
 block_placed:
 
@@ -655,7 +656,7 @@ block_placed:
 
     if(s->loop_filter){
         uint8_t* ptr = s->dest[chroma];
-        int linesize = s->current_picture.f.linesize[!!chroma];
+        int linesize = s->current_picture.f->linesize[!!chroma];
 
         if(!( (w->edges&2) || ( zeros_only && (w->orient|4)==4 ) )){
             w->dsp.h_loop_filter(ptr, linesize, w->quant);
@@ -670,12 +671,12 @@ block_placed:
 static void x8_init_block_index(MpegEncContext *s){ //FIXME maybe merge with ff_*
 //not s->linesize as this would be wrong for field pics
 //not that IntraX8 has interlacing support ;)
-    const int linesize   = s->current_picture.f.linesize[0];
-    const int uvlinesize = s->current_picture.f.linesize[1];
+    const int linesize   = s->current_picture.f->linesize[0];
+    const int uvlinesize = s->current_picture.f->linesize[1];
 
-    s->dest[0] = s->current_picture.f.data[0];
-    s->dest[1] = s->current_picture.f.data[1];
-    s->dest[2] = s->current_picture.f.data[2];
+    s->dest[0] = s->current_picture.f->data[0];
+    s->dest[1] = s->current_picture.f->data[1];
+    s->dest[2] = s->current_picture.f->data[2];
 
     s->dest[0] +=   s->mb_y        *   linesize << 3;
     s->dest[1] += ( s->mb_y&(~1) ) * uvlinesize << 2;//chroma blocks are on add rows

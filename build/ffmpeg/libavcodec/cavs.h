@@ -23,8 +23,9 @@
 #define AVCODEC_CAVS_H
 
 #include "cavsdsp.h"
-#include "dsputil.h"
+#include "blockdsp.h"
 #include "h264chroma.h"
+#include "idctdsp.h"
 #include "get_bits.h"
 #include "videodsp.h"
 
@@ -161,8 +162,9 @@ typedef struct AVSFrame {
 
 typedef struct AVSContext {
     AVCodecContext *avctx;
-    DSPContext       dsp;
+    BlockDSPContext bdsp;
     H264ChromaContext h264chroma;
+    IDCTDSPContext idsp;
     VideoDSPContext vdsp;
     CAVSDSPContext  cdsp;
     GetBitContext gb;
@@ -214,6 +216,7 @@ typedef struct AVSContext {
     int luma_scan[4];
     int qp;
     int qp_fixed;
+    int pic_qp_fixed;
     int cbp;
     ScanTable scantable;
 
@@ -239,6 +242,7 @@ typedef struct AVSContext {
     int16_t *block;
 } AVSContext;
 
+extern const uint8_t     ff_cavs_chroma_qp[64];
 extern const uint8_t     ff_cavs_partition_flags[30];
 extern const cavs_vector ff_cavs_intra_mv;
 extern const cavs_vector ff_cavs_dir_mv;

@@ -82,10 +82,10 @@ const AVCodecTag ff_nut_video_tags[] = {
     { AV_CODEC_ID_RAWVIDEO,         MKTAG('R', 'G', 'B', 48 ) },
     { AV_CODEC_ID_RAWVIDEO,         MKTAG(48 , 'B', 'G', 'R') },
     { AV_CODEC_ID_RAWVIDEO,         MKTAG(48 , 'R', 'G', 'B') },
-    { AV_CODEC_ID_RAWVIDEO,         MKTAG('B', 'R', 'A', 64 ) },
     { AV_CODEC_ID_RAWVIDEO,         MKTAG('R', 'B', 'A', 64 ) },
-    { AV_CODEC_ID_RAWVIDEO,         MKTAG(64 , 'B', 'R', 'A') },
+    { AV_CODEC_ID_RAWVIDEO,         MKTAG('B', 'R', 'A', 64 ) },
     { AV_CODEC_ID_RAWVIDEO,         MKTAG(64 , 'R', 'B', 'A') },
+    { AV_CODEC_ID_RAWVIDEO,         MKTAG(64 , 'B', 'R', 'A') },
     { AV_CODEC_ID_RAWVIDEO,         MKTAG('Y', '3', 11 , 10 ) },
     { AV_CODEC_ID_RAWVIDEO,         MKTAG(10 , 11 , '3', 'Y') },
     { AV_CODEC_ID_RAWVIDEO,         MKTAG('Y', '3', 10 , 10 ) },
@@ -176,7 +176,8 @@ const AVCodecTag ff_nut_video_tags[] = {
     { AV_CODEC_ID_NONE,             0 }
 };
 
-static const AVCodecTag nut_audio_extra_tags[] = {
+const AVCodecTag ff_nut_audio_extra_tags[] = {
+    { AV_CODEC_ID_COMFORT_NOISE,    MKTAG('3', '3', '8', '9') },
     { AV_CODEC_ID_PCM_ALAW,         MKTAG('A', 'L', 'A', 'W') },
     { AV_CODEC_ID_PCM_MULAW,        MKTAG('U', 'L', 'A', 'W') },
     { AV_CODEC_ID_MP3,              MKTAG('M', 'P', '3', ' ') },
@@ -212,7 +213,7 @@ const AVCodecTag ff_nut_audio_tags[] = {
 
 const AVCodecTag * const ff_nut_codec_tags[] = {
     ff_nut_video_tags, ff_nut_audio_tags, ff_nut_subtitle_tags,
-    ff_codec_bmp_tags, ff_codec_wav_tags, nut_audio_extra_tags, ff_nut_data_tags, 0
+    ff_codec_bmp_tags, ff_codec_wav_tags, ff_nut_audio_extra_tags, ff_nut_data_tags, 0
 };
 
 void ff_nut_reset_ts(NUTContext *nut, AVRational time_base, int64_t val)

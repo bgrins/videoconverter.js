@@ -173,9 +173,9 @@ struct RTPDemuxContext {
     /*@}*/
 
     /* rtcp sender statistics receive */
-    int64_t last_rtcp_ntp_time;
+    uint64_t last_rtcp_ntp_time;
     int64_t last_rtcp_reception_time;
-    int64_t first_rtcp_ntp_time;
+    uint64_t first_rtcp_ntp_time;
     uint32_t last_rtcp_timestamp;
     int64_t rtcp_ts_offset;
 
@@ -200,8 +200,10 @@ RTPDynamicProtocolHandler *ff_rtp_handler_find_by_id(int id,
 int ff_rtsp_next_attr_and_value(const char **p, char *attr, int attr_size,
                                 char *value, int value_size);
 
-int ff_parse_fmtp(AVStream *stream, PayloadContext *data, const char *p,
-                  int (*parse_fmtp)(AVStream *stream,
+int ff_parse_fmtp(AVFormatContext *s,
+                  AVStream *stream, PayloadContext *data, const char *p,
+                  int (*parse_fmtp)(AVFormatContext *s,
+                                    AVStream *stream,
                                     PayloadContext *data,
                                     char *attr, char *value));
 

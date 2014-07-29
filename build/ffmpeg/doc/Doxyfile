@@ -31,7 +31,7 @@ PROJECT_NAME           = FFmpeg
 # This could be handy for archiving the generated documentation or
 # if some version control system is used.
 
-PROJECT_NUMBER         = 2.2.1
+PROJECT_NUMBER         = 2.3
 
 # With the PROJECT_LOGO tag one can specify a logo or icon that is included
 # in the documentation. The maximum height of the logo should not exceed 55
@@ -759,7 +759,7 @@ ALPHABETICAL_INDEX     = YES
 # the COLS_IN_ALPHA_INDEX tag can be used to specify the number of columns
 # in which this list will be split (can be a number in the range [1..20])
 
-COLS_IN_ALPHA_INDEX    = 2
+COLS_IN_ALPHA_INDEX    = 5
 
 # In case all classes in a project start with a common prefix, all
 # classes will be put under the same header in the alphabetical index.
@@ -1056,7 +1056,7 @@ FORMULA_TRANSPARENT    = YES
 # typically be disabled. For large projects the javascript based search engine
 # can be slow, then enabling SERVER_BASED_SEARCH may provide a better solution.
 
-SEARCHENGINE           = NO
+SEARCHENGINE           = YES
 
 # When the SERVER_BASED_SEARCH tag is enabled the search engine will be
 # implemented using a PHP enabled web server instead of at the web client
@@ -1359,6 +1359,8 @@ PREDEFINED             = "__attribute__(x)=" \
                          "DECLARE_ALIGNED(a,t,n)=t n" \
                          "offsetof(x,y)=0x42" \
                          av_alloc_size \
+                         AV_GCC_VERSION_AT_LEAST(x,y)=1 \
+                         __GNUC__=1 \
 
 # If the MACRO_EXPANSION and EXPAND_ONLY_PREDEF tags are set to YES then
 # this tag can be used to specify a list of macro names that should be expanded.

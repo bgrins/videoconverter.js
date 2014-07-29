@@ -36,6 +36,7 @@
 #include "internal.h"
 #include "oggdec.h"
 #include "vorbiscomment.h"
+#include "replaygain.h"
 
 static int ogm_chapter(AVFormatContext *as, uint8_t *key, uint8_t *val)
 {
@@ -71,7 +72,8 @@ static int ogm_chapter(AVFormatContext *as, uint8_t *key, uint8_t *val)
 }
 
 int ff_vorbis_comment(AVFormatContext *as, AVDictionary **m,
-                      const uint8_t *buf, int size)
+                      const uint8_t *buf, int size,
+                      int parse_picture)
 {
     const uint8_t *p   = buf;
     const uint8_t *end = buf + size;
@@ -136,7 +138,7 @@ int ff_vorbis_comment(AVFormatContext *as, AVDictionary **m,
              * 'METADATA_BLOCK_PICTURE'. This is the preferred and
              * recommended way of embedding cover art within VorbisComments."
              */
-            if (!strcmp(tt, "METADATA_BLOCK_PICTURE")) {
+            if (!strcmp(tt, "METADATA_BLOCK_PICTURE") && parse_picture) {
                 int ret;
                 char *pict = av_malloc(vl);
 
@@ -156,7 +158,7 @@ int ff_vorbis_comment(AVFormatContext *as, AVDictionary **m,
                     continue;
                 }
             } else if (!ogm_chapter(as, tt, ct)) {
-                if (m && av_dict_get(*m, tt, NULL, 0)) {
+                if (av_dict_get(*m, tt, NULL, 0)) {
                     av_dict_set(m, tt, ";", AV_DICT_APPEND);
                 }
                 av_dict_set(m, tt, ct,
@@ -169,7 +171,7 @@ int ff_vorbis_comment(AVFormatContext *as, AVDictionary **m,
 
     if (p != end)
         av_log(as, AV_LOG_INFO,
-               "%ti bytes of comment header remain\n", end - p);
+               "%"PTRDIFF_SPECIFIER" bytes of comment header remain\n", end - p);
     if (n > 0)
         av_log(as, AV_LOG_INFO,
                "truncated comment header, %i comments not found\n", n);
@@ -255,7 +257,7 @@ static int vorbis_update_metadata(AVFormatContext *s, int idx)
     /* New metadata packet; release old data. */
     av_dict_free(&st->metadata);
     ret = ff_vorbis_comment(s, &st->metadata, os->buf + os->pstart + 7,
-                            os->psize - 8);
+                            os->psize - 8, 1);
     if (ret < 0)
         return ret;
 
@@ -347,9 +349,15 @@ static int vorbis_header(AVFormatContext *s, int idx)
             avpriv_set_pts_info(st, 64, 1, srate);
         }
     } else if (os->buf[os->pstart] == 3) {
-        if (vorbis_update_metadata(s, idx) >= 0) {
+        if (vorbis_update_metadata(s, idx) >= 0 && priv->len[1] > 10) {
+            unsigned new_len;
+
+            int ret = ff_replaygain_export(st, st->metadata);
+            if (ret < 0)
+                return ret;
+
             // drop all metadata we parsed and which is not required by libvorbis
-            unsigned new_len = 7 + 4 + AV_RL32(priv->packet[1] + 7) + 4 + 1;
+            new_len = 7 + 4 + AV_RL32(priv->packet[1] + 7) + 4 + 1;
             if (new_len >= 16 && new_len < os->psize) {
                 AV_WL32(priv->packet[1] + new_len - 5, 0);
                 priv->packet[1][new_len - 1] = 1;
@@ -419,6 +427,10 @@ static int vorbis_packet(AVFormatContext *s, int idx)
         }
         os->lastpts                 =
         os->lastdts                 = os->granule - duration;
+
+        if (!os->granule && duration) //hack to deal with broken files (Ticket3710)
+            os->lastpts = os->lastdts = AV_NOPTS_VALUE;
+
         if (s->streams[idx]->start_time == AV_NOPTS_VALUE) {
             s->streams[idx]->start_time = FFMAX(os->lastpts, 0);
             if (s->streams[idx]->duration != AV_NOPTS_VALUE)

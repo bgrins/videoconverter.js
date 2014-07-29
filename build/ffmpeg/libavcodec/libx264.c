@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/eval.h"
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/mem.h"
@@ -193,6 +194,39 @@ static int X264_frame(AVCodecContext *ctx, AVPacket *pkt, const AVFrame *frame,
             x264_encoder_reconfig(x4->enc, &x4->params);
         }
 
+        if (x4->params.rc.i_vbv_buffer_size != ctx->rc_buffer_size / 1000 ||
+            x4->params.rc.i_vbv_max_bitrate != ctx->rc_max_rate    / 1000) {
+            x4->params.rc.i_vbv_buffer_size = ctx->rc_buffer_size / 1000;
+            x4->params.rc.i_vbv_max_bitrate = ctx->rc_max_rate    / 1000;
+            x264_encoder_reconfig(x4->enc, &x4->params);
+        }
+
+        if (x4->params.rc.i_rc_method == X264_RC_ABR &&
+            x4->params.rc.i_bitrate != ctx->bit_rate / 1000) {
+            x4->params.rc.i_bitrate = ctx->bit_rate / 1000;
+            x264_encoder_reconfig(x4->enc, &x4->params);
+        }
+
+        if (x4->crf >= 0 &&
+            x4->params.rc.i_rc_method == X264_RC_CRF &&
+            x4->params.rc.f_rf_constant != x4->crf) {
+            x4->params.rc.f_rf_constant = x4->crf;
+            x264_encoder_reconfig(x4->enc, &x4->params);
+        }
+
+        if (x4->params.rc.i_rc_method == X264_RC_CQP &&
+            x4->cqp >= 0 &&
+            x4->params.rc.i_qp_constant != x4->cqp) {
+            x4->params.rc.i_qp_constant = x4->cqp;
+            x264_encoder_reconfig(x4->enc, &x4->params);
+        }
+
+        if (x4->crf_max >= 0 &&
+            x4->params.rc.f_rf_constant_max != x4->crf_max) {
+            x4->params.rc.f_rf_constant_max = x4->crf_max;
+            x264_encoder_reconfig(x4->enc, &x4->params);
+        }
+
         side_data = av_frame_get_side_data(frame, AV_FRAME_DATA_STEREO3D);
         if (side_data) {
             AVStereo3D *stereo = (AVStereo3D *)side_data->data;
@@ -330,6 +364,9 @@ static av_cold int X264_init(AVCodecContext *avctx)
     X264Context *x4 = avctx->priv_data;
     int sw,sh;
 
+    if (avctx->global_quality > 0)
+        av_log(avctx, AV_LOG_WARNING, "-qscale is ignored, -crf is recommended.\n");
+
     x264_param_default(&x4->params);
 
     x4->params.b_deblocking_filter         = avctx->flags & CODEC_FLAG_LOOP_FILTER;
@@ -423,6 +460,28 @@ static av_cold int X264_init(AVCodecContext *avctx)
         x4->params.rc.f_qcompress       = avctx->qcompress; /* 0.0 => cbr, 1.0 => constant qp */
     if (avctx->refs >= 0)
         x4->params.i_frame_reference    = avctx->refs;
+    else if (x4->level) {
+        int i;
+        int mbn = FF_CEIL_RSHIFT(avctx->width, 4) * FF_CEIL_RSHIFT(avctx->height, 4);
+        int level_id = -1;
+        char *tail;
+        int scale = X264_BUILD < 129 ? 384 : 1;
+
+        if (!strcmp(x4->level, "1b")) {
+            level_id = 9;
+        } else if (strlen(x4->level) <= 3){
+            level_id = av_strtod(x4->level, &tail) * 10 + 0.5;
+            if (*tail)
+                level_id = -1;
+        }
+        if (level_id <= 0)
+            av_log(avctx, AV_LOG_WARNING, "Failed to parse level\n");
+
+        for (i = 0; i<x264_levels[i].level_idc; i++)
+            if (x264_levels[i].level_idc == level_id)
+                x4->params.i_frame_reference = av_clip(x264_levels[i].dpb / mbn / scale, 1, x4->params.i_frame_reference);
+    }
+
     if (avctx->trellis >= 0)
         x4->params.analyse.i_trellis    = avctx->trellis;
     if (avctx->me_range >= 0)

@@ -1,5 +1,5 @@
 /*
- * DSP utils mmx functions are compiled twice for rnd/no_rnd
+ * SIMD-optimized halfpel functions are compiled twice for rnd/no_rnd
  * Copyright (c) 2000, 2001 Fabrice Bellard
  * Copyright (c) 2003-2004 Michael Niedermayer <michaelni@gmx.at>
  *
@@ -23,6 +23,9 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+
+#include <stddef.h>
+#include <stdint.h>
 
 // put_pixels
 static void DEF(put, pixels8_x2)(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)

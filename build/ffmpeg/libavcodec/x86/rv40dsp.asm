@@ -1,7 +1,7 @@
 ;******************************************************************************
 ;* MMX/SSE2-optimized functions for the RV40 decoder
 ;* Copyright (c) 2010 Ronald S. Bultje <rsbultje@gmail.com>
-;* Copyright (c) 2010 Jason Garrett-Glaser <darkshikari@gmail.com>
+;* Copyright (c) 2010 Fiona Glaser <fiona@x264.com>
 ;* Copyright (C) 2012 Christophe Gisquet <christophe.gisquet@gmail.com>
 ;*
 ;* This file is part of FFmpeg.
@@ -77,9 +77,9 @@ SECTION .text
 ;-----------------------------------------------------------------------------
 ; subpel MC functions:
 ;
-; void [put|rv40]_rv40_qpel_[h|v]_<opt>(uint8_t *dst, int deststride,
-;                                       uint8_t *src, int srcstride,
-;                                       int len, int m);
+; void ff_[put|rv40]_rv40_qpel_[h|v]_<opt>(uint8_t *dst, int deststride,
+;                                          uint8_t *src, int srcstride,
+;                                          int len, int m);
 ;----------------------------------------------------------------------
 %macro LOAD  2
 %if WIN64
@@ -438,7 +438,7 @@ FILTER_SSSE3  avg
 
 %endmacro
 
-; rv40_weight_func_%1(uint8_t *dst, uint8_t *src1, uint8_t *src2, int w1, int w2, int stride)
+; void ff_rv40_weight_func_%1(uint8_t *dst, uint8_t *src1, uint8_t *src2, int w1, int w2, int stride)
 ; %1=size  %2=num of xmm regs
 ; The weights are FP0.14 notation of fractions depending on pts.
 ; For timebases without rounding error (i.e. PAL), the fractions

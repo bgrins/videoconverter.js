@@ -1946,7 +1946,7 @@ static int decode_ics(AACContext *ac, SingleChannelElement *sce,
             avpriv_request_sample(ac->avctx, "SSR");
             return AVERROR_PATCHWELCOME;
         }
-        // I see no textual basis in the spec for this occuring after SSR gain
+        // I see no textual basis in the spec for this occurring after SSR gain
         // control, but this is what both reference and real implmentations do
         if (tns->present && er_syntax)
             if (decode_tns(ac, tns, gb, ics) < 0)
@@ -2631,7 +2631,7 @@ static void apply_dependent_coupling(AACContext *ac,
                 const float gain = cce->coup.gain[index][idx];
                 for (group = 0; group < ics->group_len[g]; group++) {
                     for (k = offsets[i]; k < offsets[i + 1]; k++) {
-                        // XXX dsputil-ize
+                        // FIXME: SIMDify
                         dest[group * 128 + k] += gain * src[group * 128 + k];
                     }
                 }

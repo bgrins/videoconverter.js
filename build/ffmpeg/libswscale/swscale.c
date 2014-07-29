@@ -414,8 +414,8 @@ static int swscale(SwsContext *c, const uint8_t *src[],
     DEBUG_BUFFERS("vLumFilterSize: %d vLumBufSize: %d vChrFilterSize: %d vChrBufSize: %d\n",
                   vLumFilterSize, vLumBufSize, vChrFilterSize, vChrBufSize);
 
-    if (dstStride[0]%16 !=0 || dstStride[1]%16 !=0 ||
-        dstStride[2]%16 !=0 || dstStride[3]%16 != 0) {
+    if (dstStride[0]&15 || dstStride[1]&15 ||
+        dstStride[2]&15 || dstStride[3]&15) {
         static int warnedAlready = 0; // FIXME maybe move this into the context
         if (flags & SWS_PRINT_INFO && !warnedAlready) {
             av_log(c, AV_LOG_WARNING,
@@ -425,10 +425,10 @@ static int swscale(SwsContext *c, const uint8_t *src[],
         }
     }
 
-    if (   (uintptr_t)dst[0]%16 || (uintptr_t)dst[1]%16 || (uintptr_t)dst[2]%16
-        || (uintptr_t)src[0]%16 || (uintptr_t)src[1]%16 || (uintptr_t)src[2]%16
-        || dstStride[0]%16 || dstStride[1]%16 || dstStride[2]%16 || dstStride[3]%16
-        || srcStride[0]%16 || srcStride[1]%16 || srcStride[2]%16 || srcStride[3]%16
+    if (   (uintptr_t)dst[0]&15 || (uintptr_t)dst[1]&15 || (uintptr_t)dst[2]&15
+        || (uintptr_t)src[0]&15 || (uintptr_t)src[1]&15 || (uintptr_t)src[2]&15
+        || dstStride[0]&15 || dstStride[1]&15 || dstStride[2]&15 || dstStride[3]&15
+        || srcStride[0]&15 || srcStride[1]&15 || srcStride[2]&15 || srcStride[3]&15
     ) {
         static int warnedAlready=0;
         int cpu_flags = av_get_cpu_flags();
@@ -705,6 +705,31 @@ static int swscale(SwsContext *c, const uint8_t *src[],
     return dstY - lastDstY;
 }
 
+av_cold void ff_sws_init_range_convert(SwsContext *c)
+{
+    c->lumConvertRange = NULL;
+    c->chrConvertRange = NULL;
+    if (c->srcRange != c->dstRange && !isAnyRGB(c->dstFormat)) {
+        if (c->dstBpc <= 14) {
+            if (c->srcRange) {
+                c->lumConvertRange = lumRangeFromJpeg_c;
+                c->chrConvertRange = chrRangeFromJpeg_c;
+            } else {
+                c->lumConvertRange = lumRangeToJpeg_c;
+                c->chrConvertRange = chrRangeToJpeg_c;
+            }
+        } else {
+            if (c->srcRange) {
+                c->lumConvertRange = lumRangeFromJpeg16_c;
+                c->chrConvertRange = chrRangeFromJpeg16_c;
+            } else {
+                c->lumConvertRange = lumRangeToJpeg16_c;
+                c->chrConvertRange = chrRangeToJpeg16_c;
+            }
+        }
+    }
+}
+
 static av_cold void sws_init_swscale(SwsContext *c)
 {
     enum AVPixelFormat srcFormat = c->srcFormat;
@@ -731,25 +756,7 @@ static av_cold void sws_init_swscale(SwsContext *c)
                                                  : hScale16To15_c;
     }
 
-    if (c->srcRange != c->dstRange && !isAnyRGB(c->dstFormat)) {
-        if (c->dstBpc <= 14) {
-            if (c->srcRange) {
-                c->lumConvertRange = lumRangeFromJpeg_c;
-                c->chrConvertRange = chrRangeFromJpeg_c;
-            } else {
-                c->lumConvertRange = lumRangeToJpeg_c;
-                c->chrConvertRange = chrRangeToJpeg_c;
-            }
-        } else {
-            if (c->srcRange) {
-                c->lumConvertRange = lumRangeFromJpeg16_c;
-                c->chrConvertRange = chrRangeFromJpeg16_c;
-            } else {
-                c->lumConvertRange = lumRangeToJpeg16_c;
-                c->chrConvertRange = chrRangeToJpeg16_c;
-            }
-        }
-    }
+    ff_sws_init_range_convert(c);
 
     if (!(isGray(srcFormat) || isGray(c->dstFormat) ||
           srcFormat == AV_PIX_FMT_MONOBLACK || srcFormat == AV_PIX_FMT_MONOWHITE))
@@ -922,7 +929,7 @@ int attribute_align_arg sws_scale(struct SwsContext *c,
     uint8_t *dst2[4];
     uint8_t *rgb0_tmp = NULL;
 
-    if (!srcSlice || !dstStride || !dst || !srcSlice) {
+    if (!srcStride || !dstStride || !dst || !srcSlice) {
         av_log(c, AV_LOG_ERROR, "One of the input parameters to sws_scale() is NULL, please check the calling code\n");
         return 0;
     }
@@ -952,9 +959,9 @@ int attribute_align_arg sws_scale(struct SwsContext *c,
 
     if (usePal(c->srcFormat)) {
         for (i = 0; i < 256; i++) {
-            int p, r, g, b, y, u, v, a = 0xff;
+            int r, g, b, y, u, v, a = 0xff;
             if (c->srcFormat == AV_PIX_FMT_PAL8) {
-                p = ((const uint32_t *)(srcSlice[1]))[i];
+                uint32_t p = ((const uint32_t *)(srcSlice[1]))[i];
                 a = (p >> 24) & 0xFF;
                 r = (p >> 16) & 0xFF;
                 g = (p >>  8) & 0xFF;

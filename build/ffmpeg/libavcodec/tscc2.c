@@ -24,6 +24,8 @@
  * TechSmith Screen Codec 2 decoder
  */
 
+#include <inttypes.h>
+
 #define BITSTREAM_READER_LE
 #include "avcodec.h"
 #include "get_bits.h"
@@ -88,14 +90,14 @@ static av_cold int init_vlcs(TSCC2Context *c)
     return 0;
 }
 
-#define DEQUANT(val, q) ((q * val + 0x80) >> 8)
+#define DEQUANT(val, q) (((q) * (val) + 0x80) >> 8)
 #define DCT1D(d0, d1, d2, d3, s0, s1, s2, s3, OP) \
     OP(d0, 5 * ((s0) + (s1) + (s2)) + 2 * (s3));  \
     OP(d1, 5 * ((s0) - (s2) - (s3)) + 2 * (s1));  \
     OP(d2, 5 * ((s0) - (s2) + (s3)) - 2 * (s1));  \
     OP(d3, 5 * ((s0) - (s1) + (s2)) - 2 * (s3));  \
 
-#define COL_OP(a, b)  a = b
+#define COL_OP(a, b)  a = (b)
 #define ROW_OP(a, b)  a = ((b) + 0x20) >> 6
 
 static void tscc2_idct4_put(int *in, int q[3], uint8_t *dst, int stride)
@@ -227,7 +229,8 @@ static int tscc2_decode_frame(AVCodecContext *avctx, void *data,
     bytestream2_init(&gb, buf, buf_size);
     frame_type = bytestream2_get_byte(&gb);
     if (frame_type > 1) {
-        av_log(avctx, AV_LOG_ERROR, "Incorrect frame type %d\n", frame_type);
+        av_log(avctx, AV_LOG_ERROR, "Incorrect frame type %"PRIu32"\n",
+               frame_type);
         return AVERROR_INVALIDDATA;
     }
 
@@ -309,7 +312,7 @@ static int tscc2_decode_frame(AVCodecContext *avctx, void *data,
             }
         }
         if (bytestream2_get_bytes_left(&gb) < size) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid slice size (%d/%d)\n",
+            av_log(avctx, AV_LOG_ERROR, "Invalid slice size (%"PRIu32"/%u)\n",
                    size, bytestream2_get_bytes_left(&gb));
             return AVERROR_INVALIDDATA;
         }

@@ -13,8 +13,8 @@ You can disable all the output devices using the configure option
 option "--enable-outdev=@var{OUTDEV}", or you can disable a particular
 input device using the option "--disable-outdev=@var{OUTDEV}".
 
-The option "-formats" of the ff* tools will display the list of
-enabled output devices (amongst the muxers).
+The option "-devices" of the ff* tools will display the list of
+enabled output devices.
 
 A description of the currently available output devices follows.
 
@@ -42,7 +42,7 @@ ffmpeg -i INPUT -f alsa hw:1,7
 
 CACA output device.
 
-This output device allows to show a video stream in CACA window.
+This output device allows one to show a video stream in CACA window.
 Only one CACA window is allowed per application, so you can
 have only one instance of this output device in an application.
 
@@ -220,11 +220,11 @@ This output device allows one to render to OpenGL context.
 Context may be provided by application or default SDL window is created.
 
 When device renders to external context, application must implement handlers for following messages:
-@code{AV_CTL_MESSAGE_CREATE_WINDOW_BUFFER} - create OpenGL context on current thread.
-@code{AV_CTL_MESSAGE_PREPARE_WINDOW_BUFFER} - make OpenGL context current.
-@code{AV_CTL_MESSAGE_DISPLAY_WINDOW_BUFFER} - swap buffers.
-@code{AV_CTL_MESSAGE_DESTROY_WINDOW_BUFFER} - destroy OpenGL context.
-Application is also required to inform a device about current resolution by sending @code{AV_DEVICE_WINDOW_RESIZED} message.
+@code{AV_DEV_TO_APP_CREATE_WINDOW_BUFFER} - create OpenGL context on current thread.
+@code{AV_DEV_TO_APP_PREPARE_WINDOW_BUFFER} - make OpenGL context current.
+@code{AV_DEV_TO_APP_DISPLAY_WINDOW_BUFFER} - swap buffers.
+@code{AV_DEV_TO_APP_DESTROY_WINDOW_BUFFER} - destroy OpenGL context.
+Application is also required to inform a device about current resolution by sending @code{AV_APP_TO_DEV_WINDOW_SIZE} message.
 
 @subsection Options
 @table @option
@@ -237,6 +237,10 @@ Application must provide OpenGL context and both @code{window_size_cb} and @code
 @item window_title
 Set the SDL window title, if not specified default to the filename specified for the output device.
 Ignored when @option{no_window} is set.
+@item window_size
+Set preferred window size, can be a string of the form widthxheight or a video size abbreviation.
+If not specified it defaults to the size of the input video, downscaled according to the aspect ratio.
+Mostly usable when @option{no_window} is not set.
 
 @end table
 
@@ -290,6 +294,20 @@ When both options are provided then the highest value is used
 are set to 0 (which is default), the device will use the default
 PulseAudio duration value. By default PulseAudio set buffer duration
 to around 2 seconds.
+
+@item prebuf
+Specify pre-buffering size in bytes. The server does not start with
+playback before at least @option{prebuf} bytes are available in the
+buffer. By default this option is initialized to the same value as
+@option{buffer_size} or @option{buffer_duration} (whichever is bigger).
+
+@item minreq
+Specify minimum request size in bytes. The server does not request less
+than @option{minreq} bytes from the client, instead waits until the buffer
+is free enough to request more bytes at once. It is recommended to not set
+this option, which will initialize this to a value that is deemed sensible
+by the server.
+
 @end table
 
 @subsection Examples
@@ -302,7 +320,7 @@ ffmpeg  -i INPUT -f pulse "stream name"
 
 SDL (Simple DirectMedia Layer) output device.
 
-This output device allows to show a video stream in an SDL
+This output device allows one to show a video stream in an SDL
 window. Only one SDL window is allowed per application, so you can
 have only one instance of this output device in an application.
 
@@ -361,7 +379,7 @@ sndio audio output device.
 
 XV (XVideo) output device.
 
-This output device allows to show a video stream in a X Window System
+This output device allows one to show a video stream in a X Window System
 window.
 
 @subsection Options
@@ -388,19 +406,26 @@ For example, @code{dual-headed:0.1} would specify screen 1 of display
 Check the X11 specification for more detailed information about the
 display name format.
 
+@item window_id
+When set to non-zero value then device doesn't create new window,
+but uses existing one with provided @var{window_id}. By default
+this options is set to zero and device creates its own window.
+
 @item window_size
 Set the created window size, can be a string of the form
 @var{width}x@var{height} or a video size abbreviation. If not
 specified it defaults to the size of the input video.
+Ignored when @var{window_id} is set.
 
 @item window_x
 @item window_y
 Set the X and Y window offsets for the created window. They are both
 set to 0 by default. The values may be ignored by the window manager.
+Ignored when @var{window_id} is set.
 
 @item window_title
 Set the window title, if not specified default to the filename
-specified for the output device.
+specified for the output device. Ignored when @var{window_id} is set.
 @end table
 
 For more information about XVideo see @url{http://www.x.org/}.

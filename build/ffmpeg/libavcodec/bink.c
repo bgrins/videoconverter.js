@@ -24,9 +24,9 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/internal.h"
 #include "avcodec.h"
-#include "dsputil.h"
 #include "binkdata.h"
 #include "binkdsp.h"
+#include "blockdsp.h"
 #include "hpeldsp.h"
 #include "internal.h"
 #include "mathops.h"
@@ -113,9 +113,9 @@ typedef struct Bundle {
  */
 typedef struct BinkContext {
     AVCodecContext *avctx;
-    DSPContext     dsp;
+    BlockDSPContext bdsp;
     HpelDSPContext hdsp;
-    BinkDSPContext bdsp;
+    BinkDSPContext binkdsp;
     AVFrame        *last;
     int            version;              ///< internal Bink file version
     int            has_alpha;
@@ -873,7 +873,7 @@ static int binkb_decode_plane(BinkContext *c, AVFrame *frame, GetBitContext *gb,
                 dctblock[0] = binkb_get_value(c, BINKB_SRC_INTRA_DC);
                 qp = binkb_get_value(c, BINKB_SRC_INTRA_Q);
                 read_dct_coeffs(gb, dctblock, bink_scan, (const int32_t (*)[64])binkb_intra_quant, qp);
-                c->bdsp.idct_put(dst, stride, dctblock);
+                c->binkdsp.idct_put(dst, stride, dctblock);
                 break;
             case 3:
                 xoff = binkb_get_value(c, BINKB_SRC_X_OFF);
@@ -886,10 +886,10 @@ static int binkb_decode_plane(BinkContext *c, AVFrame *frame, GetBitContext *gb,
                 } else {
                     put_pixels8x8_overlapped(dst, ref, stride);
                 }
-                c->dsp.clear_block(block);
+                c->bdsp.clear_block(block);
                 v = binkb_get_value(c, BINKB_SRC_INTER_COEFS);
                 read_residue(gb, block, v);
-                c->dsp.add_pixels8(dst, block, stride);
+                c->binkdsp.add_pixels8(dst, block, stride);
                 break;
             case 4:
                 xoff = binkb_get_value(c, BINKB_SRC_X_OFF);
@@ -906,11 +906,11 @@ static int binkb_decode_plane(BinkContext *c, AVFrame *frame, GetBitContext *gb,
                 dctblock[0] = binkb_get_value(c, BINKB_SRC_INTER_DC);
                 qp = binkb_get_value(c, BINKB_SRC_INTER_Q);
                 read_dct_coeffs(gb, dctblock, bink_scan, (const int32_t (*)[64])binkb_inter_quant, qp);
-                c->bdsp.idct_add(dst, stride, dctblock);
+                c->binkdsp.idct_add(dst, stride, dctblock);
                 break;
             case 5:
                 v = binkb_get_value(c, BINKB_SRC_COLORS);
-                c->dsp.fill_block_tab[1](dst, v, stride, 8);
+                c->bdsp.fill_block_tab[1](dst, v, stride, 8);
                 break;
             case 6:
                 for (i = 0; i < 2; i++)
@@ -1049,11 +1049,11 @@ static int bink_decode_plane(BinkContext *c, AVFrame *frame, GetBitContext *gb,
                     memset(dctblock, 0, sizeof(*dctblock) * 64);
                     dctblock[0] = get_value(c, BINK_SRC_INTRA_DC);
                     read_dct_coeffs(gb, dctblock, bink_scan, bink_intra_quant, -1);
-                    c->bdsp.idct_put(ublock, 8, dctblock);
+                    c->binkdsp.idct_put(ublock, 8, dctblock);
                     break;
                 case FILL_BLOCK:
                     v = get_value(c, BINK_SRC_COLORS);
-                    c->dsp.fill_block_tab[0](dst, v, stride, 16);
+                    c->bdsp.fill_block_tab[0](dst, v, stride, 16);
                     break;
                 case PATTERN_BLOCK:
                     for (i = 0; i < 2; i++)
@@ -1074,7 +1074,7 @@ static int bink_decode_plane(BinkContext *c, AVFrame *frame, GetBitContext *gb,
                     return AVERROR_INVALIDDATA;
                 }
                 if (blk != FILL_BLOCK)
-                c->bdsp.scale_block(ublock, dst, stride);
+                c->binkdsp.scale_block(ublock, dst, stride);
                 bx++;
                 dst  += 8;
                 prev += 8;
@@ -1123,20 +1123,20 @@ static int bink_decode_plane(BinkContext *c, AVFrame *frame, GetBitContext *gb,
                     return AVERROR_INVALIDDATA;
                 }
                 c->hdsp.put_pixels_tab[1][0](dst, ref, stride, 8);
-                c->dsp.clear_block(block);
+                c->bdsp.clear_block(block);
                 v = get_bits(gb, 7);
                 read_residue(gb, block, v);
-                c->dsp.add_pixels8(dst, block, stride);
+                c->binkdsp.add_pixels8(dst, block, stride);
                 break;
             case INTRA_BLOCK:
                 memset(dctblock, 0, sizeof(*dctblock) * 64);
                 dctblock[0] = get_value(c, BINK_SRC_INTRA_DC);
                 read_dct_coeffs(gb, dctblock, bink_scan, bink_intra_quant, -1);
-                c->bdsp.idct_put(dst, stride, dctblock);
+                c->binkdsp.idct_put(dst, stride, dctblock);
                 break;
             case FILL_BLOCK:
                 v = get_value(c, BINK_SRC_COLORS);
-                c->dsp.fill_block_tab[1](dst, v, stride, 8);
+                c->bdsp.fill_block_tab[1](dst, v, stride, 8);
                 break;
             case INTER_BLOCK:
                 xoff = get_value(c, BINK_SRC_X_OFF);
@@ -1151,7 +1151,7 @@ static int bink_decode_plane(BinkContext *c, AVFrame *frame, GetBitContext *gb,
                 memset(dctblock, 0, sizeof(*dctblock) * 64);
                 dctblock[0] = get_value(c, BINK_SRC_INTER_DC);
                 read_dct_coeffs(gb, dctblock, bink_scan, bink_inter_quant, -1);
-                c->bdsp.idct_add(dst, stride, dctblock);
+                c->binkdsp.idct_add(dst, stride, dctblock);
                 break;
             case PATTERN_BLOCK:
                 for (i = 0; i < 2; i++)
@@ -1306,9 +1306,9 @@ static av_cold int decode_init(AVCodecContext *avctx)
 
     avctx->pix_fmt = c->has_alpha ? AV_PIX_FMT_YUVA420P : AV_PIX_FMT_YUV420P;
 
-    ff_dsputil_init(&c->dsp, avctx);
+    ff_blockdsp_init(&c->bdsp, avctx);
     ff_hpeldsp_init(&c->hdsp, avctx->flags);
-    ff_binkdsp_init(&c->bdsp);
+    ff_binkdsp_init(&c->binkdsp);
 
     if ((ret = init_bundles(c)) < 0) {
         free_bundles(c);

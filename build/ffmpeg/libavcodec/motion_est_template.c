@@ -24,6 +24,8 @@
  * Motion estimation template.
  */
 
+#include "mpegvideo.h"
+
 //Let us hope gcc will remove the unused vars ...(gcc 3.2.2 seems to do it ...)
 #define LOAD_COMMON\
     uint32_t av_unused * const score_map= c->score_map;\
@@ -892,7 +894,8 @@ static av_always_inline int epzs_motion_search_internal(MpegEncContext * s, int 
     score_map[0]= dmin;
 
     //FIXME precalc first term below?
-    if((s->pict_type == AV_PICTURE_TYPE_B && !(c->flags & FLAG_DIRECT)) || s->flags&CODEC_FLAG_MV0)
+    if ((s->pict_type == AV_PICTURE_TYPE_B && !(c->flags & FLAG_DIRECT)) ||
+        s->mpv_flags & FF_MPV_FLAG_MV0)
         dmin += (mv_penalty[pred_x] + mv_penalty[pred_y])*penalty_factor;
 
     /* first line */

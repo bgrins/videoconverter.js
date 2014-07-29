@@ -1,5 +1,5 @@
 /*
- * ARM optimized DSP utils
+ * ARM-optimized halfpel functions
  * Copyright (c) 2001 Lionel Ulmer
  *
  * This file is part of FFmpeg.
@@ -21,8 +21,7 @@
 
 #include "libavutil/arm/cpu.h"
 #include "libavutil/attributes.h"
-#include "libavcodec/bit_depth_template.c" // for CALL_2X_PIXELS
-#include "libavcodec/rnd_avg.h"
+#include "libavcodec/pixels.h"
 #include "hpeldsp_arm.h"
 
 void ff_put_pixels8_arm(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h);

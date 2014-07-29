@@ -1,6 +1,43 @@
 Entries are sorted chronologically from oldest to youngest within each release,
 releases are sorted from youngest to oldest.
 
+version 2.3:
+- AC3 fixed-point decoding
+- shuffleplanes filter
+- subfile protocol
+- Phantom Cine demuxer
+- replaygain data export
+- VP7 video decoder
+- Alias PIX image encoder and decoder
+- Improvements to the BRender PIX image decoder
+- Improvements to the XBM decoder
+- QTKit input device
+- improvements to OpenEXR image decoder
+- support decoding 16-bit RLE SGI images
+- GDI screen grabbing for Windows
+- alternative rendition support for HTTP Live Streaming
+- AVFoundation input device
+- Direct Stream Digital (DSD) decoder
+- Magic Lantern Video (MLV) demuxer
+- On2 AVC (Audio for Video) decoder
+- support for decoding through DXVA2 in ffmpeg
+- libbs2b-based stereo-to-binaural audio filter
+- libx264 reference frames count limiting depending on level
+- native Opus decoder
+- display matrix export and rotation api
+- WebVTT encoder
+- showcqt multimedia filter
+- zoompan filter
+- signalstats filter
+- hqx filter (hq2x, hq3x, hq4x)
+- flanger filter
+- Image format auto-detection
+- LRC demuxer and muxer
+- Samba protocol (via libsmbclient)
+- WebM DASH Manifest muxer
+- libfribidi support in drawtext
+
+
 version 2.2:
 
 - HNM version 4 demuxer and video decoder
@@ -216,7 +253,7 @@ version 1.1:
 - JSON captions for TED talks decoding support
 - SOX Resampler support in libswresample
 - aselect filter
-- SGI RLE 8-bit decoder
+- SGI RLE 8-bit / Silicon Graphics RLE 8-bit video decoder
 - Silicon Graphics Motion Video Compressor 1 & 2 decoder
 - Silicon Graphics Movie demuxer
 - apad filter
@@ -260,7 +297,9 @@ version 1.0:
 - RTMPE protocol support
 - RTMPTE protocol support
 - showwaves and showspectrum filter
-- LucasArts SMUSH playback support
+- LucasArts SMUSH SANM playback support
+- LucasArts SMUSH VIMA audio decoder (ADPCM)
+- LucasArts SMUSH demuxer
 - SAMI, RealText and SubViewer demuxers and decoders
 - Heart Of Darkness PAF playback support
 - iec61883 device
@@ -384,6 +423,7 @@ version 0.10:
 - ffwavesynth decoder
 - aviocat tool
 - ffeval tool
+- support encoding and decoding 4-channel SGI images
 
 
 version 0.9:

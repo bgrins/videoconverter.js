@@ -34,6 +34,7 @@ void ff_decode_hf_sse4(float dst[DCA_SUBBANDS][8], const int vq_num[DCA_SUBBANDS
                        int scale[DCA_SUBBANDS][2], intptr_t start, intptr_t end);
 void ff_dca_lfe_fir0_sse(float *out, const float *in, const float *coefs);
 void ff_dca_lfe_fir1_sse(float *out, const float *in, const float *coefs);
+void ff_dca_lfe_fir0_fma3(float *out, const float *in, const float *coefs);
 
 av_cold void ff_dcadsp_init_x86(DCADSPContext *s)
 {
@@ -54,32 +55,59 @@ av_cold void ff_dcadsp_init_x86(DCADSPContext *s)
     if (EXTERNAL_SSE4(cpu_flags)) {
         s->decode_hf = ff_decode_hf_sse4;
     }
+
+    if (EXTERNAL_FMA3(cpu_flags)) {
+        s->lfe_fir[0]        = ff_dca_lfe_fir0_fma3;
+    }
 }
 
-void ff_synth_filter_inner_sse2(float *synth_buf_ptr, float synth_buf2[32],
-                                const float window[512],
-                                float out[32], intptr_t offset, float scale);
 
-static void synth_filter_sse2(FFTContext *imdct,
-                              float *synth_buf_ptr, int *synth_buf_offset,
-                              float synth_buf2[32], const float window[512],
-                              float out[32], const float in[32], float scale)
-{
-    float *synth_buf= synth_buf_ptr + *synth_buf_offset;
+#define SYNTH_FILTER_FUNC(opt)                                                 \
+void ff_synth_filter_inner_##opt(float *synth_buf_ptr, float synth_buf2[32],   \
+                                 const float window[512],                      \
+                                 float out[32], intptr_t offset, float scale); \
+static void synth_filter_##opt(FFTContext *imdct,                              \
+                               float *synth_buf_ptr, int *synth_buf_offset,    \
+                               float synth_buf2[32], const float window[512],  \
+                               float out[32], const float in[32], float scale) \
+{                                                                              \
+    float *synth_buf= synth_buf_ptr + *synth_buf_offset;                       \
+                                                                               \
+    imdct->imdct_half(imdct, synth_buf, in);                                   \
+                                                                               \
+    ff_synth_filter_inner_##opt(synth_buf, synth_buf2, window,                 \
+                                out, *synth_buf_offset, scale);                \
+                                                                               \
+    *synth_buf_offset = (*synth_buf_offset - 32) & 511;                        \
+}                                                                              \
 
-    imdct->imdct_half(imdct, synth_buf, in);
-
-    ff_synth_filter_inner_sse2(synth_buf, synth_buf2, window,
-                               out, *synth_buf_offset, scale);
-
-    *synth_buf_offset = (*synth_buf_offset - 32) & 511;
-}
+#if HAVE_YASM
+#if ARCH_X86_32
+SYNTH_FILTER_FUNC(sse)
+#endif
+SYNTH_FILTER_FUNC(sse2)
+SYNTH_FILTER_FUNC(avx)
+SYNTH_FILTER_FUNC(fma3)
+#endif /* HAVE_YASM */
 
 av_cold void ff_synth_filter_init_x86(SynthFilterContext *s)
 {
+#if HAVE_YASM
     int cpu_flags = av_get_cpu_flags();
 
+#if ARCH_X86_32
+    if (EXTERNAL_SSE(cpu_flags)) {
+        s->synth_filter_float = synth_filter_sse;
+    }
+#endif
     if (EXTERNAL_SSE2(cpu_flags)) {
         s->synth_filter_float = synth_filter_sse2;
     }
+    if (EXTERNAL_AVX(cpu_flags)) {
+        s->synth_filter_float = synth_filter_avx;
+    }
+    if (EXTERNAL_FMA3(cpu_flags)) {
+        s->synth_filter_float = synth_filter_fma3;
+    }
+#endif /* HAVE_YASM */
 }

@@ -270,10 +270,12 @@ int ffurl_open(URLContext **puc, const char *filename, int flags,
                const AVIOInterruptCB *int_cb, AVDictionary **options)
 {
     int ret = ffurl_alloc(puc, filename, flags, int_cb);
-    if (ret)
+    if (ret < 0)
         return ret;
     if (options && (*puc)->prot->priv_data_class &&
         (ret = av_opt_set_dict((*puc)->priv_data, options)) < 0)
+        goto fail;
+    if ((ret = av_opt_set_dict(*puc, options)) < 0)
         goto fail;
     ret = ffurl_connect(*puc, options);
     if (!ret)
@@ -310,8 +312,8 @@ static inline int retry_transfer_wrapper(URLContext *h, uint8_t *buf,
             } else {
                 if (h->rw_timeout) {
                     if (!wait_since)
-                        wait_since = av_gettime();
-                    else if (av_gettime() > wait_since + h->rw_timeout)
+                        wait_since = av_gettime_relative();
+                    else if (av_gettime_relative() > wait_since + h->rw_timeout)
                         return AVERROR(EIO);
                 }
                 av_usleep(1000);
@@ -399,7 +401,7 @@ int avio_check(const char *url, int flags)
 {
     URLContext *h;
     int ret = ffurl_alloc(&h, url, flags, NULL);
-    if (ret)
+    if (ret < 0)
         return ret;
 
     if (h->prot->url_check) {

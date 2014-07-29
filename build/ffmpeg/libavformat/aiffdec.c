@@ -237,7 +237,7 @@ static int aiff_read_header(AVFormatContext *s)
             break;
         case MKTAG('I', 'D', '3', ' '):
             position = avio_tell(pb);
-            ff_id3v2_read(s, ID3v2_DEFAULT_MAGIC, &id3v2_extra_meta);
+            ff_id3v2_read(s, ID3v2_DEFAULT_MAGIC, &id3v2_extra_meta, size);
             if (id3v2_extra_meta)
                 if ((ret = ff_id3v2_parse_apic(s, &id3v2_extra_meta)) < 0) {
                     ff_id3v2_free_extra_meta(&id3v2_extra_meta);
@@ -344,10 +344,16 @@ static int aiff_read_packet(AVFormatContext *s,
         return AVERROR_EOF;
 
     /* Now for that packet */
-    if (st->codec->block_align >= 17) // GSM, QCLP, IMA4
+    switch (st->codec->codec_id) {
+    case AV_CODEC_ID_ADPCM_IMA_QT:
+    case AV_CODEC_ID_GSM:
+    case AV_CODEC_ID_QDM2:
+    case AV_CODEC_ID_QCELP:
         size = st->codec->block_align;
-    else
+        break;
+    default:
         size = (MAX_SIZE / st->codec->block_align) * st->codec->block_align;
+    }
     size = FFMIN(max_size, size);
     res = av_get_packet(s->pb, pkt, size);
     if (res < 0)

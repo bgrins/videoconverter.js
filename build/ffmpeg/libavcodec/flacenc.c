@@ -25,7 +25,7 @@
 #include "libavutil/md5.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
-#include "dsputil.h"
+#include "bswapdsp.h"
 #include "put_bits.h"
 #include "golomb.h"
 #include "internal.h"
@@ -113,8 +113,11 @@ typedef struct FlacEncodeContext {
     struct AVMD5 *md5ctx;
     uint8_t *md5_buffer;
     unsigned int md5_buffer_size;
-    DSPContext dsp;
+    BswapDSPContext bdsp;
     FLACDSPContext flac_dsp;
+
+    int flushed;
+    int64_t next_pts;
 } FlacEncodeContext;
 
 
@@ -424,7 +427,7 @@ static av_cold int flac_encode_init(AVCodecContext *avctx)
     ret = ff_lpc_init(&s->lpc_ctx, avctx->frame_size,
                       s->options.max_prediction_order, FF_LPC_TYPE_LEVINSON);
 
-    ff_dsputil_init(&s->dsp, avctx);
+    ff_bswapdsp_init(&s->bdsp);
     ff_flacdsp_init(&s->flac_dsp, avctx->sample_fmt,
                     avctx->bits_per_raw_sample);
 
@@ -649,7 +652,7 @@ static uint64_t calc_rice_params(RiceContext *rc, int pmin, int pmax,
 
     tmp_rc.coding_mode = rc->coding_mode;
 
-    udata = av_malloc(n * sizeof(uint32_t));
+    udata = av_malloc_array(n,  sizeof(uint32_t));
     for (i = 0; i < n; i++)
         udata[i] = (2*data[i]) ^ (data[i]>>31);
 
@@ -1203,8 +1206,8 @@ static int update_md5_sum(FlacEncodeContext *s, const void *samples)
     if (s->avctx->bits_per_raw_sample <= 16) {
         buf = (const uint8_t *)samples;
 #if HAVE_BIGENDIAN
-        s->dsp.bswap16_buf((uint16_t *)s->md5_buffer,
-                           (const uint16_t *)samples, buf_size / 2);
+        s->bdsp.bswap16_buf((uint16_t *) s->md5_buffer,
+                            (const uint16_t *) samples, buf_size / 2);
         buf = s->md5_buffer;
 #endif
     } else {
@@ -1239,6 +1242,20 @@ static int flac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         s->max_framesize = s->max_encoded_framesize;
         av_md5_final(s->md5ctx, s->md5sum);
         write_streaminfo(s, avctx->extradata);
+
+        if (avctx->side_data_only_packets && !s->flushed) {
+            uint8_t *side_data = av_packet_new_side_data(avpkt, AV_PKT_DATA_NEW_EXTRADATA,
+                                                         avctx->extradata_size);
+            if (!side_data)
+                return AVERROR(ENOMEM);
+            memcpy(side_data, avctx->extradata, avctx->extradata_size);
+
+            avpkt->pts = s->next_pts;
+
+            *got_packet_ptr = 1;
+            s->flushed = 1;
+        }
+
         return 0;
     }
 
@@ -1289,6 +1306,9 @@ static int flac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     avpkt->pts      = frame->pts;
     avpkt->duration = ff_samples_to_time_base(avctx, frame->nb_samples);
     avpkt->size     = out_bytes;
+
+    s->next_pts = avpkt->pts + avpkt->duration;
+
     *got_packet_ptr = 1;
     return 0;
 }

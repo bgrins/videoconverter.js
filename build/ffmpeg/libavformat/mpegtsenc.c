@@ -81,58 +81,19 @@ typedef struct MpegTSWrite {
 
     int reemit_pat_pmt; // backward compatibility
 
+    int pcr_period;
 #define MPEGTS_FLAG_REEMIT_PAT_PMT  0x01
 #define MPEGTS_FLAG_AAC_LATM        0x02
     int flags;
     int copyts;
     int tables_version;
+
+    int omit_video_pes_length;
 } MpegTSWrite;
 
 /* a PES packet header is generated every DEFAULT_PES_HEADER_FREQ packets */
 #define DEFAULT_PES_HEADER_FREQ 16
 #define DEFAULT_PES_PAYLOAD_SIZE ((DEFAULT_PES_HEADER_FREQ - 1) * 184 + 170)
-
-static const AVOption options[] = {
-    { "mpegts_transport_stream_id", "Set transport_stream_id field.",
-      offsetof(MpegTSWrite, transport_stream_id), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0xffff, AV_OPT_FLAG_ENCODING_PARAM},
-    { "mpegts_original_network_id", "Set original_network_id field.",
-      offsetof(MpegTSWrite, original_network_id), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0xffff, AV_OPT_FLAG_ENCODING_PARAM},
-    { "mpegts_service_id", "Set service_id field.",
-      offsetof(MpegTSWrite, service_id), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0xffff, AV_OPT_FLAG_ENCODING_PARAM},
-    { "mpegts_pmt_start_pid", "Set the first pid of the PMT.",
-      offsetof(MpegTSWrite, pmt_start_pid), AV_OPT_TYPE_INT, {.i64 = 0x1000 }, 0x0010, 0x1f00, AV_OPT_FLAG_ENCODING_PARAM},
-    { "mpegts_start_pid", "Set the first pid.",
-      offsetof(MpegTSWrite, start_pid), AV_OPT_TYPE_INT, {.i64 = 0x0100 }, 0x0100, 0x0f00, AV_OPT_FLAG_ENCODING_PARAM},
-    {"mpegts_m2ts_mode", "Enable m2ts mode.",
-        offsetof(MpegTSWrite, m2ts_mode), AV_OPT_TYPE_INT, {.i64 = -1 },
-        -1,1, AV_OPT_FLAG_ENCODING_PARAM},
-    { "muxrate", NULL, offsetof(MpegTSWrite, mux_rate), AV_OPT_TYPE_INT, {.i64 = 1}, 0, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM},
-    { "pes_payload_size", "Minimum PES packet payload in bytes",
-      offsetof(MpegTSWrite, pes_payload_size), AV_OPT_TYPE_INT, {.i64 = DEFAULT_PES_PAYLOAD_SIZE}, 0, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM},
-    { "mpegts_flags", "MPEG-TS muxing flags", offsetof(MpegTSWrite, flags), AV_OPT_TYPE_FLAGS, {.i64 = 0}, 0, INT_MAX,
-      AV_OPT_FLAG_ENCODING_PARAM, "mpegts_flags" },
-    { "resend_headers", "Reemit PAT/PMT before writing the next packet",
-      0, AV_OPT_TYPE_CONST, {.i64 = MPEGTS_FLAG_REEMIT_PAT_PMT}, 0, INT_MAX,
-      AV_OPT_FLAG_ENCODING_PARAM, "mpegts_flags"},
-    { "latm", "Use LATM packetization for AAC",
-      0, AV_OPT_TYPE_CONST, {.i64 = MPEGTS_FLAG_AAC_LATM}, 0, INT_MAX,
-      AV_OPT_FLAG_ENCODING_PARAM, "mpegts_flags"},
-    // backward compatibility
-    { "resend_headers", "Reemit PAT/PMT before writing the next packet",
-      offsetof(MpegTSWrite, reemit_pat_pmt), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM},
-    { "mpegts_copyts", "don't offset dts/pts",
-      offsetof(MpegTSWrite, copyts), AV_OPT_TYPE_INT, {.i64=-1}, -1, 1, AV_OPT_FLAG_ENCODING_PARAM},
-    { "tables_version", "set PAT, PMT and SDT version",
-      offsetof(MpegTSWrite, tables_version), AV_OPT_TYPE_INT, {.i64=0}, 0, 31, AV_OPT_FLAG_ENCODING_PARAM},
-    { NULL },
-};
-
-static const AVClass mpegts_muxer_class = {
-    .class_name     = "MPEGTS muxer",
-    .item_name      = av_default_item_name,
-    .option         = options,
-    .version        = LIBAVUTIL_VERSION_INT,
-};
 
 /* NOTE: 4 bytes must be left at the end for the crc32 */
 static void mpegts_write_section(MpegTSSection *s, uint8_t *buf, int len)
@@ -240,6 +201,7 @@ typedef struct MpegTSWriteStream {
     int payload_flags;
     uint8_t *payload;
     AVFormatContext *amux;
+    AVRational user_tb;
 } MpegTSWriteStream;
 
 static void mpegts_write_pat(AVFormatContext *s)
@@ -292,6 +254,9 @@ static int mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
         case AV_CODEC_ID_H264:
             stream_type = STREAM_TYPE_VIDEO_H264;
             break;
+        case AV_CODEC_ID_HEVC:
+            stream_type = STREAM_TYPE_VIDEO_HEVC;
+            break;
         case AV_CODEC_ID_CAVS:
             stream_type = STREAM_TYPE_VIDEO_CAVS;
             break;
@@ -310,6 +275,12 @@ static int mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
             break;
         case AV_CODEC_ID_AC3:
             stream_type = STREAM_TYPE_AUDIO_AC3;
+            break;
+        case AV_CODEC_ID_DTS:
+            stream_type = STREAM_TYPE_AUDIO_DTS;
+            break;
+        case AV_CODEC_ID_TRUEHD:
+            stream_type = STREAM_TYPE_AUDIO_TRUEHD;
             break;
         default:
             stream_type = STREAM_TYPE_PRIVATE_DATA;
@@ -625,20 +596,24 @@ static int mpegts_write_header(AVFormatContext *s)
     ts->sdt.write_packet = section_write_packet;
     ts->sdt.opaque = s;
 
-    pids = av_malloc(s->nb_streams * sizeof(*pids));
+    pids = av_malloc_array(s->nb_streams, sizeof(*pids));
     if (!pids)
         return AVERROR(ENOMEM);
 
     /* assign pids to each stream */
     for(i = 0;i < s->nb_streams; i++) {
         st = s->streams[i];
-        avpriv_set_pts_info(st, 33, 1, 90000);
+
         ts_st = av_mallocz(sizeof(MpegTSWriteStream));
         if (!ts_st) {
             ret = AVERROR(ENOMEM);
             goto fail;
         }
         st->priv_data = ts_st;
+
+        ts_st->user_tb = st->time_base;
+        avpriv_set_pts_info(st, 33, 1, 90000);
+
         ts_st->payload = av_mallocz(ts->pes_payload_size);
         if (!ts_st->payload) {
             ret = AVERROR(ENOMEM);
@@ -693,6 +668,10 @@ static int mpegts_write_header(AVFormatContext *s)
                 goto fail;
             }
             ast = avformat_new_stream(ts_st->amux, NULL);
+            if (!ast) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
             ret = avcodec_copy_context(ast->codec, st->codec);
             if (ret != 0)
                 goto fail;
@@ -709,10 +688,11 @@ static int mpegts_write_header(AVFormatContext *s)
         pcr_st = s->streams[0];
         ts_st = pcr_st->priv_data;
         service->pcr_pid = ts_st->pid;
-    }
+    } else
+        ts_st = pcr_st->priv_data;
 
     if (ts->mux_rate > 1) {
-        service->pcr_packet_period = (ts->mux_rate * PCR_RETRANS_TIME) /
+        service->pcr_packet_period = (ts->mux_rate * ts->pcr_period) /
             (TS_PACKET_SIZE * 8 * 1000);
         ts->sdt_packet_period      = (ts->mux_rate * SDT_RETRANS_TIME) /
             (TS_PACKET_SIZE * 8 * 1000);
@@ -736,8 +716,9 @@ static int mpegts_write_header(AVFormatContext *s)
             }
         } else {
             // max delta PCR 0.1s
+            // TODO: should be avg_frame_rate
             service->pcr_packet_period =
-                pcr_st->codec->time_base.den/(10*pcr_st->codec->time_base.num);
+                ts_st->user_tb.den / (10 * ts_st->user_tb.num);
         }
         if(!service->pcr_packet_period)
             service->pcr_packet_period = 1;
@@ -1063,6 +1044,9 @@ static void mpegts_write_pes(AVFormatContext *s, AVStream *st,
             }
             if (len > 0xffff)
                 len = 0;
+            if (ts->omit_video_pes_length && st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+                len = 0;
+            }
             *q++ = len >> 8;
             *q++ = len;
             val = 0x80;
@@ -1159,6 +1143,19 @@ static void mpegts_write_pes(AVFormatContext *s, AVStream *st,
     ts_st->prev_payload_key = key;
 }
 
+int ff_check_h264_startcode(AVFormatContext *s, const AVStream *st, const AVPacket *pkt)
+{
+    if (pkt->size < 5 || AV_RB32(pkt->data) != 0x0000001) {
+        if (!st->nb_frames) {
+            av_log(s, AV_LOG_ERROR, "H.264 bitstream malformed, "
+                   "no startcode found, use the h264_mp4toannexb bitstream filter (-bsf h264_mp4toannexb)\n");
+            return AVERROR(EINVAL);
+        }
+        av_log(s, AV_LOG_WARNING, "H.264 bitstream error, startcode missing\n");
+    }
+    return 0;
+}
+
 static int mpegts_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
 {
     AVStream *st = s->streams[pkt->stream_index];
@@ -1198,15 +1195,9 @@ static int mpegts_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
     if (st->codec->codec_id == AV_CODEC_ID_H264) {
         const uint8_t *p = buf, *buf_end = p+size;
         uint32_t state = -1;
-
-        if (pkt->size < 5 || AV_RB32(pkt->data) != 0x0000001) {
-            if (!st->nb_frames) {
-                av_log(s, AV_LOG_ERROR, "H.264 bitstream malformed, "
-                       "no startcode found, use the h264_mp4toannexb bitstream filter (-bsf h264_mp4toannexb)\n");
-                return AVERROR(EINVAL);
-            }
-            av_log(s, AV_LOG_WARNING, "H.264 bitstream error, startcode missing\n");
-        }
+        int ret = ff_check_h264_startcode(s, st, pkt);
+        if (ret < 0)
+            return ret;
 
         do {
             p = avpriv_find_start_code(p, buf_end, &state);
@@ -1243,6 +1234,8 @@ static int mpegts_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
             av_init_packet(&pkt2);
             pkt2.data = pkt->data;
             pkt2.size = pkt->size;
+            av_assert0(pkt->dts != AV_NOPTS_VALUE);
+            pkt2.dts = av_rescale_q(pkt->dts, st->time_base, ts_st->amux->streams[0]->time_base);
             ret = avio_open_dyn_buf(&ts_st->amux->pb);
             if (ret < 0)
                 return AVERROR(ENOMEM);
@@ -1361,10 +1354,56 @@ static int mpegts_write_end(AVFormatContext *s)
     return 0;
 }
 
+static const AVOption options[] = {
+    { "mpegts_transport_stream_id", "Set transport_stream_id field.",
+      offsetof(MpegTSWrite, transport_stream_id), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0xffff, AV_OPT_FLAG_ENCODING_PARAM},
+    { "mpegts_original_network_id", "Set original_network_id field.",
+      offsetof(MpegTSWrite, original_network_id), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0xffff, AV_OPT_FLAG_ENCODING_PARAM},
+    { "mpegts_service_id", "Set service_id field.",
+      offsetof(MpegTSWrite, service_id), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0xffff, AV_OPT_FLAG_ENCODING_PARAM},
+    { "mpegts_pmt_start_pid", "Set the first pid of the PMT.",
+      offsetof(MpegTSWrite, pmt_start_pid), AV_OPT_TYPE_INT, {.i64 = 0x1000 }, 0x0010, 0x1f00, AV_OPT_FLAG_ENCODING_PARAM},
+    { "mpegts_start_pid", "Set the first pid.",
+      offsetof(MpegTSWrite, start_pid), AV_OPT_TYPE_INT, {.i64 = 0x0100 }, 0x0100, 0x0f00, AV_OPT_FLAG_ENCODING_PARAM},
+    {"mpegts_m2ts_mode", "Enable m2ts mode.",
+        offsetof(MpegTSWrite, m2ts_mode), AV_OPT_TYPE_INT, {.i64 = -1 },
+        -1,1, AV_OPT_FLAG_ENCODING_PARAM},
+    { "muxrate", NULL, offsetof(MpegTSWrite, mux_rate), AV_OPT_TYPE_INT, {.i64 = 1}, 0, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM},
+    { "pes_payload_size", "Minimum PES packet payload in bytes",
+      offsetof(MpegTSWrite, pes_payload_size), AV_OPT_TYPE_INT, {.i64 = DEFAULT_PES_PAYLOAD_SIZE}, 0, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM},
+    { "mpegts_flags", "MPEG-TS muxing flags", offsetof(MpegTSWrite, flags), AV_OPT_TYPE_FLAGS, {.i64 = 0}, 0, INT_MAX,
+      AV_OPT_FLAG_ENCODING_PARAM, "mpegts_flags" },
+    { "resend_headers", "Reemit PAT/PMT before writing the next packet",
+      0, AV_OPT_TYPE_CONST, {.i64 = MPEGTS_FLAG_REEMIT_PAT_PMT}, 0, INT_MAX,
+      AV_OPT_FLAG_ENCODING_PARAM, "mpegts_flags"},
+    { "latm", "Use LATM packetization for AAC",
+      0, AV_OPT_TYPE_CONST, {.i64 = MPEGTS_FLAG_AAC_LATM}, 0, INT_MAX,
+      AV_OPT_FLAG_ENCODING_PARAM, "mpegts_flags"},
+    // backward compatibility
+    { "resend_headers", "Reemit PAT/PMT before writing the next packet",
+      offsetof(MpegTSWrite, reemit_pat_pmt), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM},
+    { "mpegts_copyts", "don't offset dts/pts",
+      offsetof(MpegTSWrite, copyts), AV_OPT_TYPE_INT, {.i64=-1}, -1, 1, AV_OPT_FLAG_ENCODING_PARAM},
+    { "tables_version", "set PAT, PMT and SDT version",
+      offsetof(MpegTSWrite, tables_version), AV_OPT_TYPE_INT, {.i64=0}, 0, 31, AV_OPT_FLAG_ENCODING_PARAM},
+    { "omit_video_pes_length", "Omit the PES packet length for video packets",
+      offsetof(MpegTSWrite, omit_video_pes_length), AV_OPT_TYPE_INT, {.i64=1}, 0, 1, AV_OPT_FLAG_ENCODING_PARAM},
+    { "pcr_period", "PCR retransmission time",
+      offsetof(MpegTSWrite, pcr_period), AV_OPT_TYPE_INT, { .i64 = PCR_RETRANS_TIME }, 0, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM },
+    { NULL },
+};
+
+static const AVClass mpegts_muxer_class = {
+    .class_name     = "MPEGTS muxer",
+    .item_name      = av_default_item_name,
+    .option         = options,
+    .version        = LIBAVUTIL_VERSION_INT,
+};
+
 AVOutputFormat ff_mpegts_muxer = {
     .name              = "mpegts",
     .long_name         = NULL_IF_CONFIG_SMALL("MPEG-TS (MPEG-2 Transport Stream)"),
-    .mime_type         = "video/x-mpegts",
+    .mime_type         = "video/MP2T",
     .extensions        = "ts,m2t,m2ts,mts",
     .priv_data_size    = sizeof(MpegTSWrite),
     .audio_codec       = AV_CODEC_ID_MP2,

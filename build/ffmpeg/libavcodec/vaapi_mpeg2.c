@@ -20,6 +20,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "mpegutils.h"
 #include "vaapi_internal.h"
 
 /** Reconstruct bitstream f_code */
@@ -72,10 +73,10 @@ static int vaapi_mpeg2_start_frame(AVCodecContext *avctx, av_unused const uint8_
 
     switch (s->pict_type) {
     case AV_PICTURE_TYPE_B:
-        pic_param->backward_reference_picture = ff_vaapi_get_surface_id(&s->next_picture);
+        pic_param->backward_reference_picture = ff_vaapi_get_surface_id(s->next_picture.f);
         // fall-through
     case AV_PICTURE_TYPE_P:
-        pic_param->forward_reference_picture = ff_vaapi_get_surface_id(&s->last_picture);
+        pic_param->forward_reference_picture = ff_vaapi_get_surface_id(s->last_picture.f);
         break;
     }
 
@@ -89,7 +90,7 @@ static int vaapi_mpeg2_start_frame(AVCodecContext *avctx, av_unused const uint8_
     iq_matrix->load_chroma_non_intra_quantiser_matrix   = 1;
 
     for (i = 0; i < 64; i++) {
-        int n = s->dsp.idct_permutation[ff_zigzag_direct[i]];
+        int n = s->idsp.idct_permutation[ff_zigzag_direct[i]];
         iq_matrix->intra_quantiser_matrix[i]            = s->intra_matrix[n];
         iq_matrix->non_intra_quantiser_matrix[i]        = s->inter_matrix[n];
         iq_matrix->chroma_intra_quantiser_matrix[i]     = s->chroma_intra_matrix[n];

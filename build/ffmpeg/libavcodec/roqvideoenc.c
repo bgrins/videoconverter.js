@@ -249,7 +249,7 @@ static void create_cel_evals(RoqContext *enc, RoqTempdata *tempData)
 {
     int n=0, x, y, i;
 
-    tempData->cel_evals = av_malloc(enc->width*enc->height/64 * sizeof(CelEvaluation));
+    tempData->cel_evals = av_malloc_array(enc->width*enc->height/64, sizeof(CelEvaluation));
 
     /* Map to the ROQ quadtree order */
     for (y=0; y<enc->height; y+=16)
@@ -799,11 +799,11 @@ static void generate_codebook(RoqContext *enc, RoqTempdata *tempdata,
     int i, j, k;
     int c_size = size*size/4;
     int *buf;
-    int *codebook = av_malloc(6*c_size*cbsize*sizeof(int));
+    int *codebook = av_malloc_array(6*c_size, cbsize*sizeof(int));
     int *closest_cb;
 
     if (size == 4)
-        closest_cb = av_malloc(6*c_size*inputCount*sizeof(int));
+        closest_cb = av_malloc_array(6*c_size, inputCount*sizeof(int));
     else
         closest_cb = tempdata->closest_cb2;
 
@@ -834,8 +834,8 @@ static void generate_new_codebooks(RoqContext *enc, RoqTempdata *tempData)
     int max = enc->width*enc->height/16;
     uint8_t mb2[3*4];
     roq_cell *results4 = av_malloc(sizeof(roq_cell)*MAX_CBS_4x4*4);
-    uint8_t *yuvClusters=av_malloc(sizeof(int)*max*6*4);
-    int *points = av_malloc(max*6*4*sizeof(int));
+    uint8_t *yuvClusters=av_malloc_array(max, sizeof(int)*6*4);
+    int *points = av_malloc_array(max, 6*4*sizeof(int));
     int bias;
 
     /* Subsample YUV data */
@@ -852,7 +852,7 @@ static void generate_new_codebooks(RoqContext *enc, RoqTempdata *tempData)
 
     codebooks->numCB4 = (enc->quake3_compat ? MAX_CBS_4x4-1 : MAX_CBS_4x4);
 
-    tempData->closest_cb2 = av_malloc(max*4*sizeof(int));
+    tempData->closest_cb2 = av_malloc_array(max, 4*sizeof(int));
 
     /* Create 2x2 codebooks */
     generate_codebook(enc, tempData, points, max*4, enc->cb2x2, 2, MAX_CBS_2x2);
@@ -881,7 +881,7 @@ static void generate_new_codebooks(RoqContext *enc, RoqTempdata *tempData)
     av_free(results4);
 }
 
-static void roq_encode_video(RoqContext *enc)
+static int roq_encode_video(RoqContext *enc)
 {
     RoqTempdata *tempData = enc->tmpData;
     int i;
@@ -903,6 +903,10 @@ static void roq_encode_video(RoqContext *enc)
 
     /* Quake 3 can't handle chunks bigger than 65535 bytes */
     if (tempData->mainChunkSize/8 > 65535 && enc->quake3_compat) {
+        if (enc->lambda > 100000) {
+            av_log(enc->avctx, AV_LOG_ERROR, "Cannot encode video in Quake compatible form\n");
+            return AVERROR(EINVAL);
+        }
         av_log(enc->avctx, AV_LOG_ERROR,
                "Warning, generated a frame too big for Quake (%d > 65535), "
                "now switching to a bigger qscale value.\n",
@@ -936,6 +940,8 @@ static void roq_encode_video(RoqContext *enc)
     av_free(tempData->closest_cb2);
 
     enc->framesSinceKeyframe++;
+
+    return 0;
 }
 
 static av_cold int roq_encode_end(AVCodecContext *avctx)
@@ -966,8 +972,13 @@ static av_cold int roq_encode_init(AVCodecContext *avctx)
         return AVERROR(EINVAL);
     }
 
+    if (avctx->width > 65535 || avctx->height > 65535) {
+        av_log(avctx, AV_LOG_ERROR, "Dimensions are max %d\n", enc->quake3_compat ? 32768 : 65535);
+        return AVERROR(EINVAL);
+    }
+
     if (((avctx->width)&(avctx->width-1))||((avctx->height)&(avctx->height-1)))
-        av_log(avctx, AV_LOG_ERROR, "Warning: dimensions not power of two\n");
+        av_log(avctx, AV_LOG_ERROR, "Warning: dimensions not power of two, this is not supported by quake\n");
 
     enc->width = avctx->width;
     enc->height = avctx->height;
@@ -985,16 +996,16 @@ static av_cold int roq_encode_init(AVCodecContext *avctx)
     enc->tmpData      = av_malloc(sizeof(RoqTempdata));
 
     enc->this_motion4 =
-        av_mallocz((enc->width*enc->height/16)*sizeof(motion_vect));
+        av_mallocz_array((enc->width*enc->height/16), sizeof(motion_vect));
 
     enc->last_motion4 =
-        av_malloc ((enc->width*enc->height/16)*sizeof(motion_vect));
+        av_malloc_array ((enc->width*enc->height/16), sizeof(motion_vect));
 
     enc->this_motion8 =
-        av_mallocz((enc->width*enc->height/64)*sizeof(motion_vect));
+        av_mallocz_array((enc->width*enc->height/64), sizeof(motion_vect));
 
     enc->last_motion8 =
-        av_malloc ((enc->width*enc->height/64)*sizeof(motion_vect));
+        av_malloc_array ((enc->width*enc->height/64), sizeof(motion_vect));
 
     return 0;
 }
@@ -1064,7 +1075,8 @@ static int roq_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     }
 
     /* Encode the actual frame */
-    roq_encode_video(enc);
+    if ((ret = roq_encode_video(enc)) < 0)
+        return ret;
 
     pkt->size   = enc->out_buf - pkt->data;
     if (enc->framesSinceKeyframe == 1)
@@ -1097,7 +1109,7 @@ AVCodec ff_roq_encoder = {
     .init                 = roq_encode_init,
     .encode2              = roq_encode_frame,
     .close                = roq_encode_end,
-    .pix_fmts             = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUV444P,
+    .pix_fmts             = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUVJ444P,
                                                         AV_PIX_FMT_NONE },
     .priv_class     = &roq_class,
 };

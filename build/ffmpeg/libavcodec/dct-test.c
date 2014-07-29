@@ -47,10 +47,6 @@
 #include "x86/idct_xvid.h"
 #include "dctref.h"
 
-// BFIN
-void ff_bfin_idct(int16_t *block);
-void ff_bfin_fdct(int16_t *block);
-
 // ALTIVEC
 void ff_fdct_altivec(int16_t *block);
 
@@ -90,10 +86,6 @@ static const struct algo fdct_tab[] = {
 
 #if HAVE_ALTIVEC
     { "altivecfdct",    ff_fdct_altivec,       NO_PERM,   AV_CPU_FLAG_ALTIVEC },
-#endif
-
-#if ARCH_BFIN
-    { "BFINfdct",       ff_bfin_fdct,          NO_PERM  },
 #endif
 
     { 0 }
@@ -151,10 +143,6 @@ static const struct algo idct_tab[] = {
 #if ARCH_X86_64 && HAVE_YASM
     { "PR-SSE2",        ff_prores_idct_put_10_sse2_wrap,     TRANSPOSE_PERM, AV_CPU_FLAG_SSE2, 1 },
 #endif
-#endif
-
-#if ARCH_BFIN
-    { "BFINidct",       ff_bfin_idct,          NO_PERM  },
 #endif
 
 #if ARCH_ARM
@@ -348,7 +336,7 @@ static int dct_error(const struct algo *dct, int test, int is_idct, int speed, c
     init_block(block, test, is_idct, &prng, vals);
     permute(block1, block, dct->format);
 
-    ti = av_gettime();
+    ti = av_gettime_relative();
     it1 = 0;
     do {
         for (it = 0; it < NB_ITS_SPEED; it++) {
@@ -357,7 +345,7 @@ static int dct_error(const struct algo *dct, int test, int is_idct, int speed, c
         }
         emms_c();
         it1 += NB_ITS_SPEED;
-        ti1 = av_gettime() - ti;
+        ti1 = av_gettime_relative() - ti;
     } while (ti1 < 1000000);
 
     printf("%s %s: %0.1f kdct/s\n", is_idct ? "IDCT" : "DCT", dct->name,
@@ -508,7 +496,7 @@ static void idct248_error(const char *name,
     if (!speed)
         return;
 
-    ti = av_gettime();
+    ti = av_gettime_relative();
     it1 = 0;
     do {
         for (it = 0; it < NB_ITS_SPEED; it++) {
@@ -518,7 +506,7 @@ static void idct248_error(const char *name,
         }
         emms_c();
         it1 += NB_ITS_SPEED;
-        ti1 = av_gettime() - ti;
+        ti1 = av_gettime_relative() - ti;
     } while (ti1 < 1000000);
 
     printf("%s %s: %0.1f kdct/s\n", 1 ? "IDCT248" : "DCT248", name,

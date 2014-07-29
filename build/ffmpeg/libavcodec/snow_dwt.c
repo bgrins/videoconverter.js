@@ -35,17 +35,17 @@ int ff_slice_buffer_init(slice_buffer *buf, int line_count,
     buf->line_count  = line_count;
     buf->line_width  = line_width;
     buf->data_count  = max_allocated_lines;
-    buf->line        = av_mallocz(sizeof(IDWTELEM *) * line_count);
+    buf->line        = av_mallocz_array(line_count, sizeof(IDWTELEM *));
     if (!buf->line)
         return AVERROR(ENOMEM);
-    buf->data_stack  = av_malloc(sizeof(IDWTELEM *) * max_allocated_lines);
+    buf->data_stack  = av_malloc_array(max_allocated_lines, sizeof(IDWTELEM *));
     if (!buf->data_stack) {
         av_freep(&buf->line);
         return AVERROR(ENOMEM);
     }
 
     for (i = 0; i < max_allocated_lines; i++) {
-        buf->data_stack[i] = av_malloc(sizeof(IDWTELEM) * line_width);
+        buf->data_stack[i] = av_malloc_array(line_width, sizeof(IDWTELEM));
         if (!buf->data_stack[i]) {
             for (i--; i >=0; i--)
                 av_freep(&buf->data_stack[i]);
@@ -745,7 +745,7 @@ void ff_spatial_idwt(IDWTELEM *buffer, IDWTELEM *temp, int width, int height,
                               decomposition_count, y);
 }
 
-static inline int w_c(void *v, uint8_t *pix1, uint8_t *pix2, int line_size,
+static inline int w_c(struct MpegEncContext *v, uint8_t *pix1, uint8_t *pix2, int line_size,
                       int w, int h, int type)
 {
     int s, i, j;
@@ -814,32 +814,32 @@ static inline int w_c(void *v, uint8_t *pix1, uint8_t *pix2, int line_size,
     return s >> 9;
 }
 
-static int w53_8_c(void *v, uint8_t *pix1, uint8_t *pix2, int line_size, int h)
+static int w53_8_c(struct MpegEncContext *v, uint8_t *pix1, uint8_t *pix2, int line_size, int h)
 {
     return w_c(v, pix1, pix2, line_size, 8, h, 1);
 }
 
-static int w97_8_c(void *v, uint8_t *pix1, uint8_t *pix2, int line_size, int h)
+static int w97_8_c(struct MpegEncContext *v, uint8_t *pix1, uint8_t *pix2, int line_size, int h)
 {
     return w_c(v, pix1, pix2, line_size, 8, h, 0);
 }
 
-static int w53_16_c(void *v, uint8_t *pix1, uint8_t *pix2, int line_size, int h)
+static int w53_16_c(struct MpegEncContext *v, uint8_t *pix1, uint8_t *pix2, int line_size, int h)
 {
     return w_c(v, pix1, pix2, line_size, 16, h, 1);
 }
 
-static int w97_16_c(void *v, uint8_t *pix1, uint8_t *pix2, int line_size, int h)
+static int w97_16_c(struct MpegEncContext *v, uint8_t *pix1, uint8_t *pix2, int line_size, int h)
 {
     return w_c(v, pix1, pix2, line_size, 16, h, 0);
 }
 
-int ff_w53_32_c(void *v, uint8_t *pix1, uint8_t *pix2, int line_size, int h)
+int ff_w53_32_c(struct MpegEncContext *v, uint8_t *pix1, uint8_t *pix2, int line_size, int h)
 {
     return w_c(v, pix1, pix2, line_size, 32, h, 1);
 }
 
-int ff_w97_32_c(void *v, uint8_t *pix1, uint8_t *pix2, int line_size, int h)
+int ff_w97_32_c(struct MpegEncContext *v, uint8_t *pix1, uint8_t *pix2, int line_size, int h)
 {
     return w_c(v, pix1, pix2, line_size, 32, h, 0);
 }

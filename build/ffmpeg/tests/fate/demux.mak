@@ -22,6 +22,9 @@ fate-caf: CMD = crc -i $(TARGET_SAMPLES)/caf/caf-pcm16.caf -c copy
 FATE_SAMPLES_DEMUX-$(CONFIG_CDXL_DEMUXER) += fate-cdxl-demux
 fate-cdxl-demux: CMD = framecrc -i $(TARGET_SAMPLES)/cdxl/mirage.cdxl -vcodec copy -acodec copy
 
+FATE_SAMPLES_DEMUX-$(CONFIG_CINE_DEMUXER) += fate-cine-demux
+fate-cine-demux: CMD = crc -i $(TARGET_SAMPLES)/cine/bayer_gbrg8.cine -c copy
+
 FATE_SAMPLES_DEMUX-$(CONFIG_DAUD_DEMUXER) += fate-d-cinema-demux
 fate-d-cinema-demux: CMD = framecrc -i $(TARGET_SAMPLES)/d-cinema/THX_Science_FLT_1920-partial.302 -acodec copy
 
@@ -40,8 +43,11 @@ fate-lmlm4-demux: CMD = framecrc -i $(TARGET_SAMPLES)/lmlm4/LMLM4_CIFat30fps.div
 FATE_SAMPLES_DEMUX-$(CONFIG_XA_DEMUXER) += fate-maxis-xa
 fate-maxis-xa: CMD = framecrc -i $(TARGET_SAMPLES)/maxis-xa/SC2KBUG.XA -frames:a 30 -c:a copy
 
-FATE_SAMPLES_DEMUX-$(CONFIG_MATROSKA_DEMUXER) += fate-mkv
+FATE_SAMPLES_DEMUX-$(call DEMDEC, MATROSKA, H264) += fate-mkv
 fate-mkv: CMD = framecrc -i $(TARGET_SAMPLES)/mkv/test7_cut.mkv -c copy
+
+FATE_SAMPLES_DEMUX-$(CONFIG_MLV_DEMUXER) += fate-mlv-demux
+fate-mlv-demux: CMD = crc -i $(TARGET_SAMPLES)/mlv/M19-0333-cut.MLV -c copy
 
 FATE_SAMPLES_DEMUX-$(CONFIG_MTV_DEMUXER) += fate-mtv
 fate-mtv: CMD = framecrc -i $(TARGET_SAMPLES)/mtv/comedian_auto-partial.mtv -c copy

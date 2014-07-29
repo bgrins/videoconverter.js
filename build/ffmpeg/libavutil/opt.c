@@ -1415,14 +1415,17 @@ void av_opt_free(void *obj)
             av_freep((uint8_t *)obj + o->offset);
 }
 
-int av_opt_set_dict(void *obj, AVDictionary **options)
+int av_opt_set_dict2(void *obj, AVDictionary **options, int search_flags)
 {
     AVDictionaryEntry *t = NULL;
     AVDictionary    *tmp = NULL;
     int ret = 0;
 
+    if (!options)
+        return 0;
+
     while ((t = av_dict_get(*options, "", t, AV_DICT_IGNORE_SUFFIX))) {
-        ret = av_opt_set(obj, t->key, t->value, 0);
+        ret = av_opt_set(obj, t->key, t->value, search_flags);
         if (ret == AVERROR_OPTION_NOT_FOUND)
             av_dict_set(&tmp, t->key, t->value, 0);
         else if (ret < 0) {
@@ -1434,6 +1437,11 @@ int av_opt_set_dict(void *obj, AVDictionary **options)
     av_dict_free(options);
     *options = tmp;
     return ret;
+}
+
+int av_opt_set_dict(void *obj, AVDictionary **options)
+{
+    return av_opt_set_dict2(obj, options, 0);
 }
 
 const AVOption *av_opt_find(void *obj, const char *name, const char *unit,
@@ -1509,8 +1517,73 @@ void *av_opt_ptr(const AVClass *class, void *obj, const char *name)
     return (uint8_t*)obj + opt->offset;
 }
 
+static int opt_size(enum AVOptionType type)
+{
+    switch(type) {
+    case AV_OPT_TYPE_INT:
+    case AV_OPT_TYPE_FLAGS:     return sizeof(int);
+    case AV_OPT_TYPE_DURATION:
+    case AV_OPT_TYPE_CHANNEL_LAYOUT:
+    case AV_OPT_TYPE_INT64:     return sizeof(int64_t);
+    case AV_OPT_TYPE_DOUBLE:    return sizeof(double);
+    case AV_OPT_TYPE_FLOAT:     return sizeof(float);
+    case AV_OPT_TYPE_STRING:    return sizeof(uint8_t*);
+    case AV_OPT_TYPE_VIDEO_RATE:
+    case AV_OPT_TYPE_RATIONAL:  return sizeof(AVRational);
+    case AV_OPT_TYPE_BINARY:    return sizeof(uint8_t*) + sizeof(int);
+    case AV_OPT_TYPE_IMAGE_SIZE:return sizeof(int[2]);
+    case AV_OPT_TYPE_PIXEL_FMT: return sizeof(enum AVPixelFormat);
+    case AV_OPT_TYPE_SAMPLE_FMT:return sizeof(enum AVSampleFormat);
+    case AV_OPT_TYPE_COLOR:     return 4;
+    }
+    return 0;
+}
+
+int av_opt_copy(void *dst, void *src)
+{
+    const AVOption *o = NULL;
+    const AVClass *c;
+    int ret = 0;
+
+    if (!src)
+        return 0;
+
+    c = *(AVClass**)src;
+    if (*(AVClass**)dst && c != *(AVClass**)dst)
+        return AVERROR(EINVAL);
+
+    while ((o = av_opt_next(src, o))) {
+        void *field_dst = ((uint8_t*)dst) + o->offset;
+        void *field_src = ((uint8_t*)src) + o->offset;
+        uint8_t **field_dst8 = (uint8_t**)field_dst;
+        uint8_t **field_src8 = (uint8_t**)field_src;
+
+        if (o->type == AV_OPT_TYPE_STRING) {
+            set_string(dst, o, *field_src8, field_dst8);
+            if (*field_src8 && !*field_dst8)
+                ret = AVERROR(ENOMEM);
+        } else if (o->type == AV_OPT_TYPE_BINARY) {
+            int len = *(int*)(field_src8 + 1);
+            if (*field_dst8 != *field_src8)
+                av_freep(field_dst8);
+            *field_dst8 = av_memdup(*field_src8, len);
+            if (len && !*field_dst8) {
+                ret = AVERROR(ENOMEM);
+                len = 0;
+            }
+            *(int*)(field_dst8 + 1) = len;
+        } else if (o->type == AV_OPT_TYPE_CONST) {
+            // do nothing
+        } else {
+            memcpy(field_dst, field_src, opt_size(o->type));
+        }
+    }
+    return ret;
+}
+
 int av_opt_query_ranges(AVOptionRanges **ranges_arg, void *obj, const char *key, int flags)
 {
+    int ret;
     const AVClass *c = *(AVClass**)obj;
     int (*callback)(AVOptionRanges **, void *obj, const char *key, int flags) = NULL;
 
@@ -1520,7 +1593,13 @@ int av_opt_query_ranges(AVOptionRanges **ranges_arg, void *obj, const char *key,
     if (!callback)
         callback = av_opt_query_ranges_default;
 
-    return callback(ranges_arg, obj, key, flags);
+    ret = callback(ranges_arg, obj, key, flags);
+    if (ret >= 0) {
+        if (!(flags & AV_OPT_MULTI_COMPONENT_RANGE))
+            ret = 1;
+        (*ranges_arg)->nb_components = ret;
+    }
+    return ret;
 }
 
 int av_opt_query_ranges_default(AVOptionRanges **ranges_arg, void *obj, const char *key, int flags)
@@ -1541,6 +1620,7 @@ int av_opt_query_ranges_default(AVOptionRanges **ranges_arg, void *obj, const ch
     ranges->range = range_array;
     ranges->range[0] = range;
     ranges->nb_ranges = 1;
+    ranges->nb_components = 1;
     range->is_range = 1;
     range->value_min = field->min;
     range->value_max = field->max;
@@ -1584,7 +1664,7 @@ int av_opt_query_ranges_default(AVOptionRanges **ranges_arg, void *obj, const ch
     }
 
     *ranges_arg = ranges;
-    return 0;
+    return 1;
 fail:
     av_free(ranges);
     av_free(range);
@@ -1597,7 +1677,10 @@ void av_opt_freep_ranges(AVOptionRanges **rangesp)
     int i;
     AVOptionRanges *ranges = *rangesp;
 
-    for (i = 0; i < ranges->nb_ranges; i++) {
+    if (!ranges)
+        return;
+
+    for (i = 0; i < ranges->nb_ranges * ranges->nb_components; i++) {
         AVOptionRange *range = ranges->range[i];
         if (range) {
             av_freep(&range->str);

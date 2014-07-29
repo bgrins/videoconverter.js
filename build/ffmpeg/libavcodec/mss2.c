@@ -26,7 +26,9 @@
 #include "libavutil/avassert.h"
 #include "error_resilience.h"
 #include "internal.h"
+#include "mpeg_er.h"
 #include "msmpeg4data.h"
+#include "qpeldsp.h"
 #include "vc1.h"
 #include "mss12.h"
 #include "mss2dsp.h"
@@ -37,6 +39,7 @@ typedef struct MSS2Context {
     AVFrame       *last_pic;
     MSS12Context   c;
     MSS2DSPContext dsp;
+    QpelDSPContext qdsp;
     SliceContext   sc[2];
 } MSS2Context;
 
@@ -417,7 +420,7 @@ static int decode_wmv9(AVCodecContext *avctx, const uint8_t *buf, int buf_size,
 
     ff_MPV_frame_end(s);
 
-    f = &s->current_picture.f;
+    f = s->current_picture.f;
 
     if (v->respic == 3) {
         ctx->dsp.upsample_plane(f->data[0], f->linesize[0], w,      h);
@@ -786,8 +789,8 @@ static av_cold int wmv9_init(AVCodecContext *avctx)
         return ret;
 
     /* error concealment */
-    v->s.me.qpel_put = v->s.dsp.put_qpel_pixels_tab;
-    v->s.me.qpel_avg = v->s.dsp.avg_qpel_pixels_tab;
+    v->s.me.qpel_put = v->s.qdsp.put_qpel_pixels_tab;
+    v->s.me.qpel_avg = v->s.qdsp.avg_qpel_pixels_tab;
 
     return 0;
 }
@@ -827,6 +830,7 @@ static av_cold int mss2_decode_init(AVCodecContext *avctx)
         return ret;
     }
     ff_mss2dsp_init(&ctx->dsp);
+    ff_qpeldsp_init(&ctx->qdsp);
 
     avctx->pix_fmt = c->free_colours == 127 ? AV_PIX_FMT_RGB555
                                             : AV_PIX_FMT_RGB24;

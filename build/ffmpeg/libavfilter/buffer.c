@@ -79,7 +79,7 @@ AVFilterBufferRef *avfilter_ref_buffer(AVFilterBufferRef *ref, int pmask)
 
         if (ref->extended_data && ref->extended_data != ref->data) {
             int nb_channels = av_get_channel_layout_nb_channels(ref->audio->channel_layout);
-            if (!(ret->extended_data = av_malloc(sizeof(*ret->extended_data) *
+            if (!(ret->extended_data = av_malloc_array(sizeof(*ret->extended_data),
                                                  nb_channels))) {
                 av_freep(&ret->audio);
                 av_freep(&ret);
@@ -150,7 +150,7 @@ int avfilter_copy_frame_props(AVFilterBufferRef *dst, const AVFrame *src)
     return 0;
 }
 
-void avfilter_copy_buffer_ref_props(AVFilterBufferRef *dst, AVFilterBufferRef *src)
+void avfilter_copy_buffer_ref_props(AVFilterBufferRef *dst, const AVFilterBufferRef *src)
 {
     // copy common properties
     dst->pts             = src->pts;

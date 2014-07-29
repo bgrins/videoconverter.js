@@ -162,7 +162,7 @@ static int parse_streaminfo(FLACContext *s, const uint8_t *buf, int buf_size)
         /* need more data */
         return 0;
     }
-    avpriv_flac_parse_block_header(&buf[4], NULL, &metadata_type, &metadata_size);
+    flac_parse_block_header(&buf[4], NULL, &metadata_type, &metadata_size);
     if (metadata_type != FLAC_METADATA_TYPE_STREAMINFO ||
         metadata_size != FLAC_STREAMINFO_SIZE) {
         return AVERROR_INVALIDDATA;
@@ -193,7 +193,7 @@ static int get_metadata_size(const uint8_t *buf, int buf_size)
     do {
         if (buf_end - buf < 4)
             return 0;
-        avpriv_flac_parse_block_header(buf, &metadata_last, NULL, &metadata_size);
+        flac_parse_block_header(buf, &metadata_last, NULL, &metadata_size);
         buf += 4;
         if (buf_end - buf < metadata_size) {
             /* need more data in order to read the complete header */
@@ -512,12 +512,12 @@ static int flac_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     if (buf_size > 5 && !memcmp(buf, "\177FLAC", 5)) {
-        av_log(s->avctx, AV_LOG_DEBUG, "skiping flac header packet 1\n");
+        av_log(s->avctx, AV_LOG_DEBUG, "skipping flac header packet 1\n");
         return buf_size;
     }
 
     if (buf_size > 0 && (*buf & 0x7F) == FLAC_METADATA_TYPE_VORBIS_COMMENT) {
-        av_log(s->avctx, AV_LOG_DEBUG, "skiping vorbis comment\n");
+        av_log(s->avctx, AV_LOG_DEBUG, "skipping vorbis comment\n");
         return buf_size;
     }
 

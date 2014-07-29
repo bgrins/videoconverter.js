@@ -23,7 +23,6 @@
 #include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/h264dsp.h"
-#include "dsputil_x86.h"
 
 /***********************************/
 /* IDCT */
@@ -214,7 +213,7 @@ av_cold void ff_h264dsp_init_x86(H264DSPContext *c, const int bit_depth,
 #if HAVE_YASM
     int cpu_flags = av_get_cpu_flags();
 
-    if (chroma_format_idc <= 1 && EXTERNAL_MMXEXT(cpu_flags))
+    if (EXTERNAL_MMXEXT(cpu_flags) && chroma_format_idc <= 1)
         c->h264_loop_filter_strength = ff_h264_loop_filter_strength_mmxext;
 
     if (bit_depth == 8) {

@@ -25,13 +25,15 @@
  * @author Thilo Borgmann <thilo.borgmann _at_ mail.de>
  */
 
+#include <inttypes.h>
+
 #include "avcodec.h"
 #include "get_bits.h"
 #include "unary.h"
 #include "mpeg4audio.h"
 #include "bytestream.h"
 #include "bgmc.h"
-#include "dsputil.h"
+#include "bswapdsp.h"
 #include "internal.h"
 #include "libavutil/samplefmt.h"
 #include "libavutil/crc.h"
@@ -190,7 +192,7 @@ typedef struct {
     AVCodecContext *avctx;
     ALSSpecificConfig sconf;
     GetBitContext gb;
-    DSPContext dsp;
+    BswapDSPContext bdsp;
     const AVCRC *crc_table;
     uint32_t crc_org;               ///< CRC value of the original input data
     uint32_t crc;                   ///< CRC value calculated from decoded data
@@ -280,7 +282,7 @@ static av_cold int read_specific_config(ALSDecContext *ctx)
     GetBitContext gb;
     uint64_t ht_size;
     int i, config_offset;
-    MPEG4AudioConfig m4ac;
+    MPEG4AudioConfig m4ac = {0};
     ALSSpecificConfig *sconf = &ctx->sconf;
     AVCodecContext *avctx    = ctx->avctx;
     uint32_t als_id, header_size, trailer_size;
@@ -722,7 +724,9 @@ static int read_var_block_data(ALSDecContext *ctx, ALSBlockData *bd)
                     int offset     = parcor_rice_table[sconf->coef_table][k][0];
                     quant_cof[k] = decode_rice(gb, rice_param) + offset;
                     if (quant_cof[k] < -64 || quant_cof[k] > 63) {
-                        av_log(avctx, AV_LOG_ERROR, "quant_cof %d is out of range.\n", quant_cof[k]);
+                        av_log(avctx, AV_LOG_ERROR,
+                               "quant_cof %"PRIu32" is out of range.\n",
+                               quant_cof[k]);
                         return AVERROR_INVALIDDATA;
                     }
                 }
@@ -1397,7 +1401,8 @@ static int read_frame_data(ALSDecContext *ctx, unsigned int ra_frame)
             bd.block_length = div_blocks[b];
             if (bd.block_length <= 0) {
                 av_log(ctx->avctx, AV_LOG_WARNING,
-                       "Invalid block length %d in channel data!\n", bd.block_length);
+                       "Invalid block length %u in channel data!\n",
+                       bd.block_length);
                 continue;
             }
 
@@ -1555,9 +1560,9 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame_ptr,
                          sample++)
                         *dest++ = av_bswap16(src[sample]);
                 } else {
-                    ctx->dsp.bswap_buf((uint32_t*)ctx->crc_buffer,
-                                       (uint32_t *)frame->data[0],
-                                       ctx->cur_frame_length * avctx->channels);
+                    ctx->bdsp.bswap_buf((uint32_t *) ctx->crc_buffer,
+                                        (uint32_t *) frame->data[0],
+                                        ctx->cur_frame_length * avctx->channels);
                 }
                 crc_source = ctx->crc_buffer;
             } else {
@@ -1775,7 +1780,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
         }
     }
 
-    ff_dsputil_init(&ctx->dsp, avctx);
+    ff_bswapdsp_init(&ctx->bdsp);
 
     return 0;
 

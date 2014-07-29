@@ -19,6 +19,7 @@
  */
 
 #include "avcodec.h"
+#include "mpegutils.h"
 #include "mpegvideo.h"
 #include "h263.h"
 #include "mathops.h"
@@ -384,7 +385,7 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
         wmv2_pred_motion(w, &mx, &my);
 
         if(cbp){
-            s->dsp.clear_blocks(s->block[0]);
+            s->bdsp.clear_blocks(s->block[0]);
             if(s->per_mb_rl_table){
                 s->rl_table_index = decode012(&s->gb);
                 s->rl_chroma_table_index = s->rl_table_index;
@@ -430,7 +431,7 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
             s->rl_chroma_table_index = s->rl_table_index;
         }
 
-        s->dsp.clear_blocks(s->block[0]);
+        s->bdsp.clear_blocks(s->block[0]);
         for (i = 0; i < 6; i++) {
             if (ff_msmpeg4_decode_block(s, block[i], i, (cbp >> (5 - i)) & 1, NULL) < 0)
             {
@@ -476,5 +477,8 @@ AVCodec ff_wmv2_decoder = {
     .close          = wmv2_decode_end,
     .decode         = ff_h263_decode_frame,
     .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1,
-    .pix_fmts       = ff_pixfmt_list_420,
+    .pix_fmts       = (const enum AVPixelFormat[]) {
+        AV_PIX_FMT_YUV420P,
+        AV_PIX_FMT_NONE
+    },
 };

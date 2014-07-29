@@ -78,7 +78,7 @@ typedef struct RTMPPacket {
     int            channel_id; ///< RTMP channel ID (nothing to do with audio/video channels though)
     RTMPPacketType type;       ///< packet payload type
     uint32_t       timestamp;  ///< packet full timestamp
-    uint32_t       ts_delta;   ///< timestamp increment to the previous one in milliseconds (latter only for media packets)
+    uint32_t       ts_field;   ///< 24-bit timestamp or increment to the previous one, in milliseconds (latter only for media packets). Clipped to a maximum of 0xFFFFFF, indicating an extended timestamp field.
     uint32_t       extra;      ///< probably an additional channel ID used during streaming data
     uint8_t        *data;      ///< packet payload
     int            size;       ///< packet payload size
@@ -276,6 +276,23 @@ int ff_amf_read_bool(GetByteContext *gbc, int *val);
  *@return 0 on success or an AVERROR code on failure
 */
 int ff_amf_read_number(GetByteContext *gbc, double *val);
+
+/**
+ * Get AMF string value.
+ *
+ * This function behaves the same as ff_amf_read_string except that
+ * it does not expect the AMF type prepended to the actual data.
+ * Appends a trailing null byte to output string in order to
+ * ease later parsing.
+ *
+ *@param[in,out] gbc     GetByteContext initialized with AMF-formatted data
+ *@param[out]    str     read string
+ *@param[in]     strsize buffer size available to store the read string
+ *@param[out]    length  read string length
+ *@return 0 on success or an AVERROR code on failure
+*/
+int ff_amf_get_string(GetByteContext *bc, uint8_t *str,
+                      int strsize, int *length);
 
 /**
  * Read AMF string value.

@@ -29,6 +29,12 @@ FATE_LIBAVUTIL += fate-bprint
 fate-bprint: libavutil/bprint-test$(EXESUF)
 fate-bprint: CMD = run libavutil/bprint-test
 
+FATE_LIBAVUTIL += fate-cpu
+fate-cpu: libavutil/cpu-test$(EXESUF)
+fate-cpu: CMD = runecho libavutil/cpu-test
+fate-cpu: REF = /dev/null
+fate-cpu: CMP = null
+
 FATE_LIBAVUTIL += fate-crc
 fate-crc: libavutil/crc-test$(EXESUF)
 fate-crc: CMD = run libavutil/crc-test
@@ -45,6 +51,12 @@ fate-eval: CMD = run libavutil/eval-test
 FATE_LIBAVUTIL += fate-fifo
 fate-fifo: libavutil/fifo-test$(EXESUF)
 fate-fifo: CMD = run libavutil/fifo-test
+
+FATE_LIBAVUTIL += fate-float-dsp
+fate-float-dsp: libavutil/float_dsp-test$(EXESUF)
+fate-float-dsp: CMD = run libavutil/float_dsp-test
+fate-float-dsp: CMP = null
+fate-float-dsp: REF = /dev/null
 
 FATE_LIBAVUTIL += fate-hmac
 fate-hmac: libavutil/hmac-test$(EXESUF)

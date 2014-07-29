@@ -29,6 +29,7 @@
 #include "libavutil/opt.h"
 #include "libavformat/avformat.h"
 #include "fbdev_common.h"
+#include "avdevice.h"
 
 typedef struct {
     AVClass *class;                   ///< class for private options
@@ -183,6 +184,11 @@ static av_cold int fbdev_write_trailer(AVFormatContext *h)
     return 0;
 }
 
+static int fbdev_get_device_list(AVFormatContext *s, AVDeviceInfoList *device_list)
+{
+    return ff_fbdev_get_device_list(device_list);
+}
+
 #define OFFSET(x) offsetof(FBDevContext, x)
 #define ENC AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
@@ -196,6 +202,7 @@ static const AVClass fbdev_class = {
     .item_name  = av_default_item_name,
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
+    .category   = AV_CLASS_CATEGORY_DEVICE_VIDEO_OUTPUT,
 };
 
 AVOutputFormat ff_fbdev_muxer = {
@@ -207,6 +214,7 @@ AVOutputFormat ff_fbdev_muxer = {
     .write_header   = fbdev_write_header,
     .write_packet   = fbdev_write_packet,
     .write_trailer  = fbdev_write_trailer,
+    .get_device_list = fbdev_get_device_list,
     .flags          = AVFMT_NOFILE | AVFMT_VARIABLE_FPS | AVFMT_NOTIMESTAMPS,
     .priv_class     = &fbdev_class,
 };

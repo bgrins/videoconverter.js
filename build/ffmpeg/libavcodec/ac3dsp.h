@@ -1,5 +1,5 @@
 /*
- * AC-3 DSP utils
+ * AC-3 DSP functions
  * Copyright (c) 2011 Justin Ruggles
  *
  * This file is part of FFmpeg.
@@ -134,6 +134,9 @@ typedef struct AC3DSPContext {
 
     void (*downmix)(float **samples, float (*matrix)[2], int out_ch,
                     int in_ch, int len);
+
+    void (*downmix_fixed)(int32_t **samples, int16_t (*matrix)[2], int out_ch,
+                          int in_ch, int len);
 
     /**
      * Apply symmetric window in 16-bit fixed-point.

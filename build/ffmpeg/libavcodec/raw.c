@@ -53,6 +53,7 @@ const PixelFormatTag ff_raw_pix_fmt_tags[] = {
     { AV_PIX_FMT_YUYV422, MKTAG('V', '4', '2', '2') },
     { AV_PIX_FMT_YUYV422, MKTAG('V', 'Y', 'U', 'Y') },
     { AV_PIX_FMT_YUYV422, MKTAG('Y', 'U', 'N', 'V') },
+    { AV_PIX_FMT_YVYU422, MKTAG('Y', 'V', 'Y', 'U') }, /* Philips */
     { AV_PIX_FMT_UYVY422, MKTAG('U', 'Y', 'V', 'Y') },
     { AV_PIX_FMT_UYVY422, MKTAG('H', 'D', 'Y', 'C') },
     { AV_PIX_FMT_UYVY422, MKTAG('U', 'Y', 'N', 'V') },
@@ -219,7 +220,6 @@ const PixelFormatTag ff_raw_pix_fmt_tags[] = {
     /* special */
     { AV_PIX_FMT_RGB565LE,MKTAG( 3 ,  0 ,  0 ,  0 ) }, /* flipped RGB565LE */
     { AV_PIX_FMT_YUV444P, MKTAG('Y', 'V', '2', '4') }, /* YUV444P, swapped UV */
-    { AV_PIX_FMT_YUYV422, MKTAG('Y', 'V', 'Y', 'U') }, /* YUYV, swapped UV */
 
     { AV_PIX_FMT_NONE, 0 },
 };
@@ -234,3 +234,28 @@ unsigned int avcodec_pix_fmt_to_codec_tag(enum AVPixelFormat fmt)
     }
     return 0;
 }
+
+const PixelFormatTag avpriv_pix_fmt_bps_avi[] = {
+    { AV_PIX_FMT_MONOWHITE, 1 },
+    { AV_PIX_FMT_PAL8,    2 },
+    { AV_PIX_FMT_PAL8,    4 },
+    { AV_PIX_FMT_PAL8,    8 },
+    { AV_PIX_FMT_RGB444LE, 12 },
+    { AV_PIX_FMT_RGB555LE, 15 },
+    { AV_PIX_FMT_RGB555LE, 16 },
+    { AV_PIX_FMT_BGR24,  24 },
+    { AV_PIX_FMT_BGRA,   32 },
+    { AV_PIX_FMT_NONE,    0 },
+};
+
+const PixelFormatTag avpriv_pix_fmt_bps_mov[] = {
+    { AV_PIX_FMT_MONOWHITE, 1 },
+    { AV_PIX_FMT_PAL8,      2 },
+    { AV_PIX_FMT_PAL8,      4 },
+    { AV_PIX_FMT_PAL8,      8 },
+    { AV_PIX_FMT_RGB555BE, 16 },
+    { AV_PIX_FMT_RGB24,    24 },
+    { AV_PIX_FMT_ARGB,     32 },
+    { AV_PIX_FMT_MONOWHITE,33 },
+    { AV_PIX_FMT_NONE,      0 },
+};

@@ -1,12 +1,15 @@
 fate-vsynth1-%: SRC = tests/data/vsynth1.yuv
 fate-vsynth2-%: SRC = tests/data/vsynth2.yuv
+fate-vsynth3-%: SRC = tests/data/vsynth3.yuv
 fate-vsynth%: CODEC = $(word 3, $(subst -, ,$(@)))
 fate-vsynth%: FMT = avi
 fate-vsynth%: CMD = enc_dec "rawvideo -s 352x288 -pix_fmt yuv420p $(RAWDECOPTS)" $(SRC) $(FMT) "-c $(CODEC) $(ENCOPTS)" rawvideo "-s 352x288 -pix_fmt yuv420p -vsync 0 $(DECOPTS)" -keep "$(DECINOPTS)"
+fate-vsynth3-%: CMD = enc_dec "rawvideo -s $(FATEW)x$(FATEH) -pix_fmt yuv420p $(RAWDECOPTS)" $(SRC) $(FMT) "-c $(CODEC) $(ENCOPTS)" rawvideo "-s $(FATEW)x$(FATEH) -pix_fmt yuv420p -vsync 0 $(DECOPTS)" -keep "$(DECINOPTS)"
 fate-vsynth%: CMP_UNIT = 1
 fate-vsynth%: REF = $(SRC_PATH)/tests/ref/vsynth/$(@:fate-%=%)
 
 FATE_VCODEC-$(call ENCDEC, AMV, AVI) += amv
+fate-vsynth%-amv:                ENCOPTS = -strict -1
 
 FATE_VCODEC-$(call ENCDEC, ASV1, AVI)   += asv1
 fate-vsynth%-asv1:               ENCOPTS = -qscale 10
@@ -15,6 +18,7 @@ FATE_VCODEC-$(call ENCDEC, ASV2, AVI)   += asv2
 fate-vsynth%-asv2:               ENCOPTS = -qscale 10
 
 FATE_VCODEC-$(call ENCDEC, CLJR, AVI)   += cljr
+fate-vsynth%-cljr:               ENCOPTS = -strict -1
 
 FATE_VCODEC-$(call ENCDEC, DNXHD, DNXHD) += dnxhd-720p                  \
                                             dnxhd-720p-rd               \
@@ -59,10 +63,10 @@ fate-vsynth%-ffv1:               ENCOPTS = -slices 4
 fate-vsynth%-ffv1.0:             CODEC   = ffv1
 
 FATE_VCODEC-$(call ENCDEC, FFVHUFF, AVI) += ffvhuff ffvhuff444 ffvhuff420p12 ffvhuff422p10left ffvhuff444p16
-fate-vsynth%-ffvhuff444:         ENCOPTS = -strict -2 -vcodec ffvhuff -pix_fmt yuv444p
-fate-vsynth%-ffvhuff420p12:      ENCOPTS = -strict -2 -vcodec ffvhuff -pix_fmt yuv420p12le
-fate-vsynth%-ffvhuff422p10left:  ENCOPTS = -strict -2 -vcodec ffvhuff -pix_fmt yuv422p10le -pred left
-fate-vsynth%-ffvhuff444p16:      ENCOPTS = -strict -2 -vcodec ffvhuff -pix_fmt yuv444p16le -pred plane
+fate-vsynth%-ffvhuff444:         ENCOPTS = -vcodec ffvhuff -pix_fmt yuv444p
+fate-vsynth%-ffvhuff420p12:      ENCOPTS = -vcodec ffvhuff -pix_fmt yuv420p12le
+fate-vsynth%-ffvhuff422p10left:  ENCOPTS = -vcodec ffvhuff -pix_fmt yuv422p10le -pred left
+fate-vsynth%-ffvhuff444p16:      ENCOPTS = -vcodec ffvhuff -pix_fmt yuv444p16le -pred plane
 
 FATE_VCODEC-$(call ENCDEC, FLASHSV, FLV) += flashsv
 fate-vsynth%-flashsv:            ENCOPTS = -sws_flags neighbor+full_chroma_int
@@ -87,9 +91,11 @@ fate-vsynth%-h263:               ENCOPTS = -qscale 10
 fate-vsynth%-h263-obmc:          ENCOPTS = -qscale 10 -obmc 1
 fate-vsynth%-h263p:              ENCOPTS = -qscale 2 -flags +aic -umv 1 -aiv 1 -ps 300
 
-FATE_VCODEC-$(call ENCDEC, HUFFYUV, AVI) += huffyuv
-fate-vsynth%-huffyuv:            ENCOPTS = -pix_fmt yuv422p -sws_flags neighbor
-fate-vsynth%-huffyuv:            DECOPTS = -strict -2 -sws_flags neighbor
+FATE_VCODEC-$(call ENCDEC, HUFFYUV, AVI) += huffyuv huffyuvbgr24
+fate-vsynth%-huffyuv:            ENCOPTS = -vcodec huffyuv -pix_fmt yuv422p -sws_flags neighbor
+fate-vsynth%-huffyuv:            DECOPTS = -sws_flags neighbor
+fate-vsynth%-huffyuvbgr24:       ENCOPTS = -vcodec huffyuv -pix_fmt bgr24 -sws_flags neighbor
+fate-vsynth%-huffyuvbgr24:       DECOPTS = -sws_flags neighbor
 
 FATE_VCODEC-$(call ENCDEC, JPEGLS, AVI) += jpegls
 fate-vsynth%-jpegls:             ENCOPTS = -sws_flags neighbor+full_chroma_int
@@ -163,7 +169,8 @@ FATE_MPEG4_AVI = mpeg4-rc                                               \
                  mpeg4-qpel                                             \
                  mpeg4-thread                                           \
                  mpeg4-error                                            \
-                 mpeg4-nr
+                 mpeg4-nr                                               \
+                 mpeg4-nsse
 
 FATE_VCODEC-$(call ENCDEC, MPEG4, MP4 MOV) += $(FATE_MPEG4_MP4)
 FATE_VCODEC-$(call ENCDEC, MPEG4, AVI)     += $(FATE_MPEG4_AVI)
@@ -184,6 +191,10 @@ fate-vsynth%-mpeg4-error:        ENCOPTS = -qscale 7 -flags +mv4+aic    \
                                            -ps 250 -error 10
 
 fate-vsynth%-mpeg4-nr:           ENCOPTS = -qscale 8 -flags +mv4 -mbd rd -nr 200
+
+fate-vsynth%-mpeg4-nsse:         ENCOPTS = -qscale 7 -cmp nsse -subcmp nsse \
+                                           -mbcmp nsse -precmp nsse         \
+                                           -skipcmp nsse
 
 fate-vsynth%-mpeg4-qpel:         ENCOPTS = -qscale 7 -flags +mv4+qpel -mbd 2 \
                                            -bf 2 -cmp 1 -subcmp 2
@@ -242,15 +253,15 @@ fate-vsynth%-rv20:               ENCOPTS = -qscale 10
 fate-vsynth%-rv20:               FMT     = rm
 
 FATE_VCODEC-$(call ENCDEC, SNOW, AVI)   += snow snow-hpel snow-ll
-fate-vsynth%-snow:               ENCOPTS = -strict -2 -qscale 2 -flags +qpel \
+fate-vsynth%-snow:               ENCOPTS = -qscale 2 -flags +qpel \
                                            -me_method iter -dia_size 2       \
                                            -cmp 12 -subcmp 12 -s 128x64
 
-fate-vsynth%-snow-hpel:          ENCOPTS = -strict -2 -qscale 2              \
+fate-vsynth%-snow-hpel:          ENCOPTS = -qscale 2              \
                                            -me_method iter -dia_size 2       \
                                            -cmp 12 -subcmp 12 -s 128x64
 
-fate-vsynth%-snow-ll:            ENCOPTS = -strict -2 -qscale .001 -pred 1 \
+fate-vsynth%-snow-ll:            ENCOPTS = -qscale .001 -pred 1 \
                                            -flags +mv4+qpel
 
 FATE_VCODEC-$(call ENCDEC, SVQ1, MOV)   += svq1
@@ -290,12 +301,24 @@ FATE_VCODEC-$(call ENCDEC, ZLIB, AVI) += zlib
 FATE_VCODEC += $(FATE_VCODEC-yes)
 FATE_VSYNTH1 = $(FATE_VCODEC:%=fate-vsynth1-%)
 FATE_VSYNTH2 = $(FATE_VCODEC:%=fate-vsynth2-%)
+# Redundant tests because they just resize the input
+RESIZE_OFF   = dnxhd-720p dnxhd-720p-rd dnxhd-720p-10bit dnxhd-1080i \
+               dv dv-411 dv-50 avui snow snow-hpel snow-ll
+# Incorrect parameters - usually size or color format restrictions
+INC_PAR_OFF  = h261 h261-trellis h263 h263p h263-obmc msvideo1 \
+               roqvideo rv10 rv20 y41p qtrlegray
+VSYNTH3_OFF  = $(RESIZE_OFF) $(INC_PAR_OFF)
+
+FATE_VCODEC3 = $(filter-out $(VSYNTH3_OFF),$(FATE_VCODEC))
+FATE_VSYNTH3 = $(FATE_VCODEC3:%=fate-vsynth3-%)
 
 $(FATE_VSYNTH1): tests/data/vsynth1.yuv
 $(FATE_VSYNTH2): tests/data/vsynth2.yuv
+$(FATE_VSYNTH3): tests/data/vsynth3.yuv
 
-FATE_AVCONV += $(FATE_VSYNTH1) $(FATE_VSYNTH2)
+FATE_AVCONV += $(FATE_VSYNTH1) $(FATE_VSYNTH2) $(FATE_VSYNTH3)
 
 fate-vsynth1: $(FATE_VSYNTH1)
 fate-vsynth2: $(FATE_VSYNTH2)
-fate-vcodec:  fate-vsynth1 fate-vsynth2
+fate-vsynth3: $(FATE_VSYNTH3)
+fate-vcodec:  fate-vsynth1 fate-vsynth2 fate-vsynth3

@@ -45,7 +45,7 @@
 
 struct DVMuxContext {
     AVClass          *av_class;
-    const DVprofile*  sys;           /* current DV profile, e.g.: 525/60, 625/50 */
+    const AVDVProfile*  sys;           /* current DV profile, e.g.: 525/60, 625/50 */
     int               n_ast;         /* number of stereo audio streams (up to 2) */
     AVStream         *ast[2];        /* stereo audio streams */
     AVFifoBuffer     *audio_data[2]; /* FIFO for storing excessive amounts of PCM */
@@ -72,7 +72,7 @@ static const int dv_aaux_packs_dist[12][9] = {
     { 0x50, 0x51, 0x52, 0x53, 0xff, 0xff, 0xff, 0xff, 0xff },
 };
 
-static int dv_audio_frame_size(const DVprofile* sys, int frame)
+static int dv_audio_frame_size(const AVDVProfile* sys, int frame)
 {
     return sys->audio_samples_dist[frame % (sizeof(sys->audio_samples_dist) /
                                             sizeof(sys->audio_samples_dist[0]))];
@@ -314,7 +314,7 @@ static DVMuxContext* dv_init_mux(AVFormatContext* s)
                           c->ast[i]->codec->channels    != 2))
             goto bail_out;
     }
-    c->sys = avpriv_dv_codec_profile(vst->codec);
+    c->sys = av_dv_codec_profile(vst->codec->width, vst->codec->height, vst->codec->pix_fmt);
     if (!c->sys)
         goto bail_out;
 
@@ -331,10 +331,10 @@ static DVMuxContext* dv_init_mux(AVFormatContext* s)
         c->start_time = ff_iso8601_to_unix_time(t->value);
 
     for (i=0; i < c->n_ast; i++) {
-        if (c->ast[i] && !(c->audio_data[i]=av_fifo_alloc(100*MAX_AUDIO_FRAME_SIZE))) {
+        if (c->ast[i] && !(c->audio_data[i]=av_fifo_alloc_array(100, MAX_AUDIO_FRAME_SIZE))) {
             while (i > 0) {
                 i--;
-                av_fifo_free(c->audio_data[i]);
+                av_fifo_freep(&c->audio_data[i]);
             }
             goto bail_out;
         }
@@ -350,7 +350,7 @@ static void dv_delete_mux(DVMuxContext *c)
 {
     int i;
     for (i=0; i < c->n_ast; i++)
-        av_fifo_free(c->audio_data[i]);
+        av_fifo_freep(&c->audio_data[i]);
 }
 
 static int dv_write_header(AVFormatContext *s)

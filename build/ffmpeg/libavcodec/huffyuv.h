@@ -32,28 +32,18 @@
 #include <stdint.h>
 
 #include "avcodec.h"
-#include "dsputil.h"
+#include "bswapdsp.h"
 #include "get_bits.h"
+#include "huffyuvdsp.h"
+#include "huffyuvencdsp.h"
 #include "put_bits.h"
 #include "lossless_videodsp.h"
 
-#define VLC_BITS 11
+#define VLC_BITS 12
 
 #define MAX_BITS 16
 #define MAX_N (1<<MAX_BITS)
 #define MAX_VLC_N 16384
-
-#if HAVE_BIGENDIAN
-#define B 3
-#define G 2
-#define R 1
-#define A 0
-#else
-#define B 0
-#define G 1
-#define R 2
-#define A 3
-#endif
 
 typedef enum Predictor {
     LEFT = 0,
@@ -94,7 +84,9 @@ typedef struct HYuvContext {
     VLC vlc[8];                             //Y,U,V,A,YY,YU,YV,AA
     uint8_t *bitstream_buffer;
     unsigned int bitstream_buffer_size;
-    DSPContext dsp;
+    BswapDSPContext bdsp;
+    HuffYUVDSPContext hdsp;
+    HuffYUVEncDSPContext hencdsp;
     LLVidDSPContext llviddsp;
 } HYuvContext;
 

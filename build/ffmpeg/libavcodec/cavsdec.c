@@ -52,13 +52,6 @@ static const uint8_t cbp_tab[64][2] = {
 
 static const uint8_t scan3x3[4] = { 4, 5, 7, 8 };
 
-static const uint8_t cavs_chroma_qp[64] = {
-   0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
-  16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
-  32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 42, 43, 43, 44, 44,
-  45, 45, 46, 46, 47, 47, 48, 48, 48, 49, 49, 49, 50, 50, 50, 51
-};
-
 static const uint8_t dequant_shift[64] = {
   14, 14, 14, 14, 14, 14, 14, 14,
   13, 13, 13, 13, 13, 13, 13, 13,
@@ -589,7 +582,7 @@ static int decode_residual_block(AVSContext *h, GetBitContext *gb,
                       dequant_shift[qp], i)) < 0)
         return ret;
     h->cdsp.cavs_idct8_add(dst, block, stride);
-    h->dsp.clear_block(block);
+    h->bdsp.clear_block(block);
     return 0;
 }
 
@@ -598,10 +591,10 @@ static inline void decode_residual_chroma(AVSContext *h)
 {
     if (h->cbp & (1 << 4))
         decode_residual_block(h, &h->gb, chroma_dec, 0,
-                              cavs_chroma_qp[h->qp], h->cu, h->c_stride);
+                              ff_cavs_chroma_qp[h->qp], h->cu, h->c_stride);
     if (h->cbp & (1 << 5))
         decode_residual_block(h, &h->gb, chroma_dec, 0,
-                              cavs_chroma_qp[h->qp], h->cv, h->c_stride);
+                              ff_cavs_chroma_qp[h->qp], h->cv, h->c_stride);
 }
 
 static inline int decode_residual_inter(AVSContext *h)
@@ -805,6 +798,8 @@ static int decode_mb_b(AVSContext *h, enum cavs_mb mb_type)
         ff_cavs_mv(h, MV_BWD_X0, MV_BWD_C2, MV_PRED_MEDIAN, BLK_16X16, 0);
         break;
     case B_8X8:
+#define TMP_UNUSED_INX  7
+        flags = 0;
         for (block = 0; block < 4; block++)
             sub_type[block] = get_bits(&h->gb, 2);
         for (block = 0; block < 4; block++) {
@@ -812,11 +807,30 @@ static int decode_mb_b(AVSContext *h, enum cavs_mb mb_type)
             case B_SUB_DIRECT:
                 if (!h->col_type_base[h->mbidx]) {
                     /* intra MB at co-location, do in-plane prediction */
-                    ff_cavs_mv(h, mv_scan[block], mv_scan[block] - 3,
-                               MV_PRED_BSKIP, BLK_8X8, 1);
-                    ff_cavs_mv(h, mv_scan[block] + MV_BWD_OFFS,
-                               mv_scan[block] - 3 + MV_BWD_OFFS,
-                               MV_PRED_BSKIP, BLK_8X8, 0);
+                    if(flags==0) {
+                        // if col-MB is a Intra MB, current Block size is 16x16.
+                        // AVS standard section 9.9.1
+                        if(block>0){
+                            h->mv[TMP_UNUSED_INX              ] = h->mv[MV_FWD_X0              ];
+                            h->mv[TMP_UNUSED_INX + MV_BWD_OFFS] = h->mv[MV_FWD_X0 + MV_BWD_OFFS];
+                        }
+                        ff_cavs_mv(h, MV_FWD_X0, MV_FWD_C2,
+                                   MV_PRED_BSKIP, BLK_8X8, 1);
+                        ff_cavs_mv(h, MV_FWD_X0+MV_BWD_OFFS,
+                                   MV_FWD_C2+MV_BWD_OFFS,
+                                   MV_PRED_BSKIP, BLK_8X8, 0);
+                        if(block>0) {
+                            flags = mv_scan[block];
+                            h->mv[flags              ] = h->mv[MV_FWD_X0              ];
+                            h->mv[flags + MV_BWD_OFFS] = h->mv[MV_FWD_X0 + MV_BWD_OFFS];
+                            h->mv[MV_FWD_X0              ] = h->mv[TMP_UNUSED_INX              ];
+                            h->mv[MV_FWD_X0 + MV_BWD_OFFS] = h->mv[TMP_UNUSED_INX + MV_BWD_OFFS];
+                        } else
+                            flags = MV_FWD_X0;
+                    } else {
+                        h->mv[mv_scan[block]              ] = h->mv[flags              ];
+                        h->mv[mv_scan[block] + MV_BWD_OFFS] = h->mv[flags + MV_BWD_OFFS];
+                    }
                 } else
                     mv_pred_direct(h, &h->mv[mv_scan[block]],
                                    &h->col_mv[h->mbidx * 4 + block]);
@@ -832,6 +846,7 @@ static int decode_mb_b(AVSContext *h, enum cavs_mb mb_type)
                 break;
             }
         }
+#undef TMP_UNUSED_INX
         for (block = 0; block < 4; block++) {
             if (sub_type[block] == B_SUB_BWD)
                 ff_cavs_mv(h, mv_scan[block] + MV_BWD_OFFS,
@@ -904,7 +919,7 @@ static inline int decode_slice_header(AVSContext *h, GetBitContext *gb)
 
     /* mark top macroblocks as unavailable */
     h->flags &= ~(B_AVAIL | C_AVAIL);
-    if ((h->mby == 0) && (!h->qp_fixed)) {
+    if (!h->pic_qp_fixed) {
         h->qp_fixed = get_bits1(gb);
         h->qp       = get_bits(gb, 6);
     }
@@ -1003,11 +1018,11 @@ static int decode_pic(AVSContext *h)
 
     /* get temporal distances and MV scaling factors */
     if (h->cur.f->pict_type != AV_PICTURE_TYPE_B) {
-        h->dist[0] = (h->cur.poc - h->DPB[0].poc  + 512) % 512;
+        h->dist[0] = (h->cur.poc - h->DPB[0].poc) & 511;
     } else {
-        h->dist[0] = (h->DPB[0].poc  - h->cur.poc + 512) % 512;
+        h->dist[0] = (h->DPB[0].poc  - h->cur.poc) & 511;
     }
-    h->dist[1] = (h->cur.poc - h->DPB[1].poc  + 512) % 512;
+    h->dist[1] = (h->cur.poc - h->DPB[1].poc) & 511;
     h->scale_den[0] = h->dist[0] ? 512/h->dist[0] : 0;
     h->scale_den[1] = h->dist[1] ? 512/h->dist[1] : 0;
     if (h->cur.f->pict_type == AV_PICTURE_TYPE_B) {
@@ -1027,6 +1042,7 @@ static int decode_pic(AVSContext *h)
         skip_bits1(&h->gb);     //advanced_pred_mode_disable
     skip_bits1(&h->gb);        //top_field_first
     skip_bits1(&h->gb);        //repeat_first_field
+    h->pic_qp_fixed =
     h->qp_fixed = get_bits1(&h->gb);
     h->qp       = get_bits(&h->gb, 6);
     if (h->cur.f->pict_type == AV_PICTURE_TYPE_I) {
@@ -1198,8 +1214,8 @@ static int cavs_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                 break;
             *got_frame = 1;
             if (h->cur.f->pict_type != AV_PICTURE_TYPE_B) {
-                if (h->DPB[1].f->data[0]) {
-                    if ((ret = av_frame_ref(data, h->DPB[1].f)) < 0)
+                if (h->DPB[!h->low_delay].f->data[0]) {
+                    if ((ret = av_frame_ref(data, h->DPB[!h->low_delay].f)) < 0)
                         return ret;
                 } else {
                     *got_frame = 0;

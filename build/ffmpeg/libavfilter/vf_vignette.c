@@ -197,18 +197,23 @@ static inline double get_dither_value(VignetteContext *s)
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 {
-    unsigned x, y;
+    unsigned x, y, direct = 0;
     AVFilterContext *ctx = inlink->dst;
     VignetteContext *s = ctx->priv;
-    AVFilterLink *outlink = inlink->dst->outputs[0];
+    AVFilterLink *outlink = ctx->outputs[0];
     AVFrame *out;
 
-    out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
-    if (!out) {
-        av_frame_free(&in);
-        return AVERROR(ENOMEM);
+    if (av_frame_is_writable(in)) {
+        direct = 1;
+        out = in;
+    } else {
+        out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
+        if (!out) {
+            av_frame_free(&in);
+            return AVERROR(ENOMEM);
+        }
+        av_frame_copy_props(out, in);
     }
-    av_frame_copy_props(out, in);
 
     if (s->eval_mode == EVAL_MODE_FRAME)
         update_context(s, inlink, in);
@@ -268,6 +273,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
         }
     }
 
+    if (!direct)
+        av_frame_free(&in);
     return ff_filter_frame(outlink, out);
 }
 
@@ -297,7 +304,7 @@ static int config_props(AVFilterLink *inlink)
            s->xscale, s->yscale, s->dmax);
 
     s->fmap_linesize = FFALIGN(inlink->w, 32);
-    s->fmap = av_malloc(s->fmap_linesize * inlink->h * sizeof(*s->fmap));
+    s->fmap = av_malloc_array(s->fmap_linesize, inlink->h * sizeof(*s->fmap));
     if (!s->fmap)
         return AVERROR(ENOMEM);
 

@@ -11,7 +11,7 @@ target_exec=$4
 target_path=$5
 threads=${6:-1}
 cpuflags=${8:-all}
-samples=$9
+target_samples=$9
 
 datadir="./tests/data"
 target_datadir="${target_path}/${datadir}"
@@ -44,7 +44,7 @@ echov(){
 . $(dirname $0)/md5.sh
 
 AVCONV_OPTS="-nostats -y -cpuflags $cpuflags"
-COMMON_OPTS="-flags +bitexact -idct simple -sws_flags +accurate_rnd+bitexact"
+COMMON_OPTS="-flags +bitexact -idct simple -sws_flags +accurate_rnd+bitexact -fflags +bitexact"
 DEC_OPTS="$COMMON_OPTS -threads $threads"
 ENC_OPTS="$COMMON_OPTS -threads 1 -dct fastint"
 

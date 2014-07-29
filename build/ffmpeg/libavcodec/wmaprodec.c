@@ -86,6 +86,8 @@
  * subframe in order to reconstruct the output samples.
  */
 
+#include <inttypes.h>
+
 #include "libavutil/float_dsp.h"
 #include "libavutil/intfloat.h"
 #include "libavutil/intreadwrite.h"
@@ -237,7 +239,7 @@ typedef struct WMAProDecodeCtx {
 static av_cold void dump_context(WMAProDecodeCtx *s)
 {
 #define PRINT(a, b)     av_log(s->avctx, AV_LOG_DEBUG, " %s = %d\n", a, b);
-#define PRINT_HEX(a, b) av_log(s->avctx, AV_LOG_DEBUG, " %s = %x\n", a, b);
+#define PRINT_HEX(a, b) av_log(s->avctx, AV_LOG_DEBUG, " %s = %"PRIx32"\n", a, b);
 
     PRINT("ed sample bit depth", s->bits_per_sample);
     PRINT_HEX("ed decode flags", s->decode_flags);
@@ -336,7 +338,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     s->dynamic_range_compression = (s->decode_flags & 0x80);
 
     if (s->max_num_subframes > MAX_SUBFRAMES) {
-        av_log(avctx, AV_LOG_ERROR, "invalid number of subframes %i\n",
+        av_log(avctx, AV_LOG_ERROR, "invalid number of subframes %"PRId8"\n",
                s->max_num_subframes);
         return AVERROR_INVALIDDATA;
     }
@@ -1421,7 +1423,8 @@ static int decode_frame(WMAProDecodeCtx *s, AVFrame *frame, int *got_frame_ptr)
         if (len != (get_bits_count(gb) - s->frame_offset) + 2) {
             /** FIXME: not sure if this is always an error */
             av_log(s->avctx, AV_LOG_ERROR,
-                   "frame[%i] would have to skip %i bits\n", s->frame_num,
+                   "frame[%"PRIu32"] would have to skip %i bits\n",
+                   s->frame_num,
                    len - (get_bits_count(gb) - s->frame_offset) - 1);
             s->packet_loss = 1;
             return 0;
@@ -1553,7 +1556,8 @@ static int decode_packet(AVCodecContext *avctx, void *data,
         if (!s->packet_loss &&
             ((s->packet_sequence_number + 1) & 0xF) != packet_sequence_number) {
             s->packet_loss = 1;
-            av_log(avctx, AV_LOG_ERROR, "Packet loss detected! seq %x vs %x\n",
+            av_log(avctx, AV_LOG_ERROR,
+                   "Packet loss detected! seq %"PRIx8" vs %x\n",
                    s->packet_sequence_number, packet_sequence_number);
         }
         s->packet_sequence_number = packet_sequence_number;

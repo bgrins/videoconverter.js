@@ -191,6 +191,7 @@ static const char unit_hertz_str[]          = "Hz"   ;
 static const char unit_byte_str[]           = "byte" ;
 static const char unit_bit_per_second_str[] = "bit/s";
 
+static int nb_streams;
 static uint64_t *nb_streams_packets;
 static uint64_t *nb_streams_frames;
 static int *selected_streams;
@@ -246,6 +247,7 @@ static char *value_string(char *buf, int buf_size, struct unit_value uv)
                 vald /= pow(10, index * 3);
                 prefix_string = decimal_unit_prefixes[index];
             }
+            vali = vald;
         }
 
         if (show_float || (use_value_prefix && vald != (long long int)vald))
@@ -336,7 +338,7 @@ static const AVOption writer_options[] = {
     { "replace", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = WRITER_STRING_VALIDATION_REPLACE}, .unit = "sv" },
     { "fail",    NULL, 0, AV_OPT_TYPE_CONST, {.i64 = WRITER_STRING_VALIDATION_FAIL},    .unit = "sv" },
     { "string_validation_replacement", "set string validation replacement string", OFFSET(string_validation_replacement), AV_OPT_TYPE_STRING, {.str=""}},
-    { "svr", "set string validation replacement string", OFFSET(string_validation_replacement), AV_OPT_TYPE_STRING, {.str=""}},
+    { "svr", "set string validation replacement string", OFFSET(string_validation_replacement), AV_OPT_TYPE_STRING, {.str="\xEF\xBF\xBD"}},
     { NULL }
 };
 
@@ -1631,6 +1633,14 @@ static void writer_register_all(void)
 #define print_section_header(s) writer_print_section_header(w, s)
 #define print_section_footer(s) writer_print_section_footer(w, s)
 
+#define REALLOCZ_ARRAY_STREAM(ptr, cur_n, new_n)                        \
+{                                                                       \
+    ret = av_reallocp_array(&(ptr), (new_n), sizeof(*(ptr)));           \
+    if (ret < 0)                                                        \
+        goto end;                                                       \
+    memset( (ptr) + (cur_n), 0, ((new_n) - (cur_n)) * sizeof(*(ptr)) ); \
+}
+
 static inline int show_tags(WriterContext *w, AVDictionary *tags, int section_id)
 {
     AVDictionaryEntry *tag = NULL;
@@ -1892,6 +1902,12 @@ static int read_interval_packets(WriterContext *w, AVFormatContext *fmt_ctx,
         goto end;
     }
     while (!av_read_frame(fmt_ctx, &pkt)) {
+        if (fmt_ctx->nb_streams > nb_streams) {
+            REALLOCZ_ARRAY_STREAM(nb_streams_frames,  nb_streams, fmt_ctx->nb_streams);
+            REALLOCZ_ARRAY_STREAM(nb_streams_packets, nb_streams, fmt_ctx->nb_streams);
+            REALLOCZ_ARRAY_STREAM(selected_streams,   nb_streams, fmt_ctx->nb_streams);
+            nb_streams = fmt_ctx->nb_streams;
+        }
         if (selected_streams[pkt.stream_index]) {
             AVRational tb = fmt_ctx->streams[pkt.stream_index]->time_base;
 
@@ -1975,6 +1991,7 @@ static int show_stream(WriterContext *w, AVFormatContext *fmt_ctx, int stream_id
     const char *s;
     AVRational sar, dar;
     AVBPrint pbuf;
+    const AVCodecDescriptor *cd;
     int ret = 0;
 
     av_bprint_init(&pbuf, 1, AV_BPRINT_SIZE_UNLIMITED);
@@ -1991,6 +2008,12 @@ static int show_stream(WriterContext *w, AVFormatContext *fmt_ctx, int stream_id
             if (!do_bitexact) {
                 if (dec->long_name) print_str    ("codec_long_name", dec->long_name);
                 else                print_str_opt("codec_long_name", "unknown");
+            }
+        } else if ((cd = avcodec_descriptor_get(stream->codec->codec_id))) {
+            print_str_opt("codec_name", cd->name);
+            if (!do_bitexact) {
+                print_str_opt("codec_long_name",
+                              cd->long_name ? cd->long_name : "unknown");
             }
         } else {
             print_str_opt("codec_name", "unknown");
@@ -2035,6 +2058,13 @@ static int show_stream(WriterContext *w, AVFormatContext *fmt_ctx, int stream_id
             if (s) print_str    ("pix_fmt", s);
             else   print_str_opt("pix_fmt", "unknown");
             print_int("level",   dec_ctx->level);
+            if (dec_ctx->color_range != AVCOL_RANGE_UNSPECIFIED)
+                print_str    ("color_range", dec_ctx->color_range == AVCOL_RANGE_MPEG ? "tv": "pc");
+            else
+                print_str_opt("color_range", "N/A");
+            s = av_get_colorspace_name(dec_ctx->colorspace);
+            if (s) print_str    ("color_space", s);
+            else   print_str_opt("color_space", "unknown");
             if (dec_ctx->timecode_frame_start >= 0) {
                 char tcbuf[AV_TIMECODE_STR_SIZE];
                 av_timecode_make_mpeg_tc_string(tcbuf, dec_ctx->timecode_frame_start);
@@ -2099,6 +2129,8 @@ static int show_stream(WriterContext *w, AVFormatContext *fmt_ctx, int stream_id
     print_time("duration",    stream->duration, &stream->time_base);
     if (dec_ctx->bit_rate > 0) print_val    ("bit_rate", dec_ctx->bit_rate, unit_bit_per_second_str);
     else                       print_str_opt("bit_rate", "N/A");
+    if (dec_ctx->rc_max_rate > 0) print_val ("max_bit_rate", dec_ctx->rc_max_rate, unit_bit_per_second_str);
+    else                       print_str_opt("max_bit_rate", "N/A");
     if (stream->nb_frames) print_fmt    ("nb_frames", "%"PRId64, stream->nb_frames);
     else                   print_str_opt("nb_frames", "N/A");
     if (nb_streams_frames[stream_idx])  print_fmt    ("nb_read_frames", "%"PRIu64, nb_streams_frames[stream_idx]);
@@ -2366,9 +2398,10 @@ static int probe_file(WriterContext *wctx, const char *filename)
 
 #define CHECK_END if (ret < 0) goto end
 
-    nb_streams_frames  = av_calloc(fmt_ctx->nb_streams, sizeof(*nb_streams_frames));
-    nb_streams_packets = av_calloc(fmt_ctx->nb_streams, sizeof(*nb_streams_packets));
-    selected_streams   = av_calloc(fmt_ctx->nb_streams, sizeof(*selected_streams));
+    nb_streams = fmt_ctx->nb_streams;
+    REALLOCZ_ARRAY_STREAM(nb_streams_frames,0,fmt_ctx->nb_streams);
+    REALLOCZ_ARRAY_STREAM(nb_streams_packets,0,fmt_ctx->nb_streams);
+    REALLOCZ_ARRAY_STREAM(selected_streams,0,fmt_ctx->nb_streams);
 
     for (i = 0; i < fmt_ctx->nb_streams; i++) {
         if (stream_specifier) {
@@ -2716,7 +2749,7 @@ static int parse_read_intervals(const char *intervals_spec)
             n++;
     n++;
 
-    read_intervals = av_malloc(n * sizeof(*read_intervals));
+    read_intervals = av_malloc_array(n, sizeof(*read_intervals));
     if (!read_intervals) {
         ret = AVERROR(ENOMEM);
         goto end;

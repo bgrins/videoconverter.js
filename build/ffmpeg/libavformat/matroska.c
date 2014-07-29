@@ -35,7 +35,7 @@ const CodecTags ff_mkv_codec_tags[]={
     {"A_MPEG/L2"        , AV_CODEC_ID_MP2},
     {"A_MPEG/L1"        , AV_CODEC_ID_MP2},
     {"A_MPEG/L3"        , AV_CODEC_ID_MP3},
-    {"A_OPUS",            AV_CODEC_ID_OPUS},
+    {"A_OPUS"           , AV_CODEC_ID_OPUS},
     {"A_OPUS/EXPERIMENTAL",AV_CODEC_ID_OPUS},
     {"A_PCM/FLOAT/IEEE" , AV_CODEC_ID_PCM_F32LE},
     {"A_PCM/FLOAT/IEEE" , AV_CODEC_ID_PCM_F64LE},
@@ -113,6 +113,7 @@ const CodecMime ff_mkv_mime_tags[] = {
     {"application/x-truetype-font", AV_CODEC_ID_TTF},
     {"application/x-font"         , AV_CODEC_ID_TTF},
     {"application/vnd.ms-opentype", AV_CODEC_ID_OTF},
+    {"binary"                     , AV_CODEC_ID_BIN_DATA},
 
     {""                           , AV_CODEC_ID_NONE}
 };

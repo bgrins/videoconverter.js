@@ -39,6 +39,7 @@
 #include "mathops.h"
 #include "mpeg12.h"
 #include "mpeg12data.h"
+#include "mpegutils.h"
 #include "mpegvideo.h"
 
 
@@ -239,13 +240,13 @@ static void mpeg1_encode_sequence_header(MpegEncContext *s)
     unsigned int vbv_buffer_size, fps, v;
     int i, constraint_parameter_flag;
     uint64_t time_code;
-    float best_aspect_error = 1E10;
-    float aspect_ratio      = av_q2d(s->avctx->sample_aspect_ratio);
+    int64_t best_aspect_error = INT64_MAX;
+    AVRational aspect_ratio = s->avctx->sample_aspect_ratio;
 
-    if (aspect_ratio == 0.0)
-        aspect_ratio = 1.0;             // pixel aspect 1.1 (VGA)
+    if (aspect_ratio.num == 0 || aspect_ratio.den == 0)
+        aspect_ratio = (AVRational){1,1};             // pixel aspect 1.1 (VGA)
 
-    if (s->current_picture.f.key_frame) {
+    if (s->current_picture.f->key_frame) {
         AVRational framerate = ff_mpeg12_frame_rate_tab[s->frame_rate_index];
 
         /* mpeg1 header repeated every gop */
@@ -255,15 +256,15 @@ static void mpeg1_encode_sequence_header(MpegEncContext *s)
         put_sbits(&s->pb, 12, s->height & 0xFFF);
 
         for (i = 1; i < 15; i++) {
-            float error = aspect_ratio;
+            int64_t error = aspect_ratio.num * (1LL<<32) / aspect_ratio.den;
             if (s->codec_id == AV_CODEC_ID_MPEG1VIDEO || i <= 1)
-                error -= 1.0 / ff_mpeg1_aspect[i];
+                error -= (1LL<<32) / ff_mpeg1_aspect[i];
             else
-                error -= av_q2d(ff_mpeg2_aspect[i]) * s->height / s->width;
+                error -= (1LL<<32)*ff_mpeg2_aspect[i].num * s->height / s->width / ff_mpeg2_aspect[i].den;
 
             error = FFABS(error);
 
-            if (error < best_aspect_error) {
+            if (error - 2 <= best_aspect_error) {
                 best_aspect_error    = error;
                 s->aspect_ratio_info = i;
             }
@@ -310,6 +311,11 @@ static void mpeg1_encode_sequence_header(MpegEncContext *s)
         ff_write_quant_matrix(&s->pb, s->avctx->inter_matrix);
 
         if (s->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
+            AVFrameSideData *side_data;
+            int width = s->width;
+            int height = s->height;
+            int use_seq_disp_ext;
+
             put_header(s, EXT_START_CODE);
             put_bits(&s->pb, 4, 1);                 // seq ext
 
@@ -328,6 +334,35 @@ static void mpeg1_encode_sequence_header(MpegEncContext *s)
             put_bits(&s->pb, 1, s->low_delay);
             put_bits(&s->pb, 2, s->mpeg2_frame_rate_ext.num-1); // frame_rate_ext_n
             put_bits(&s->pb, 5, s->mpeg2_frame_rate_ext.den-1); // frame_rate_ext_d
+
+            side_data = av_frame_get_side_data(s->current_picture_ptr->f, AV_FRAME_DATA_PANSCAN);
+            if (side_data) {
+                AVPanScan *pan_scan = (AVPanScan *)side_data->data;
+                if (pan_scan->width && pan_scan->height) {
+                    width = pan_scan->width >> 4;
+                    height = pan_scan->height >> 4;
+                }
+            }
+
+            use_seq_disp_ext = (width != s->width ||
+                                height != s->height ||
+                                s->avctx->color_primaries != AVCOL_PRI_UNSPECIFIED ||
+                                s->avctx->color_trc != AVCOL_TRC_UNSPECIFIED ||
+                                s->avctx->colorspace != AVCOL_SPC_UNSPECIFIED);
+
+            if (s->seq_disp_ext == 1 || (s->seq_disp_ext == -1 && use_seq_disp_ext)) {
+                put_header(s, EXT_START_CODE);
+                put_bits(&s->pb, 4, 2);                         // sequence display extension
+                put_bits(&s->pb, 3, 0);                         // video_format: 0 is components
+                put_bits(&s->pb, 1, 1);                         // colour_description
+                put_bits(&s->pb, 8, s->avctx->color_primaries); // colour_primaries
+                put_bits(&s->pb, 8, s->avctx->color_trc);       // transfer_characteristics
+                put_bits(&s->pb, 8, s->avctx->colorspace);      // matrix_coefficients
+                put_bits(&s->pb, 14, width);                    // display_horizontal_size
+                put_bits(&s->pb, 1, 1);                         // marker_bit
+                put_bits(&s->pb, 14, height);                   // display_vertical_size
+                put_bits(&s->pb, 3, 0);                         // remaining 3 bits are zero padding
+            }
         }
 
         put_header(s, GOP_START_CODE);
@@ -335,10 +370,10 @@ static void mpeg1_encode_sequence_header(MpegEncContext *s)
         /* time code: we must convert from the real frame rate to a
          * fake MPEG frame rate in case of low frame rate */
         fps       = (framerate.num + framerate.den / 2) / framerate.den;
-        time_code = s->current_picture_ptr->f.coded_picture_number +
+        time_code = s->current_picture_ptr->f->coded_picture_number +
                     s->avctx->timecode_frame_start;
 
-        s->gop_picture_number = s->current_picture_ptr->f.coded_picture_number;
+        s->gop_picture_number = s->current_picture_ptr->f->coded_picture_number;
 
         av_assert0(s->drop_frame_timecode == !!(s->tc.flags & AV_TIMECODE_FLAG_DROPFRAME));
         if (s->drop_frame_timecode)
@@ -349,7 +384,7 @@ static void mpeg1_encode_sequence_header(MpegEncContext *s)
         put_bits(&s->pb, 1, 1);
         put_bits(&s->pb, 6, (uint32_t)((time_code / fps) % 60));
         put_bits(&s->pb, 6, (uint32_t)((time_code % fps)));
-        put_bits(&s->pb, 1, !!(s->flags & CODEC_FLAG_CLOSED_GOP));
+        put_bits(&s->pb, 1, !!(s->flags & CODEC_FLAG_CLOSED_GOP) || s->intra_only || !s->gop_picture_number);
         put_bits(&s->pb, 1, 0);                     // broken link
     }
 }
@@ -450,7 +485,7 @@ void ff_mpeg1_encode_picture_header(MpegEncContext *s, int picture_number)
         if (s->progressive_sequence)
             put_bits(&s->pb, 1, 0);             /* no repeat */
         else
-            put_bits(&s->pb, 1, s->current_picture_ptr->f.top_field_first);
+            put_bits(&s->pb, 1, s->current_picture_ptr->f->top_field_first);
         /* XXX: optimize the generation of this flag with entropy measures */
         s->frame_pred_frame_dct = s->progressive_sequence;
 
@@ -474,7 +509,7 @@ void ff_mpeg1_encode_picture_header(MpegEncContext *s, int picture_number)
         for (i = 0; i < sizeof(svcd_scan_offset_placeholder); i++)
             put_bits(&s->pb, 8, svcd_scan_offset_placeholder[i]);
     }
-    side_data = av_frame_get_side_data(&s->current_picture_ptr->f,
+    side_data = av_frame_get_side_data(s->current_picture_ptr->f,
                                        AV_FRAME_DATA_STEREO3D);
     if (side_data) {
         AVStereo3D *stereo = (AVStereo3D *)side_data->data;
@@ -682,7 +717,7 @@ next_coef:
 }
 
 static av_always_inline void mpeg1_encode_mb_internal(MpegEncContext *s,
-                                                      int16_t block[6][64],
+                                                      int16_t block[8][64],
                                                       int motion_x, int motion_y,
                                                       int mb_block_count)
 {
@@ -959,7 +994,7 @@ static av_always_inline void mpeg1_encode_mb_internal(MpegEncContext *s,
     }
 }
 
-void ff_mpeg1_encode_mb(MpegEncContext *s, int16_t block[6][64],
+void ff_mpeg1_encode_mb(MpegEncContext *s, int16_t block[8][64],
                         int motion_x, int motion_y)
 {
     if (s->chroma_format == CHROMA_420)
@@ -1088,6 +1123,10 @@ static const AVOption mpeg2_options[] = {
     COMMON_OPTS
     { "non_linear_quant", "Use nonlinear quantizer.",    OFFSET(q_scale_type),   AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { "alternate_scan",   "Enable alternate scantable.", OFFSET(alternate_scan), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "seq_disp_ext",     "Write sequence_display_extension blocks.", OFFSET(seq_disp_ext), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 1, VE, "seq_disp_ext" },
+    {     "auto",   NULL, 0, AV_OPT_TYPE_CONST,  {.i64 = -1},  0, 0, VE, "seq_disp_ext" },
+    {     "never",  NULL, 0, AV_OPT_TYPE_CONST,  {.i64 = 0 },  0, 0, VE, "seq_disp_ext" },
+    {     "always", NULL, 0, AV_OPT_TYPE_CONST,  {.i64 = 1 },  0, 0, VE, "seq_disp_ext" },
     FF_MPV_COMMON_OPTS
     { NULL },
 };

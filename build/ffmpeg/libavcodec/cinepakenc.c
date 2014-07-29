@@ -236,11 +236,11 @@ static av_cold int cinepak_encode_init(AVCodecContext *avctx)
     if (!(s->frame_buf = av_malloc(frame_buf_size)))
         goto enomem;
 
-    if (!(s->mb = av_malloc(mb_count*sizeof(mb_info))))
+    if (!(s->mb = av_malloc_array(mb_count, sizeof(mb_info))))
         goto enomem;
 
 #ifdef CINEPAKENC_DEBUG
-    if (!(s->best_mb = av_malloc(mb_count*sizeof(mb_info))))
+    if (!(s->best_mb = av_malloc_array(mb_count, sizeof(mb_info))))
         goto enomem;
 #endif
 
@@ -623,7 +623,7 @@ static int encode_mode(CinepakEncContext *s, int h, AVPicture *scratch_pict, AVP
     int needs_extra_bit, should_write_temp;
     unsigned char temp[64]; //32/2 = 16 V4 blocks at 4 B each -> 64 B
     mb_info *mb;
-    AVPicture sub_scratch, sub_last;
+    AVPicture sub_scratch = {{0}}, sub_last = {{0}};
 
     //encode codebooks
 ////// MacOS vintage decoder compatibility dictates the presence of
@@ -1120,14 +1120,14 @@ static int write_cvid_header(CinepakEncContext *s, unsigned char *buf, int num_s
 
 static int rd_frame(CinepakEncContext *s, const AVFrame *frame, int isakeyframe, unsigned char *buf, int buf_size)
 {
-    int num_strips, strip, i, y, nexty, size, temp_size, best_size;
+    int num_strips, strip, i, y, nexty, size, temp_size;
     AVPicture last_pict, pict, scratch_pict;
     int64_t best_score = 0, score, score_temp;
 #ifdef CINEPAK_REPORT_SERR
     int64_t best_serr = 0, serr, serr_temp;
 #endif
 
-    int best_nstrips;
+    int best_nstrips = -1, best_size = -1; // mark as uninitialzed
 
     if(s->pix_fmt == AV_PIX_FMT_RGB24) {
         int x;
@@ -1239,6 +1239,8 @@ static int rd_frame(CinepakEncContext *s, const AVFrame *frame, int isakeyframe,
             break;
     }
 
+    av_assert0(best_nstrips >= 0 && best_size >= 0);
+
 // let the number of strips slowly adapt to the changes in the contents,
 // compared to full bruteforcing every time this will occasionally lead
 // to some r/d performance loss but makes encoding up to several times faster
@@ -1280,8 +1282,6 @@ static int cinepak_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     if (s->curframe == 0)
         pkt->flags |= AV_PKT_FLAG_KEY;
     *got_packet = 1;
-
-    avctx->coded_frame = frame;
 
     FFSWAP(AVFrame *, s->last_frame, s->best_frame);
 

@@ -29,10 +29,13 @@
 
 #include "avcodec.h"
 #include "error_resilience.h"
+#include "mpegutils.h"
 #include "mpegvideo.h"
 #include "golomb.h"
 #include "internal.h"
 #include "mathops.h"
+#include "mpeg_er.h"
+#include "qpeldsp.h"
 #include "rectangle.h"
 #include "thread.h"
 
@@ -508,7 +511,7 @@ static void rv34_pred_mv(RV34DecContext *r, int block_type, int subblock_no, int
     }
 }
 
-#define GET_PTS_DIFF(a, b) ((a - b + 8192) & 0x1FFF)
+#define GET_PTS_DIFF(a, b) (((a) - (b) + 8192) & 0x1FFF)
 
 /**
  * Calculate motion vector component that should be added for direct blocks.
@@ -670,6 +673,7 @@ static inline void rv34_mc(RV34DecContext *r, const int block_type,
     int dxy, mx, my, umx, umy, lx, ly, uvmx, uvmy, src_x, src_y, uvsrc_x, uvsrc_y;
     int mv_pos = s->mb_x * 2 + s->mb_y * 2 * s->b8_stride + mv_off;
     int is16x16 = 1;
+    int emu = 0;
 
     if(thirdpel){
         int chroma_mx, chroma_my;
@@ -708,9 +712,9 @@ static inline void rv34_mc(RV34DecContext *r, const int block_type,
     }
 
     dxy = ly*4 + lx;
-    srcY = dir ? s->next_picture_ptr->f.data[0] : s->last_picture_ptr->f.data[0];
-    srcU = dir ? s->next_picture_ptr->f.data[1] : s->last_picture_ptr->f.data[1];
-    srcV = dir ? s->next_picture_ptr->f.data[2] : s->last_picture_ptr->f.data[2];
+    srcY = dir ? s->next_picture_ptr->f->data[0] : s->last_picture_ptr->f->data[0];
+    srcU = dir ? s->next_picture_ptr->f->data[1] : s->last_picture_ptr->f->data[1];
+    srcV = dir ? s->next_picture_ptr->f->data[2] : s->last_picture_ptr->f->data[2];
     src_x = s->mb_x * 16 + xoff + mx;
     src_y = s->mb_y * 16 + yoff + my;
     uvsrc_x = s->mb_x * 8 + (xoff >> 1) + umx;
@@ -721,8 +725,6 @@ static inline void rv34_mc(RV34DecContext *r, const int block_type,
     if(s->h_edge_pos - (width << 3) < 6 || s->v_edge_pos - (height << 3) < 6 ||
        (unsigned)(src_x - !!lx*2) > s->h_edge_pos - !!lx*2 - (width <<3) - 4 ||
        (unsigned)(src_y - !!ly*2) > s->v_edge_pos - !!ly*2 - (height<<3) - 4) {
-        uint8_t *uvbuf = s->edge_emu_buffer + 22 * s->linesize;
-
         srcY -= 2 + 2*s->linesize;
         s->vdsp.emulated_edge_mc(s->edge_emu_buffer, srcY,
                                  s->linesize, s->linesize,
@@ -730,18 +732,7 @@ static inline void rv34_mc(RV34DecContext *r, const int block_type,
                                  src_x - 2, src_y - 2,
                                  s->h_edge_pos, s->v_edge_pos);
         srcY = s->edge_emu_buffer + 2 + 2*s->linesize;
-        s->vdsp.emulated_edge_mc(uvbuf, srcU,
-                                 s->uvlinesize, s->uvlinesize,
-                                 (width << 2) + 1, (height << 2) + 1,
-                                 uvsrc_x, uvsrc_y,
-                                 s->h_edge_pos >> 1, s->v_edge_pos >> 1);
-        s->vdsp.emulated_edge_mc(uvbuf + 16, srcV,
-                                 s->uvlinesize, s->uvlinesize,
-                                 (width << 2) + 1, (height << 2) + 1,
-                                 uvsrc_x, uvsrc_y,
-                                 s->h_edge_pos >> 1, s->v_edge_pos >> 1);
-        srcU = uvbuf;
-        srcV = uvbuf + 16;
+        emu = 1;
     }
     if(!weighted){
         Y = s->dest[0] + xoff      + yoff     *s->linesize;
@@ -764,6 +755,24 @@ static inline void rv34_mc(RV34DecContext *r, const int block_type,
     }
     is16x16 = (block_type != RV34_MB_P_8x8) && (block_type != RV34_MB_P_16x8) && (block_type != RV34_MB_P_8x16);
     qpel_mc[!is16x16][dxy](Y, srcY, s->linesize);
+    if (emu) {
+        uint8_t *uvbuf = s->edge_emu_buffer;
+
+        s->vdsp.emulated_edge_mc(uvbuf, srcU,
+                                 s->uvlinesize, s->uvlinesize,
+                                 (width << 2) + 1, (height << 2) + 1,
+                                 uvsrc_x, uvsrc_y,
+                                 s->h_edge_pos >> 1, s->v_edge_pos >> 1);
+        srcU = uvbuf;
+        uvbuf += 9*s->uvlinesize;
+
+        s->vdsp.emulated_edge_mc(uvbuf, srcV,
+                                 s->uvlinesize, s->uvlinesize,
+                                 (width << 2) + 1, (height << 2) + 1,
+                                 uvsrc_x, uvsrc_y,
+                                 s->h_edge_pos >> 1, s->v_edge_pos >> 1);
+        srcV = uvbuf;
+    }
     chroma_mc[2-width]   (U, srcU, s->uvlinesize, height*4, uvmx, uvmy);
     chroma_mc[2-width]   (V, srcV, s->uvlinesize, height*4, uvmx, uvmy);
 }
@@ -1590,13 +1599,13 @@ static int finish_frame(AVCodecContext *avctx, AVFrame *pict)
         ff_thread_report_progress(&s->current_picture_ptr->tf, INT_MAX, 0);
 
     if (s->pict_type == AV_PICTURE_TYPE_B || s->low_delay) {
-        if ((ret = av_frame_ref(pict, &s->current_picture_ptr->f)) < 0)
+        if ((ret = av_frame_ref(pict, s->current_picture_ptr->f)) < 0)
             return ret;
         ff_print_debug_info(s, s->current_picture_ptr, pict);
         ff_mpv_export_qp_table(s, pict, s->current_picture_ptr, FF_QSCALE_TYPE_MPEG1);
         got_picture = 1;
     } else if (s->last_picture_ptr != NULL) {
-        if ((ret = av_frame_ref(pict, &s->last_picture_ptr->f)) < 0)
+        if ((ret = av_frame_ref(pict, s->last_picture_ptr->f)) < 0)
             return ret;
         ff_print_debug_info(s, s->last_picture_ptr, pict);
         ff_mpv_export_qp_table(s, pict, s->last_picture_ptr, FF_QSCALE_TYPE_MPEG1);
@@ -1635,7 +1644,7 @@ int ff_rv34_decode_frame(AVCodecContext *avctx,
     if (buf_size == 0) {
         /* special case for last picture */
         if (s->low_delay==0 && s->next_picture_ptr) {
-            if ((ret = av_frame_ref(pict, &s->next_picture_ptr->f)) < 0)
+            if ((ret = av_frame_ref(pict, s->next_picture_ptr->f)) < 0)
                 return ret;
             s->next_picture_ptr = NULL;
 
@@ -1663,7 +1672,7 @@ int ff_rv34_decode_frame(AVCodecContext *avctx,
         av_log(avctx, AV_LOG_ERROR, "First slice header is incorrect\n");
         return AVERROR_INVALIDDATA;
     }
-    if ((!s->last_picture_ptr || !s->last_picture_ptr->f.data[0]) &&
+    if ((!s->last_picture_ptr || !s->last_picture_ptr->f->data[0]) &&
         si.type == AV_PICTURE_TYPE_B) {
         av_log(avctx, AV_LOG_ERROR, "Invalid decoder state: B-frame without "
                "reference data.\n");
@@ -1676,7 +1685,7 @@ int ff_rv34_decode_frame(AVCodecContext *avctx,
 
     /* first slice */
     if (si.start == 0) {
-        if (s->mb_num_left > 0) {
+        if (s->mb_num_left > 0 && s->current_picture_ptr) {
             av_log(avctx, AV_LOG_ERROR, "New frame but still %d MB left.\n",
                    s->mb_num_left);
             ff_er_frame_end(&s->er);

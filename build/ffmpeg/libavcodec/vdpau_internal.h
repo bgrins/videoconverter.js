@@ -36,12 +36,13 @@
 #include "mpegvideo.h"
 #include "version.h"
 
-/** Extract VdpVideoSurface from a Picture */
-static inline uintptr_t ff_vdpau_get_surface_id(Picture *pic)
+/** Extract VdpVideoSurface from an AVFrame */
+static inline uintptr_t ff_vdpau_get_surface_id(AVFrame *pic)
 {
-    return (uintptr_t)pic->f.data[3];
+    return (uintptr_t)pic->data[3];
 }
 
+struct vdpau_picture_context;
 #if CONFIG_VDPAU
 #if !FF_API_BUFS_VDPAU
 union AVVDPAUPictureInfo {
@@ -77,10 +78,11 @@ struct vdpau_picture_context {
 };
 #endif
 
-int ff_vdpau_common_start_frame(Picture *pic,
+int ff_vdpau_common_start_frame(struct vdpau_picture_context *pic,
                                 const uint8_t *buffer, uint32_t size);
 int ff_vdpau_mpeg_end_frame(AVCodecContext *avctx);
-int ff_vdpau_add_buffer(Picture *pic, const uint8_t *buf, uint32_t buf_size);
+int ff_vdpau_add_buffer(struct vdpau_picture_context *pic, const uint8_t *buf,
+                        uint32_t buf_size);
 
 
 void ff_vdpau_add_data_chunk(uint8_t *data, const uint8_t *buf,

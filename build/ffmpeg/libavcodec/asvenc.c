@@ -28,6 +28,7 @@
 
 #include "asv.h"
 #include "avcodec.h"
+#include "fdctdsp.h"
 #include "internal.h"
 #include "mathops.h"
 #include "mpeg12data.h"
@@ -159,18 +160,18 @@ static inline void dct_get(ASV1Context *a, const AVFrame *frame,
     uint8_t *ptr_cb = frame->data[1] + (mb_y * 8 * frame->linesize[1]) + mb_x * 8;
     uint8_t *ptr_cr = frame->data[2] + (mb_y * 8 * frame->linesize[2]) + mb_x * 8;
 
-    a->dsp.get_pixels(block[0], ptr_y                 , linesize);
-    a->dsp.get_pixels(block[1], ptr_y              + 8, linesize);
-    a->dsp.get_pixels(block[2], ptr_y + 8*linesize    , linesize);
-    a->dsp.get_pixels(block[3], ptr_y + 8*linesize + 8, linesize);
+    a->pdsp.get_pixels(block[0], ptr_y,                    linesize);
+    a->pdsp.get_pixels(block[1], ptr_y + 8,                linesize);
+    a->pdsp.get_pixels(block[2], ptr_y + 8 * linesize,     linesize);
+    a->pdsp.get_pixels(block[3], ptr_y + 8 * linesize + 8, linesize);
     for(i=0; i<4; i++)
-        a->dsp.fdct(block[i]);
+        a->fdsp.fdct(block[i]);
 
     if(!(a->avctx->flags&CODEC_FLAG_GRAY)){
-        a->dsp.get_pixels(block[4], ptr_cb, frame->linesize[1]);
-        a->dsp.get_pixels(block[5], ptr_cr, frame->linesize[2]);
+        a->pdsp.get_pixels(block[4], ptr_cb, frame->linesize[1]);
+        a->pdsp.get_pixels(block[5], ptr_cr, frame->linesize[2]);
         for(i=4; i<6; i++)
-            a->dsp.fdct(block[i]);
+            a->fdsp.fdct(block[i]);
     }
 }
 
@@ -180,6 +181,48 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     ASV1Context * const a = avctx->priv_data;
     int size, ret;
     int mb_x, mb_y;
+
+    if (pict->width % 16 || pict->height % 16) {
+        AVFrame *clone = av_frame_alloc();
+        int i;
+
+        if (!clone)
+            return AVERROR(ENOMEM);
+        clone->format = pict->format;
+        clone->width  = FFALIGN(pict->width, 16);
+        clone->height = FFALIGN(pict->height, 16);
+        ret = av_frame_get_buffer(clone, 32);
+        if (ret < 0) {
+            av_frame_free(&clone);
+            return ret;
+        }
+
+        ret = av_frame_copy(clone, pict);
+        if (ret < 0) {
+            av_frame_free(&clone);
+            return ret;
+        }
+
+        for (i = 0; i<3; i++) {
+            int x, y;
+            int w  = FF_CEIL_RSHIFT(pict->width, !!i);
+            int h  = FF_CEIL_RSHIFT(pict->height, !!i);
+            int w2 = FF_CEIL_RSHIFT(clone->width, !!i);
+            int h2 = FF_CEIL_RSHIFT(clone->height, !!i);
+            for (y=0; y<h; y++)
+                for (x=w; x<w2; x++)
+                    clone->data[i][x + y*clone->linesize[i]] =
+                        clone->data[i][w - 1 + y*clone->linesize[i]];
+            for (y=h; y<h2; y++)
+                for (x=0; x<w2; x++)
+                    clone->data[i][x + y*clone->linesize[i]] =
+                        clone->data[i][x + (h-1)*clone->linesize[i]];
+        }
+        ret = encode_frame(avctx, pkt, clone, got_packet);
+
+        av_frame_free(&clone);
+        return ret;
+    }
 
     if ((ret = ff_alloc_packet2(avctx, pkt, a->mb_height*a->mb_width*MAX_MB_SIZE +
                                   FF_MIN_BUFFER_SIZE)) < 0)
@@ -218,7 +261,8 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     size= put_bits_count(&a->pb)/32;
 
     if(avctx->codec_id == AV_CODEC_ID_ASV1)
-        a->dsp.bswap_buf((uint32_t*)pkt->data, (uint32_t*)pkt->data, size);
+        a->bbdsp.bswap_buf((uint32_t *) pkt->data,
+                           (uint32_t *) pkt->data, size);
     else{
         int i;
         for(i=0; i<4*size; i++)
@@ -238,8 +282,10 @@ static av_cold int encode_init(AVCodecContext *avctx){
     const int scale= avctx->codec_id == AV_CODEC_ID_ASV1 ? 1 : 2;
 
     ff_asv_common_init(avctx);
+    ff_fdctdsp_init(&a->fdsp, avctx);
+    ff_pixblockdsp_init(&a->pdsp, avctx);
 
-    if(avctx->global_quality == 0) avctx->global_quality= 4*FF_QUALITY_SCALE;
+    if(avctx->global_quality <= 0) avctx->global_quality= 4*FF_QUALITY_SCALE;
 
     a->inv_qscale= (32*scale*FF_QUALITY_SCALE +  avctx->global_quality/2) / avctx->global_quality;
 

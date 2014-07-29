@@ -387,7 +387,9 @@ static av_cold int mpeg_mux_init(AVFormatContext *ctx)
             if (st->codec->rc_buffer_size)
                 stream->max_buffer_size = 6*1024 + st->codec->rc_buffer_size/8;
             else {
-                av_log(ctx, AV_LOG_WARNING, "VBV buffer size not set, muxing may fail\n");
+                av_log(ctx, AV_LOG_WARNING, "VBV buffer size not set, using default size of 130KB\n"
+                                            "If you want the mpeg file to be compliant to some specification\n"
+                                            "Like DVD, VCD or others, make sure you set the correct buffer size\n");
                 stream->max_buffer_size = 230*1024; //FIXME this is probably too small as default
             }
             if (stream->max_buffer_size > 1024 * 8191) {
@@ -1157,7 +1159,7 @@ static int mpeg_mux_end(AVFormatContext *ctx)
         stream = ctx->streams[i]->priv_data;
 
         assert(av_fifo_size(stream->fifo) == 0);
-        av_fifo_free(stream->fifo);
+        av_fifo_freep(&stream->fifo);
     }
     return 0;
 }

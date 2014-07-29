@@ -158,7 +158,7 @@ static av_cold void dump_enc_cfg(AVCodecContext *avctx,
            width, "g_lag_in_frames:",   cfg->g_lag_in_frames);
     av_log(avctx, level, "rate control settings\n"
            "  %*s%u\n  %*s%u\n  %*s%u\n  %*s%u\n"
-           "  %*s%d\n  %*s%p(%zu)\n  %*s%u\n",
+           "  %*s%d\n  %*s%p(%"SIZE_SPECIFIER")\n  %*s%u\n",
            width, "rc_dropframe_thresh:",   cfg->rc_dropframe_thresh,
            width, "rc_resize_allowed:",     cfg->rc_resize_allowed,
            width, "rc_resize_up_thresh:",   cfg->rc_resize_up_thresh,
@@ -373,7 +373,7 @@ static av_cold int vpx_init(AVCodecContext *avctx,
         ctx->twopass_stats.buf = av_malloc(ctx->twopass_stats.sz);
         if (!ctx->twopass_stats.buf) {
             av_log(avctx, AV_LOG_ERROR,
-                   "Stat buffer alloc (%zu bytes) failed\n",
+                   "Stat buffer alloc (%"SIZE_SPECIFIER" bytes) failed\n",
                    ctx->twopass_stats.sz);
             return AVERROR(ENOMEM);
         }
@@ -415,8 +415,7 @@ static av_cold int vpx_init(AVCodecContext *avctx,
 
     //codec control failures are currently treated only as warnings
     av_log(avctx, AV_LOG_DEBUG, "vpx_codec_control\n");
-    if (ctx->cpu_used != INT_MIN)
-        codecctl_int(avctx, VP8E_SET_CPUUSED,          ctx->cpu_used);
+    codecctl_int(avctx, VP8E_SET_CPUUSED,          ctx->cpu_used);
     if (ctx->flags & VP8F_AUTO_ALT_REF)
         ctx->auto_alt_ref = 1;
     if (ctx->auto_alt_ref >= 0)
@@ -616,7 +615,7 @@ static int queue_frames(AVCodecContext *avctx, AVPacket *pkt_out,
 
                 if (!cx_frame->buf) {
                     av_log(avctx, AV_LOG_ERROR,
-                           "Data buffer alloc (%zu bytes) failed\n",
+                           "Data buffer alloc (%"SIZE_SPECIFIER" bytes) failed\n",
                            cx_frame->sz);
                     av_free(cx_frame);
                     return AVERROR(ENOMEM);
@@ -626,7 +625,7 @@ static int queue_frames(AVCodecContext *avctx, AVPacket *pkt_out,
                     cx_frame->buf_alpha = av_malloc(cx_frame->sz_alpha);
                     if (!cx_frame->buf_alpha) {
                         av_log(avctx, AV_LOG_ERROR,
-                               "Data buffer alloc (%zu bytes) failed\n",
+                               "Data buffer alloc (%"SIZE_SPECIFIER" bytes) failed\n",
                                cx_frame->sz_alpha);
                         av_free(cx_frame);
                         return AVERROR(ENOMEM);
@@ -754,7 +753,7 @@ static int vp8_encode(AVCodecContext *avctx, AVPacket *pkt,
 #endif
 
 #define COMMON_OPTIONS \
-    { "cpu-used",        "Quality/Speed ratio modifier",           OFFSET(cpu_used),        AV_OPT_TYPE_INT, {.i64 = INT_MIN}, INT_MIN, INT_MAX, VE}, \
+    { "cpu-used",        "Quality/Speed ratio modifier",           OFFSET(cpu_used),        AV_OPT_TYPE_INT, {.i64 = 1},       -16,     16,      VE}, \
     { "auto-alt-ref",    "Enable use of alternate reference " \
                          "frames (2-pass only)",                   OFFSET(auto_alt_ref),    AV_OPT_TYPE_INT, {.i64 = -1},      -1,      1,       VE}, \
     { "lag-in-frames",   "Number of frames to look ahead for " \

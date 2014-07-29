@@ -20,8 +20,11 @@
  */
 
 #include "libavutil/common.h"
+#include "libavutil/intreadwrite.h"
+
 #include "bit_depth_template.c"
 #include "hpel_template.c"
+#include "pel_template.c"
 
 static inline void FUNC(copy_block2)(uint8_t *dst, const uint8_t *src, int dstStride, int srcStride, int h)
 {

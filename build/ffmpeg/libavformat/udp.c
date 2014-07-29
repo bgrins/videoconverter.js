@@ -62,6 +62,7 @@ typedef struct {
     int ttl;
     int buffer_size;
     int is_multicast;
+    int is_broadcast;
     int local_port;
     int reuse_socket;
     int overrun_nonfatal;
@@ -96,6 +97,7 @@ static const AVOption options[] = {
 {"localaddr", "choose local IP address", OFFSET(local_addr), AV_OPT_TYPE_STRING, {.str = ""}, 0, 0, D|E },
 {"pkt_size", "set size of UDP packets", OFFSET(packet_size), AV_OPT_TYPE_INT, {.i64 = 1472}, 0, INT_MAX, D|E },
 {"reuse", "explicitly allow or disallow reusing UDP sockets", OFFSET(reuse_socket), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, D|E },
+{"broadcast", "explicitly allow or disallow broadcast destination", OFFSET(is_broadcast), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, E },
 {"ttl", "set the time to live value (for multicast only)", OFFSET(ttl), AV_OPT_TYPE_INT, {.i64 = 16}, 0, INT_MAX, E },
 {"connect", "set if connect() should be called on socket", OFFSET(is_connected), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, D|E },
 /* TODO 'sources', 'block' option */
@@ -602,6 +604,8 @@ static int udp_open(URLContext *h, const char *uri, int flags)
         }
         if (!is_output && av_find_info_tag(buf, sizeof(buf), "timeout", p))
             s->timeout = strtol(buf, NULL, 10);
+        if (is_output && av_find_info_tag(buf, sizeof(buf), "broadcast", p))
+            s->is_broadcast = strtol(buf, NULL, 10);
     }
     /* handling needed to support options picking from both AVOption and URL */
     s->circular_buffer_size *= 188;
@@ -640,6 +644,13 @@ static int udp_open(URLContext *h, const char *uri, int flags)
         s->reuse_socket = 1;
         if (setsockopt (udp_fd, SOL_SOCKET, SO_REUSEADDR, &(s->reuse_socket), sizeof(s->reuse_socket)) != 0)
             goto fail;
+    }
+
+    if (s->is_broadcast) {
+#ifdef SO_BROADCAST
+        if (setsockopt (udp_fd, SOL_SOCKET, SO_BROADCAST, &(s->is_broadcast), sizeof(s->is_broadcast)) != 0)
+#endif
+           goto fail;
     }
 
     /* If multicast, try binding the multicast address first, to avoid
@@ -695,8 +706,7 @@ static int udp_open(URLContext *h, const char *uri, int flags)
             goto fail;
         }
     } else {
-        /* set udp recv buffer size to the largest possible udp packet size to
-         * avoid losing data on OSes that set this too low by default. */
+        /* set udp recv buffer size to the requested value (default 64K) */
         tmp = s->buffer_size;
         if (setsockopt(udp_fd, SOL_SOCKET, SO_RCVBUF, &tmp, sizeof(tmp)) < 0) {
             log_net_error(h, AV_LOG_WARNING, "setsockopt(SO_RECVBUF)");
@@ -704,8 +714,11 @@ static int udp_open(URLContext *h, const char *uri, int flags)
         len = sizeof(tmp);
         if (getsockopt(udp_fd, SOL_SOCKET, SO_RCVBUF, &tmp, &len) < 0) {
             log_net_error(h, AV_LOG_WARNING, "getsockopt(SO_RCVBUF)");
-        } else
+        } else {
             av_log(h, AV_LOG_DEBUG, "end receive buffer size reported is %d\n", tmp);
+            if(tmp < s->buffer_size)
+                av_log(h, AV_LOG_WARNING, "attempted to set receive buffer to size %d but it only ended up set as %d", s->buffer_size, tmp);
+        }
 
         /* make the socket non-blocking */
         ff_socket_nonblock(udp_fd, 1);
@@ -759,7 +772,7 @@ static int udp_open(URLContext *h, const char *uri, int flags)
  fail:
     if (udp_fd >= 0)
         closesocket(udp_fd);
-    av_fifo_free(s->fifo);
+    av_fifo_freep(&s->fifo);
     for (i = 0; i < num_include_sources; i++)
         av_freep(&include_sources[i]);
     for (i = 0; i < num_exclude_sources; i++)
@@ -865,7 +878,7 @@ static int udp_close(URLContext *h)
         pthread_cond_destroy(&s->cond);
     }
 #endif
-    av_fifo_free(s->fifo);
+    av_fifo_freep(&s->fifo);
     return 0;
 }
 
