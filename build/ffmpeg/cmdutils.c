@@ -66,6 +66,7 @@ AVDictionary *swr_opts;
 AVDictionary *format_opts, *codec_opts, *resample_opts;
 
 static FILE *report_file;
+static int report_file_level = AV_LOG_DEBUG;
 int hide_banner = 0;
 
 void init_opts(void)
@@ -104,8 +105,10 @@ static void log_callback_report(void *ptr, int level, const char *fmt, va_list v
     av_log_default_callback(ptr, level, fmt, vl);
     av_log_format_line(ptr, level, fmt, vl2, line, sizeof(line), &print_prefix);
     va_end(vl2);
-    fputs(line, report_file);
-    fflush(report_file);
+    if (report_file_level >= level) {
+        fputs(line, report_file);
+        fflush(report_file);
+    }
 }
 
 static void (*program_exit)(int ret);
@@ -552,6 +555,11 @@ int opt_default(void *optctx, const char *opt, const char *arg)
         }
         consumed = 1;
     }
+#else
+    if (!consumed && !strcmp(opt, "sws_flags")) {
+        av_log(NULL, AV_LOG_WARNING, "Ignoring %s %s, due to disabled swscale\n", opt, arg);
+        consumed = 1;
+    }
 #endif
 #if CONFIG_SWRESAMPLE
     swr_class = swr_get_class();
@@ -662,7 +670,7 @@ static void init_parse_context(OptionParseContext *octx,
     memset(octx, 0, sizeof(*octx));
 
     octx->nb_groups = nb_groups;
-    octx->groups    = av_mallocz(sizeof(*octx->groups) * octx->nb_groups);
+    octx->groups    = av_mallocz_array(octx->nb_groups, sizeof(*octx->groups));
     if (!octx->groups)
         exit_program(1);
 
@@ -834,10 +842,17 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
     };
     char *tail;
     int level;
+    int flags;
     int i;
 
+    flags = av_log_get_flags();
     tail = strstr(arg, "repeat");
-    av_log_set_flags(tail ? 0 : AV_LOG_SKIP_REPEATED);
+    if (tail)
+        flags &= ~AV_LOG_SKIP_REPEATED;
+    else
+        flags |= AV_LOG_SKIP_REPEATED;
+
+    av_log_set_flags(flags);
     if (tail == arg)
         arg += 6 + (arg[6]=='+');
     if(tail && !*arg)
@@ -919,6 +934,13 @@ static int init_report(const char *env)
             av_free(filename_template);
             filename_template = val;
             val = NULL;
+        } else if (!strcmp(key, "level")) {
+            char *tail;
+            report_file_level = strtol(val, &tail, 10);
+            if (*tail) {
+                av_log(NULL, AV_LOG_FATAL, "Invalid report file level\n");
+                exit_program(1);
+            }
         } else {
             av_log(NULL, AV_LOG_ERROR, "Unknown key '%s' in FFREPORT\n", key);
         }
@@ -1098,7 +1120,7 @@ void show_banner(int argc, char **argv, const OptionDef *options)
 int show_version(void *optctx, const char *opt, const char *arg)
 {
     av_log_set_callback(log_callback_help);
-    print_program_info (0           , AV_LOG_INFO);
+    print_program_info (SHOW_COPYRIGHT, AV_LOG_INFO);
     print_all_libs_info(SHOW_VERSION, AV_LOG_INFO);
 
     return 0;
@@ -1186,16 +1208,29 @@ int show_license(void *optctx, const char *opt, const char *arg)
     return 0;
 }
 
-int show_formats(void *optctx, const char *opt, const char *arg)
+static int is_device(const AVClass *avclass)
+{
+    if (!avclass)
+        return 0;
+    return avclass->category == AV_CLASS_CATEGORY_DEVICE_VIDEO_OUTPUT ||
+           avclass->category == AV_CLASS_CATEGORY_DEVICE_VIDEO_INPUT ||
+           avclass->category == AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT ||
+           avclass->category == AV_CLASS_CATEGORY_DEVICE_AUDIO_INPUT ||
+           avclass->category == AV_CLASS_CATEGORY_DEVICE_OUTPUT ||
+           avclass->category == AV_CLASS_CATEGORY_DEVICE_INPUT;
+}
+
+static int show_formats_devices(void *optctx, const char *opt, const char *arg, int device_only)
 {
     AVInputFormat *ifmt  = NULL;
     AVOutputFormat *ofmt = NULL;
     const char *last_name;
+    int is_dev;
 
-    printf("File formats:\n"
+    printf("%s\n"
            " D. = Demuxing supported\n"
            " .E = Muxing supported\n"
-           " --\n");
+           " --\n", device_only ? "Devices:" : "File formats:");
     last_name = "000";
     for (;;) {
         int decode = 0;
@@ -1204,6 +1239,9 @@ int show_formats(void *optctx, const char *opt, const char *arg)
         const char *long_name = NULL;
 
         while ((ofmt = av_oformat_next(ofmt))) {
+            is_dev = is_device(ofmt->priv_class);
+            if (!is_dev && device_only)
+                continue;
             if ((name == NULL || strcmp(ofmt->name, name) < 0) &&
                 strcmp(ofmt->name, last_name) > 0) {
                 name      = ofmt->name;
@@ -1212,6 +1250,9 @@ int show_formats(void *optctx, const char *opt, const char *arg)
             }
         }
         while ((ifmt = av_iformat_next(ifmt))) {
+            is_dev = is_device(ifmt->priv_class);
+            if (!is_dev && device_only)
+                continue;
             if ((name == NULL || strcmp(ifmt->name, name) < 0) &&
                 strcmp(ifmt->name, last_name) > 0) {
                 name      = ifmt->name;
@@ -1232,6 +1273,16 @@ int show_formats(void *optctx, const char *opt, const char *arg)
             long_name ? long_name:" ");
     }
     return 0;
+}
+
+int show_formats(void *optctx, const char *opt, const char *arg)
+{
+    return show_formats_devices(optctx, opt, arg, 0);
+}
+
+int show_devices(void *optctx, const char *opt, const char *arg)
+{
+    return show_formats_devices(optctx, opt, arg, 1);
 }
 
 #define PRINT_CODEC_SUPPORTED(codec, field, type, list_name, term, get_name) \
@@ -1377,6 +1428,9 @@ int show_codecs(void *optctx, const char *opt, const char *arg)
     for (i = 0; i < nb_codecs; i++) {
         const AVCodecDescriptor *desc = codecs[i];
         const AVCodec *codec = NULL;
+
+        if (strstr(desc->name, "_deprecated"))
+            continue;
 
         printf(" ");
         printf(avcodec_find_decoder(desc->id) ? "D" : ".");
@@ -1942,7 +1996,8 @@ AVDictionary *filter_codec_opts(AVDictionary *opts, enum AVCodecID codec_id,
             }
 
         if (av_opt_find(&cc, t->key, NULL, flags, AV_OPT_SEARCH_FAKE_OBJ) ||
-            (codec && codec->priv_class &&
+            !codec ||
+            (codec->priv_class &&
              av_opt_find(&codec->priv_class, t->key, NULL, flags,
                          AV_OPT_SEARCH_FAKE_OBJ)))
             av_dict_set(&ret, t->key, t->value, 0);
@@ -1965,7 +2020,7 @@ AVDictionary **setup_find_stream_info_opts(AVFormatContext *s,
 
     if (!s->nb_streams)
         return NULL;
-    opts = av_mallocz(s->nb_streams * sizeof(*opts));
+    opts = av_mallocz_array(s->nb_streams, sizeof(*opts));
     if (!opts) {
         av_log(NULL, AV_LOG_ERROR,
                "Could not alloc memory for stream options.\n");

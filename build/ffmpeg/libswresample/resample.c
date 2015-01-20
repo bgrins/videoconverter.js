@@ -25,32 +25,8 @@
  * @author Michael Niedermayer <michaelni@gmx.at>
  */
 
-#include "libavutil/log.h"
 #include "libavutil/avassert.h"
-#include "swresample_internal.h"
-
-
-typedef struct ResampleContext {
-    const AVClass *av_class;
-    uint8_t *filter_bank;
-    int filter_length;
-    int filter_alloc;
-    int ideal_dst_incr;
-    int dst_incr;
-    int index;
-    int frac;
-    int src_incr;
-    int compensation_distance;
-    int phase_shift;
-    int phase_mask;
-    int linear;
-    enum SwrFilterType filter_type;
-    int kaiser_beta;
-    double factor;
-    enum AVSampleFormat format;
-    int felem_size;
-    int filter_shift;
-} ResampleContext;
+#include "resample.h"
 
 /**
  * 0th order modified bessel function of the first kind.
@@ -197,7 +173,8 @@ static int build_filter(ResampleContext *c, void *filter, double factor, int tap
 
 static ResampleContext *resample_init(ResampleContext *c, int out_rate, int in_rate, int filter_size, int phase_shift, int linear,
                                     double cutoff0, enum AVSampleFormat format, enum SwrFilterType filter_type, int kaiser_beta,
-                                    double precision, int cheby){
+                                    double precision, int cheby)
+{
     double cutoff = cutoff0? cutoff0 : 0.97;
     double factor= FFMIN(out_rate * cutoff / in_rate, 1.0);
     int phase_count= 1<<phase_shift;
@@ -254,10 +231,14 @@ static ResampleContext *resample_init(ResampleContext *c, int out_rate, int in_r
     c->compensation_distance= 0;
     if(!av_reduce(&c->src_incr, &c->dst_incr, out_rate, in_rate * (int64_t)phase_count, INT32_MAX/2))
         goto error;
-    c->ideal_dst_incr= c->dst_incr;
+    c->ideal_dst_incr = c->dst_incr;
+    c->dst_incr_div   = c->dst_incr / c->src_incr;
+    c->dst_incr_mod   = c->dst_incr % c->src_incr;
 
     c->index= -phase_count*((c->filter_length-1)/2);
     c->frac= 0;
+
+    swri_resample_dsp_init(c);
 
     return c;
 error:
@@ -279,65 +260,78 @@ static int set_compensation(ResampleContext *c, int sample_delta, int compensati
         c->dst_incr = c->ideal_dst_incr - c->ideal_dst_incr * (int64_t)sample_delta / compensation_distance;
     else
         c->dst_incr = c->ideal_dst_incr;
+
+    c->dst_incr_div   = c->dst_incr / c->src_incr;
+    c->dst_incr_mod   = c->dst_incr % c->src_incr;
+
     return 0;
 }
 
-#define TEMPLATE_RESAMPLE_S16
-#include "resample_template.c"
-#undef TEMPLATE_RESAMPLE_S16
+static int swri_resample(ResampleContext *c,
+                         uint8_t *dst, const uint8_t *src, int *consumed,
+                         int src_size, int dst_size, int update_ctx)
+{
+    if (c->filter_length == 1 && c->phase_shift == 0) {
+        int index= c->index;
+        int frac= c->frac;
+        int64_t index2= (1LL<<32)*c->frac/c->src_incr + (1LL<<32)*index;
+        int64_t incr= (1LL<<32) * c->dst_incr / c->src_incr;
+        int new_size = (src_size * (int64_t)c->src_incr - frac + c->dst_incr - 1) / c->dst_incr;
 
-#define TEMPLATE_RESAMPLE_S32
-#include "resample_template.c"
-#undef TEMPLATE_RESAMPLE_S32
+        dst_size= FFMIN(dst_size, new_size);
+        c->dsp.resample_one(dst, src, dst_size, index2, incr);
 
-#define TEMPLATE_RESAMPLE_FLT
-#include "resample_template.c"
-#undef TEMPLATE_RESAMPLE_FLT
+        index += dst_size * c->dst_incr_div;
+        index += (frac + dst_size * (int64_t)c->dst_incr_mod) / c->src_incr;
+        av_assert2(index >= 0);
+        *consumed= index;
+        if (update_ctx) {
+            c->frac   = (frac + dst_size * (int64_t)c->dst_incr_mod) % c->src_incr;
+            c->index = 0;
+        }
+    } else {
+        int64_t end_index = (1LL + src_size - c->filter_length) << c->phase_shift;
+        int64_t delta_frac = (end_index - c->index) * c->src_incr - c->frac;
+        int delta_n = (delta_frac + c->dst_incr - 1) / c->dst_incr;
 
-#define TEMPLATE_RESAMPLE_DBL
-#include "resample_template.c"
-#undef TEMPLATE_RESAMPLE_DBL
+        dst_size = FFMIN(dst_size, delta_n);
+        if (dst_size > 0) {
+            *consumed = c->dsp.resample(c, dst, src, dst_size, update_ctx);
+        } else {
+            *consumed = 0;
+        }
+    }
 
-// XXX FIXME the whole C loop should be written in asm so this x86 specific code here isnt needed
-#if HAVE_MMXEXT_INLINE
-
-#include "x86/resample_mmx.h"
-
-#define TEMPLATE_RESAMPLE_S16_MMX2
-#include "resample_template.c"
-#undef TEMPLATE_RESAMPLE_S16_MMX2
-
-#if HAVE_SSSE3_INLINE
-#define TEMPLATE_RESAMPLE_S16_SSSE3
-#include "resample_template.c"
-#undef TEMPLATE_RESAMPLE_S16_SSSE3
-#endif
-
-#endif // HAVE_MMXEXT_INLINE
+    return dst_size;
+}
 
 static int multiple_resample(ResampleContext *c, AudioData *dst, int dst_size, AudioData *src, int src_size, int *consumed){
     int i, ret= -1;
     int av_unused mm_flags = av_get_cpu_flags();
-    int need_emms= 0;
+    int need_emms = c->format == AV_SAMPLE_FMT_S16P && ARCH_X86_32 &&
+                    (mm_flags & (AV_CPU_FLAG_MMX2 | AV_CPU_FLAG_SSE2)) == AV_CPU_FLAG_MMX2;
+    int64_t max_src_size = (INT64_MAX >> (c->phase_shift+1)) / c->src_incr;
+
+    if (c->compensation_distance)
+        dst_size = FFMIN(dst_size, c->compensation_distance);
+    src_size = FFMIN(src_size, max_src_size);
 
     for(i=0; i<dst->ch_count; i++){
-#if HAVE_MMXEXT_INLINE
-#if HAVE_SSSE3_INLINE
-             if(c->format == AV_SAMPLE_FMT_S16P && (mm_flags&AV_CPU_FLAG_SSSE3)) ret= swri_resample_int16_ssse3(c, (int16_t*)dst->ch[i], (const int16_t*)src->ch[i], consumed, src_size, dst_size, i+1==dst->ch_count);
-        else
-#endif
-             if(c->format == AV_SAMPLE_FMT_S16P && (mm_flags&AV_CPU_FLAG_MMX2 )){
-                 ret= swri_resample_int16_mmx2 (c, (int16_t*)dst->ch[i], (const int16_t*)src->ch[i], consumed, src_size, dst_size, i+1==dst->ch_count);
-                 need_emms= 1;
-             } else
-#endif
-             if(c->format == AV_SAMPLE_FMT_S16P) ret= swri_resample_int16(c, (int16_t*)dst->ch[i], (const int16_t*)src->ch[i], consumed, src_size, dst_size, i+1==dst->ch_count);
-        else if(c->format == AV_SAMPLE_FMT_S32P) ret= swri_resample_int32(c, (int32_t*)dst->ch[i], (const int32_t*)src->ch[i], consumed, src_size, dst_size, i+1==dst->ch_count);
-        else if(c->format == AV_SAMPLE_FMT_FLTP) ret= swri_resample_float(c, (float  *)dst->ch[i], (const float  *)src->ch[i], consumed, src_size, dst_size, i+1==dst->ch_count);
-        else if(c->format == AV_SAMPLE_FMT_DBLP) ret= swri_resample_double(c,(double *)dst->ch[i], (const double *)src->ch[i], consumed, src_size, dst_size, i+1==dst->ch_count);
+        ret= swri_resample(c, dst->ch[i], src->ch[i],
+                           consumed, src_size, dst_size, i+1==dst->ch_count);
     }
     if(need_emms)
         emms_c();
+
+    if (c->compensation_distance) {
+        c->compensation_distance -= ret;
+        if (!c->compensation_distance) {
+            c->dst_incr     = c->ideal_dst_incr;
+            c->dst_incr_div = c->dst_incr / c->src_incr;
+            c->dst_incr_mod = c->dst_incr % c->src_incr;
+        }
+    }
+
     return ret;
 }
 
@@ -367,6 +361,51 @@ static int resample_flush(struct SwrContext *s) {
     return 0;
 }
 
+// in fact the whole handle multiple ridiculously small buffers might need more thinking...
+static int invert_initial_buffer(ResampleContext *c, AudioData *dst, const AudioData *src,
+                                 int in_count, int *out_idx, int *out_sz)
+{
+    int n, ch, num = FFMIN(in_count + *out_sz, c->filter_length + 1), res;
+
+    if (c->index >= 0)
+        return 0;
+
+    if ((res = swri_realloc_audio(dst, c->filter_length * 2 + 1)) < 0)
+        return res;
+
+    // copy
+    for (n = *out_sz; n < num; n++) {
+        for (ch = 0; ch < src->ch_count; ch++) {
+            memcpy(dst->ch[ch] + ((c->filter_length + n) * c->felem_size),
+                   src->ch[ch] + ((n - *out_sz) * c->felem_size), c->felem_size);
+        }
+    }
+
+    // if not enough data is in, return and wait for more
+    if (num < c->filter_length + 1) {
+        *out_sz = num;
+        *out_idx = c->filter_length;
+        return INT_MAX;
+    }
+
+    // else invert
+    for (n = 1; n <= c->filter_length; n++) {
+        for (ch = 0; ch < src->ch_count; ch++) {
+            memcpy(dst->ch[ch] + ((c->filter_length - n) * c->felem_size),
+                   dst->ch[ch] + ((c->filter_length + n) * c->felem_size),
+                   c->felem_size);
+        }
+    }
+
+    res = num - *out_sz;
+    *out_idx = c->filter_length + (c->index >> c->phase_shift);
+    *out_sz = 1 + c->filter_length * 2 - *out_idx;
+    c->index &= c->phase_mask;
+    av_assert1(res > 0);
+
+    return res;
+}
+
 struct Resampler const swri_resampler={
   resample_init,
   resample_free,
@@ -374,4 +413,5 @@ struct Resampler const swri_resampler={
   resample_flush,
   set_compensation,
   get_delay,
+  invert_initial_buffer,
 };

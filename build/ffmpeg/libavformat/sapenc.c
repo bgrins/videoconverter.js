@@ -140,7 +140,8 @@ static int sap_write_header(AVFormatContext *s)
         goto fail;
     }
 
-    s->start_time_realtime = av_gettime();
+    if (s->start_time_realtime == 0  ||  s->start_time_realtime == AV_NOPTS_VALUE)
+        s->start_time_realtime = av_gettime();
     for (i = 0; i < s->nb_streams; i++) {
         URLContext *fd;
 
@@ -157,6 +158,7 @@ static int sap_write_header(AVFormatContext *s)
         if (ret < 0)
             goto fail;
         s->streams[i]->priv_data = contexts[i];
+        s->streams[i]->time_base = contexts[i]->streams[0]->time_base;
         av_strlcpy(contexts[i]->filename, url, sizeof(contexts[i]->filename));
     }
 
@@ -244,7 +246,7 @@ static int sap_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
     AVFormatContext *rtpctx;
     struct SAPState *sap = s->priv_data;
-    int64_t now = av_gettime();
+    int64_t now = av_gettime_relative();
 
     if (!sap->last_time || now - sap->last_time > 5000000) {
         int ret = ffurl_write(sap->ann_fd, sap->ann, sap->ann_size);

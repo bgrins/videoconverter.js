@@ -1,6 +1,9 @@
 /*
+ * MMX optimized DSP utils
  * Copyright (c) 2000, 2001 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
+ *
+ * MMX optimization by Nick Kurshev <nickols_k@mail.ru>
  *
  * This file is part of FFmpeg.
  *
@@ -19,682 +22,382 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config.h"
 #include "libavutil/attributes.h"
 #include "libavutil/cpu.h"
-#include "libavutil/internal.h"
 #include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/dsputil.h"
-#include "libavcodec/simple_idct.h"
-#include "libavcodec/version.h"
+#include "libavcodec/mpegvideo.h"
 #include "dsputil_x86.h"
-#include "idct_xvid.h"
 
-void ff_put_pixels8_l2_mmxext(uint8_t *dst, uint8_t *src1, uint8_t *src2,
-                              int dstStride, int src1Stride, int h);
-void ff_put_no_rnd_pixels8_l2_mmxext(uint8_t *dst, uint8_t *src1,
-                                     uint8_t *src2, int dstStride,
-                                     int src1Stride, int h);
-void ff_avg_pixels8_l2_mmxext(uint8_t *dst, uint8_t *src1, uint8_t *src2,
-                              int dstStride, int src1Stride, int h);
-void ff_put_pixels16_l2_mmxext(uint8_t *dst, uint8_t *src1, uint8_t *src2,
-                               int dstStride, int src1Stride, int h);
-void ff_avg_pixels16_l2_mmxext(uint8_t *dst, uint8_t *src1, uint8_t *src2,
-                               int dstStride, int src1Stride, int h);
-void ff_put_no_rnd_pixels16_l2_mmxext(uint8_t *dst, uint8_t *src1, uint8_t *src2,
-                                      int dstStride, int src1Stride, int h);
-void ff_put_mpeg4_qpel16_h_lowpass_mmxext(uint8_t *dst, uint8_t *src,
-                                         int dstStride, int srcStride, int h);
-void ff_avg_mpeg4_qpel16_h_lowpass_mmxext(uint8_t *dst, uint8_t *src,
-                                         int dstStride, int srcStride, int h);
-void ff_put_no_rnd_mpeg4_qpel16_h_lowpass_mmxext(uint8_t *dst, uint8_t *src,
-                                                 int dstStride, int srcStride,
-                                                 int h);
-void ff_put_mpeg4_qpel8_h_lowpass_mmxext(uint8_t *dst, uint8_t *src,
-                                        int dstStride, int srcStride, int h);
-void ff_avg_mpeg4_qpel8_h_lowpass_mmxext(uint8_t *dst, uint8_t *src,
-                                        int dstStride, int srcStride, int h);
-void ff_put_no_rnd_mpeg4_qpel8_h_lowpass_mmxext(uint8_t *dst, uint8_t *src,
-                                                int dstStride, int srcStride,
-                                                int h);
-void ff_put_mpeg4_qpel16_v_lowpass_mmxext(uint8_t *dst, uint8_t *src,
-                                         int dstStride, int srcStride);
-void ff_avg_mpeg4_qpel16_v_lowpass_mmxext(uint8_t *dst, uint8_t *src,
-                                         int dstStride, int srcStride);
-void ff_put_no_rnd_mpeg4_qpel16_v_lowpass_mmxext(uint8_t *dst, uint8_t *src,
-                                                 int dstStride, int srcStride);
-void ff_put_mpeg4_qpel8_v_lowpass_mmxext(uint8_t *dst, uint8_t *src,
-                                        int dstStride, int srcStride);
-void ff_avg_mpeg4_qpel8_v_lowpass_mmxext(uint8_t *dst, uint8_t *src,
-                                        int dstStride, int srcStride);
-void ff_put_no_rnd_mpeg4_qpel8_v_lowpass_mmxext(uint8_t *dst, uint8_t *src,
-                                                int dstStride, int srcStride);
-#define ff_put_no_rnd_pixels16_mmxext ff_put_pixels16_mmxext
-#define ff_put_no_rnd_pixels8_mmxext ff_put_pixels8_mmxext
+int ff_sum_abs_dctelem_mmx(int16_t *block);
+int ff_sum_abs_dctelem_mmxext(int16_t *block);
+int ff_sum_abs_dctelem_sse2(int16_t *block);
+int ff_sum_abs_dctelem_ssse3(int16_t *block);
+int ff_sse8_mmx(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
+                int line_size, int h);
+int ff_sse16_mmx(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
+                 int line_size, int h);
+int ff_sse16_sse2(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
+                  int line_size, int h);
+int ff_hf_noise8_mmx(uint8_t *pix1, int lsize, int h);
+int ff_hf_noise16_mmx(uint8_t *pix1, int lsize, int h);
 
-int32_t ff_scalarproduct_int16_mmxext(const int16_t *v1, const int16_t *v2,
-                                      int order);
-int32_t ff_scalarproduct_int16_sse2(const int16_t *v1, const int16_t *v2,
-                                    int order);
-int32_t ff_scalarproduct_and_madd_int16_mmxext(int16_t *v1, const int16_t *v2,
-                                               const int16_t *v3,
-                                               int order, int mul);
-int32_t ff_scalarproduct_and_madd_int16_sse2(int16_t *v1, const int16_t *v2,
-                                             const int16_t *v3,
-                                             int order, int mul);
-int32_t ff_scalarproduct_and_madd_int16_ssse3(int16_t *v1, const int16_t *v2,
-                                              const int16_t *v3,
-                                              int order, int mul);
+#define hadamard_func(cpu)                                              \
+    int ff_hadamard8_diff_ ## cpu(MpegEncContext *s, uint8_t *src1,     \
+                                  uint8_t *src2, int stride, int h);    \
+    int ff_hadamard8_diff16_ ## cpu(MpegEncContext *s, uint8_t *src1,   \
+                                    uint8_t *src2, int stride, int h);
 
-void ff_bswap32_buf_ssse3(uint32_t *dst, const uint32_t *src, int w);
-void ff_bswap32_buf_sse2(uint32_t *dst, const uint32_t *src, int w);
-
-void ff_add_hfyu_median_prediction_mmxext(uint8_t *dst, const uint8_t *top,
-                                          const uint8_t *diff, int w,
-                                          int *left, int *left_top);
-int  ff_add_hfyu_left_prediction_ssse3(uint8_t *dst, const uint8_t *src,
-                                       int w, int left);
-int  ff_add_hfyu_left_prediction_sse4(uint8_t *dst, const uint8_t *src,
-                                      int w, int left);
-
-void ff_vector_clip_int32_mmx     (int32_t *dst, const int32_t *src,
-                                   int32_t min, int32_t max, unsigned int len);
-void ff_vector_clip_int32_sse2    (int32_t *dst, const int32_t *src,
-                                   int32_t min, int32_t max, unsigned int len);
-void ff_vector_clip_int32_int_sse2(int32_t *dst, const int32_t *src,
-                                   int32_t min, int32_t max, unsigned int len);
-void ff_vector_clip_int32_sse4    (int32_t *dst, const int32_t *src,
-                                   int32_t min, int32_t max, unsigned int len);
+hadamard_func(mmx)
+hadamard_func(mmxext)
+hadamard_func(sse2)
+hadamard_func(ssse3)
 
 #if HAVE_YASM
+static int nsse16_mmx(MpegEncContext *c, uint8_t *pix1, uint8_t *pix2,
+                      int line_size, int h)
+{
+    int score1, score2;
 
-PIXELS16(static, ff_avg, , , _mmxext)
-PIXELS16(static, ff_put, , , _mmxext)
+    if (c)
+        score1 = c->dsp.sse[0](c, pix1, pix2, line_size, h);
+    else
+        score1 = ff_sse16_mmx(c, pix1, pix2, line_size, h);
+    score2 = ff_hf_noise16_mmx(pix1, line_size, h) + ff_hf_noise8_mmx(pix1+8, line_size, h)
+           - ff_hf_noise16_mmx(pix2, line_size, h) - ff_hf_noise8_mmx(pix2+8, line_size, h);
 
-#define QPEL_OP(OPNAME, RND, MMX)                                       \
-static void OPNAME ## qpel8_mc00_ ## MMX (uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    ff_ ## OPNAME ## pixels8_ ## MMX(dst, src, stride, 8);              \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc10_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    uint64_t temp[8];                                                   \
-    uint8_t * const half = (uint8_t*)temp;                              \
-    ff_put ## RND ## mpeg4_qpel8_h_lowpass_ ## MMX(half, src, 8,        \
-                                                   stride, 8);          \
-    ff_ ## OPNAME ## pixels8_l2_ ## MMX(dst, src, half,                 \
-                                        stride, stride, 8);             \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc20_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    ff_ ## OPNAME ## mpeg4_qpel8_h_lowpass_ ## MMX(dst, src, stride,    \
-                                                   stride, 8);          \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc30_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    uint64_t temp[8];                                                   \
-    uint8_t * const half = (uint8_t*)temp;                              \
-    ff_put ## RND ## mpeg4_qpel8_h_lowpass_ ## MMX(half, src, 8,        \
-                                                   stride, 8);          \
-    ff_ ## OPNAME ## pixels8_l2_ ## MMX(dst, src + 1, half, stride,     \
-                                        stride, 8);                     \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc01_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    uint64_t temp[8];                                                   \
-    uint8_t * const half = (uint8_t*)temp;                              \
-    ff_put ## RND ## mpeg4_qpel8_v_lowpass_ ## MMX(half, src,           \
-                                                   8, stride);          \
-    ff_ ## OPNAME ## pixels8_l2_ ## MMX(dst, src, half,                 \
-                                        stride, stride, 8);             \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc02_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    ff_ ## OPNAME ## mpeg4_qpel8_v_lowpass_ ## MMX(dst, src,            \
-                                                   stride, stride);     \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc03_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    uint64_t temp[8];                                                   \
-    uint8_t * const half = (uint8_t*)temp;                              \
-    ff_put ## RND ## mpeg4_qpel8_v_lowpass_ ## MMX(half, src,           \
-                                                   8, stride);          \
-    ff_ ## OPNAME ## pixels8_l2_ ## MMX(dst, src + stride, half, stride,\
-                                        stride, 8);                     \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc11_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    uint64_t half[8 + 9];                                               \
-    uint8_t * const halfH  = ((uint8_t*)half) + 64;                     \
-    uint8_t * const halfHV = ((uint8_t*)half);                          \
-    ff_put ## RND ## mpeg4_qpel8_h_lowpass_ ## MMX(halfH, src, 8,       \
-                                                   stride, 9);          \
-    ff_put ## RND ## pixels8_l2_ ## MMX(halfH, src, halfH, 8,           \
-                                        stride, 9);                     \
-    ff_put ## RND ## mpeg4_qpel8_v_lowpass_ ## MMX(halfHV, halfH, 8, 8);\
-    ff_ ## OPNAME ## pixels8_l2_ ## MMX(dst, halfH, halfHV,             \
-                                        stride, 8, 8);                  \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc31_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    uint64_t half[8 + 9];                                               \
-    uint8_t * const halfH  = ((uint8_t*)half) + 64;                     \
-    uint8_t * const halfHV = ((uint8_t*)half);                          \
-    ff_put ## RND ## mpeg4_qpel8_h_lowpass_ ## MMX(halfH, src, 8,       \
-                                                   stride, 9);          \
-    ff_put ## RND ## pixels8_l2_ ## MMX(halfH, src + 1, halfH, 8,       \
-                                        stride, 9);                     \
-    ff_put ## RND ## mpeg4_qpel8_v_lowpass_ ## MMX(halfHV, halfH, 8, 8);\
-    ff_ ## OPNAME ## pixels8_l2_ ## MMX(dst, halfH, halfHV,             \
-                                        stride, 8, 8);                  \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc13_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    uint64_t half[8 + 9];                                               \
-    uint8_t * const halfH  = ((uint8_t*)half) + 64;                     \
-    uint8_t * const halfHV = ((uint8_t*)half);                          \
-    ff_put ## RND ## mpeg4_qpel8_h_lowpass_ ## MMX(halfH, src, 8,       \
-                                                   stride, 9);          \
-    ff_put ## RND ## pixels8_l2_ ## MMX(halfH, src, halfH, 8,           \
-                                        stride, 9);                     \
-    ff_put ## RND ## mpeg4_qpel8_v_lowpass_ ## MMX(halfHV, halfH, 8, 8);\
-    ff_ ## OPNAME ## pixels8_l2_ ## MMX(dst, halfH + 8, halfHV,         \
-                                        stride, 8, 8);                  \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc33_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    uint64_t half[8 + 9];                                               \
-    uint8_t * const halfH  = ((uint8_t*)half) + 64;                     \
-    uint8_t * const halfHV = ((uint8_t*)half);                          \
-    ff_put ## RND ## mpeg4_qpel8_h_lowpass_ ## MMX(halfH, src, 8,       \
-                                                   stride, 9);          \
-    ff_put ## RND ## pixels8_l2_ ## MMX(halfH, src + 1, halfH, 8,       \
-                                        stride, 9);                     \
-    ff_put ## RND ## mpeg4_qpel8_v_lowpass_ ## MMX(halfHV, halfH, 8, 8);\
-    ff_ ## OPNAME ## pixels8_l2_ ## MMX(dst, halfH + 8, halfHV,         \
-                                        stride, 8, 8);                  \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc21_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    uint64_t half[8 + 9];                                               \
-    uint8_t * const halfH  = ((uint8_t*)half) + 64;                     \
-    uint8_t * const halfHV = ((uint8_t*)half);                          \
-    ff_put ## RND ## mpeg4_qpel8_h_lowpass_ ## MMX(halfH, src, 8,       \
-                                                   stride, 9);          \
-    ff_put ## RND ## mpeg4_qpel8_v_lowpass_ ## MMX(halfHV, halfH, 8, 8);\
-    ff_ ## OPNAME ## pixels8_l2_ ## MMX(dst, halfH, halfHV,             \
-                                        stride, 8, 8);                  \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc23_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    uint64_t half[8 + 9];                                               \
-    uint8_t * const halfH  = ((uint8_t*)half) + 64;                     \
-    uint8_t * const halfHV = ((uint8_t*)half);                          \
-    ff_put ## RND ## mpeg4_qpel8_h_lowpass_ ## MMX(halfH, src, 8,       \
-                                                   stride, 9);          \
-    ff_put ## RND ## mpeg4_qpel8_v_lowpass_ ## MMX(halfHV, halfH, 8, 8);\
-    ff_ ## OPNAME ## pixels8_l2_ ## MMX(dst, halfH + 8, halfHV,         \
-                                        stride, 8, 8);                  \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc12_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    uint64_t half[8 + 9];                                               \
-    uint8_t * const halfH = ((uint8_t*)half);                           \
-    ff_put ## RND ## mpeg4_qpel8_h_lowpass_ ## MMX(halfH, src, 8,       \
-                                                   stride, 9);          \
-    ff_put ## RND ## pixels8_l2_ ## MMX(halfH, src, halfH,              \
-                                        8, stride, 9);                  \
-    ff_ ## OPNAME ## mpeg4_qpel8_v_lowpass_ ## MMX(dst, halfH,          \
-                                                   stride, 8);          \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc32_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    uint64_t half[8 + 9];                                               \
-    uint8_t * const halfH = ((uint8_t*)half);                           \
-    ff_put ## RND ## mpeg4_qpel8_h_lowpass_ ## MMX(halfH, src, 8,       \
-                                                   stride, 9);          \
-    ff_put ## RND ## pixels8_l2_ ## MMX(halfH, src + 1, halfH, 8,       \
-                                        stride, 9);                     \
-    ff_ ## OPNAME ## mpeg4_qpel8_v_lowpass_ ## MMX(dst, halfH,          \
-                                                   stride, 8);          \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel8_mc22_ ## MMX(uint8_t *dst, uint8_t *src,    \
-                                         ptrdiff_t stride)              \
-{                                                                       \
-    uint64_t half[9];                                                   \
-    uint8_t * const halfH = ((uint8_t*)half);                           \
-    ff_put ## RND ## mpeg4_qpel8_h_lowpass_ ## MMX(halfH, src, 8,       \
-                                                   stride, 9);          \
-    ff_ ## OPNAME ## mpeg4_qpel8_v_lowpass_ ## MMX(dst, halfH,          \
-                                                   stride, 8);          \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc00_ ## MMX (uint8_t *dst, uint8_t *src,  \
-                                           ptrdiff_t stride)            \
-{                                                                       \
-    ff_ ## OPNAME ## pixels16_ ## MMX(dst, src, stride, 16);            \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc10_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    uint64_t temp[32];                                                  \
-    uint8_t * const half = (uint8_t*)temp;                              \
-    ff_put ## RND ## mpeg4_qpel16_h_lowpass_ ## MMX(half, src, 16,      \
-                                                    stride, 16);        \
-    ff_ ## OPNAME ## pixels16_l2_ ## MMX(dst, src, half, stride,        \
-                                         stride, 16);                   \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc20_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    ff_ ## OPNAME ## mpeg4_qpel16_h_lowpass_ ## MMX(dst, src,           \
-                                                    stride, stride, 16);\
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc30_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    uint64_t temp[32];                                                  \
-    uint8_t * const half = (uint8_t*)temp;                              \
-    ff_put ## RND ## mpeg4_qpel16_h_lowpass_ ## MMX(half, src, 16,      \
-                                                    stride, 16);        \
-    ff_ ## OPNAME ## pixels16_l2_ ## MMX(dst, src + 1, half,            \
-                                         stride, stride, 16);           \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc01_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    uint64_t temp[32];                                                  \
-    uint8_t * const half = (uint8_t*)temp;                              \
-    ff_put ## RND ## mpeg4_qpel16_v_lowpass_ ## MMX(half, src, 16,      \
-                                                    stride);            \
-    ff_ ## OPNAME ## pixels16_l2_ ## MMX(dst, src, half, stride,        \
-                                         stride, 16);                   \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc02_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    ff_ ## OPNAME ## mpeg4_qpel16_v_lowpass_ ## MMX(dst, src,           \
-                                                    stride, stride);    \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc03_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    uint64_t temp[32];                                                  \
-    uint8_t * const half = (uint8_t*)temp;                              \
-    ff_put ## RND ## mpeg4_qpel16_v_lowpass_ ## MMX(half, src, 16,      \
-                                                    stride);            \
-    ff_ ## OPNAME ## pixels16_l2_ ## MMX(dst, src+stride, half,         \
-                                         stride, stride, 16);           \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc11_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    uint64_t half[16 * 2 + 17 * 2];                                     \
-    uint8_t * const halfH  = ((uint8_t*)half) + 256;                    \
-    uint8_t * const halfHV = ((uint8_t*)half);                          \
-    ff_put ## RND ## mpeg4_qpel16_h_lowpass_ ## MMX(halfH, src, 16,     \
-                                                    stride, 17);        \
-    ff_put ## RND ## pixels16_l2_ ## MMX(halfH, src, halfH, 16,         \
-                                         stride, 17);                   \
-    ff_put ## RND ## mpeg4_qpel16_v_lowpass_ ## MMX(halfHV, halfH,      \
-                                                    16, 16);            \
-    ff_ ## OPNAME ## pixels16_l2_ ## MMX(dst, halfH, halfHV,            \
-                                         stride, 16, 16);               \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc31_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    uint64_t half[16 * 2 + 17 * 2];                                     \
-    uint8_t * const halfH  = ((uint8_t*)half) + 256;                    \
-    uint8_t * const halfHV = ((uint8_t*)half);                          \
-    ff_put ## RND ## mpeg4_qpel16_h_lowpass_ ## MMX(halfH, src, 16,     \
-                                                    stride, 17);        \
-    ff_put ## RND ## pixels16_l2_ ## MMX(halfH, src + 1, halfH, 16,     \
-                                         stride, 17);                   \
-    ff_put ## RND ## mpeg4_qpel16_v_lowpass_ ## MMX(halfHV, halfH,      \
-                                                    16, 16);            \
-    ff_ ## OPNAME ## pixels16_l2_ ## MMX(dst, halfH, halfHV,            \
-                                         stride, 16, 16);               \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc13_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    uint64_t half[16 * 2 + 17 * 2];                                     \
-    uint8_t * const halfH  = ((uint8_t*)half) + 256;                    \
-    uint8_t * const halfHV = ((uint8_t*)half);                          \
-    ff_put ## RND ## mpeg4_qpel16_h_lowpass_ ## MMX(halfH, src, 16,     \
-                                                    stride, 17);        \
-    ff_put ## RND ## pixels16_l2_ ## MMX(halfH, src, halfH, 16,         \
-                                         stride, 17);                   \
-    ff_put ## RND ## mpeg4_qpel16_v_lowpass_ ## MMX(halfHV, halfH,      \
-                                                    16, 16);            \
-    ff_ ## OPNAME ## pixels16_l2_ ## MMX(dst, halfH + 16, halfHV,       \
-                                         stride, 16, 16);               \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc33_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    uint64_t half[16 * 2 + 17 * 2];                                     \
-    uint8_t * const halfH  = ((uint8_t*)half) + 256;                    \
-    uint8_t * const halfHV = ((uint8_t*)half);                          \
-    ff_put ## RND ## mpeg4_qpel16_h_lowpass_ ## MMX(halfH, src, 16,     \
-                                                    stride, 17);        \
-    ff_put ## RND ## pixels16_l2_ ## MMX(halfH, src + 1, halfH, 16,     \
-                                         stride, 17);                   \
-    ff_put ## RND ## mpeg4_qpel16_v_lowpass_ ## MMX(halfHV, halfH,      \
-                                                    16, 16);            \
-    ff_ ## OPNAME ## pixels16_l2_ ## MMX(dst, halfH + 16, halfHV,       \
-                                         stride, 16, 16);               \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc21_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    uint64_t half[16 * 2 + 17 * 2];                                     \
-    uint8_t * const halfH  = ((uint8_t*)half) + 256;                    \
-    uint8_t * const halfHV = ((uint8_t*)half);                          \
-    ff_put ## RND ## mpeg4_qpel16_h_lowpass_ ## MMX(halfH, src, 16,     \
-                                                    stride, 17);        \
-    ff_put ## RND ## mpeg4_qpel16_v_lowpass_ ## MMX(halfHV, halfH,      \
-                                                    16, 16);            \
-    ff_ ## OPNAME ## pixels16_l2_ ## MMX(dst, halfH, halfHV,            \
-                                         stride, 16, 16);               \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc23_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    uint64_t half[16 * 2 + 17 * 2];                                     \
-    uint8_t * const halfH  = ((uint8_t*)half) + 256;                    \
-    uint8_t * const halfHV = ((uint8_t*)half);                          \
-    ff_put ## RND ## mpeg4_qpel16_h_lowpass_ ## MMX(halfH, src, 16,     \
-                                                    stride, 17);        \
-    ff_put ## RND ## mpeg4_qpel16_v_lowpass_ ## MMX(halfHV, halfH,      \
-                                                    16, 16);            \
-    ff_ ## OPNAME ## pixels16_l2_ ## MMX(dst, halfH + 16, halfHV,       \
-                                         stride, 16, 16);               \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc12_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    uint64_t half[17 * 2];                                              \
-    uint8_t * const halfH = ((uint8_t*)half);                           \
-    ff_put ## RND ## mpeg4_qpel16_h_lowpass_ ## MMX(halfH, src, 16,     \
-                                                    stride, 17);        \
-    ff_put ## RND ## pixels16_l2_ ## MMX(halfH, src, halfH, 16,         \
-                                         stride, 17);                   \
-    ff_ ## OPNAME ## mpeg4_qpel16_v_lowpass_ ## MMX(dst, halfH,         \
-                                                    stride, 16);        \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc32_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    uint64_t half[17 * 2];                                              \
-    uint8_t * const halfH = ((uint8_t*)half);                           \
-    ff_put ## RND ## mpeg4_qpel16_h_lowpass_ ## MMX(halfH, src, 16,     \
-                                                    stride, 17);        \
-    ff_put ## RND ## pixels16_l2_ ## MMX(halfH, src + 1, halfH, 16,     \
-                                         stride, 17);                   \
-    ff_ ## OPNAME ## mpeg4_qpel16_v_lowpass_ ## MMX(dst, halfH,         \
-                                                    stride, 16);        \
-}                                                                       \
-                                                                        \
-static void OPNAME ## qpel16_mc22_ ## MMX(uint8_t *dst, uint8_t *src,   \
-                                          ptrdiff_t stride)             \
-{                                                                       \
-    uint64_t half[17 * 2];                                              \
-    uint8_t * const halfH = ((uint8_t*)half);                           \
-    ff_put ## RND ## mpeg4_qpel16_h_lowpass_ ## MMX(halfH, src, 16,     \
-                                                    stride, 17);        \
-    ff_ ## OPNAME ## mpeg4_qpel16_v_lowpass_ ## MMX(dst, halfH,         \
-                                                    stride, 16);        \
+    if (c)
+        return score1 + FFABS(score2) * c->avctx->nsse_weight;
+    else
+        return score1 + FFABS(score2) * 8;
 }
 
-QPEL_OP(put_,        _,        mmxext)
-QPEL_OP(avg_,        _,        mmxext)
-QPEL_OP(put_no_rnd_, _no_rnd_, mmxext)
+static int nsse8_mmx(MpegEncContext *c, uint8_t *pix1, uint8_t *pix2,
+                     int line_size, int h)
+{
+    int score1 = ff_sse8_mmx(c, pix1, pix2, line_size, h);
+    int score2 = ff_hf_noise8_mmx(pix1, line_size, h) -
+                 ff_hf_noise8_mmx(pix2, line_size, h);
+
+    if (c)
+        return score1 + FFABS(score2) * c->avctx->nsse_weight;
+    else
+        return score1 + FFABS(score2) * 8;
+}
+
 #endif /* HAVE_YASM */
 
-#define SET_QPEL_FUNCS(PFX, IDX, SIZE, CPU, PREFIX)                          \
-    do {                                                                     \
-    c->PFX ## _pixels_tab[IDX][ 0] = PREFIX ## PFX ## SIZE ## _mc00_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][ 1] = PREFIX ## PFX ## SIZE ## _mc10_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][ 2] = PREFIX ## PFX ## SIZE ## _mc20_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][ 3] = PREFIX ## PFX ## SIZE ## _mc30_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][ 4] = PREFIX ## PFX ## SIZE ## _mc01_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][ 5] = PREFIX ## PFX ## SIZE ## _mc11_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][ 6] = PREFIX ## PFX ## SIZE ## _mc21_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][ 7] = PREFIX ## PFX ## SIZE ## _mc31_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][ 8] = PREFIX ## PFX ## SIZE ## _mc02_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][ 9] = PREFIX ## PFX ## SIZE ## _mc12_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][10] = PREFIX ## PFX ## SIZE ## _mc22_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][11] = PREFIX ## PFX ## SIZE ## _mc32_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][12] = PREFIX ## PFX ## SIZE ## _mc03_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][13] = PREFIX ## PFX ## SIZE ## _mc13_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][14] = PREFIX ## PFX ## SIZE ## _mc23_ ## CPU; \
-    c->PFX ## _pixels_tab[IDX][15] = PREFIX ## PFX ## SIZE ## _mc33_ ## CPU; \
-    } while (0)
+#if HAVE_INLINE_ASM
 
-static av_cold void dsputil_init_mmx(DSPContext *c, AVCodecContext *avctx,
-                                     int cpu_flags)
+static int vsad_intra16_mmx(MpegEncContext *v, uint8_t *pix, uint8_t *dummy,
+                            int line_size, int h)
 {
-#if HAVE_MMX_INLINE
-    const int high_bit_depth = avctx->bits_per_raw_sample > 8;
+    int tmp;
 
-    c->put_pixels_clamped        = ff_put_pixels_clamped_mmx;
-    c->put_signed_pixels_clamped = ff_put_signed_pixels_clamped_mmx;
-    c->add_pixels_clamped        = ff_add_pixels_clamped_mmx;
+    av_assert2((((int) pix) & 7) == 0);
+    av_assert2((line_size & 7) == 0);
 
-    if (!high_bit_depth) {
-        c->clear_block  = ff_clear_block_mmx;
-        c->clear_blocks = ff_clear_blocks_mmx;
-        c->draw_edges   = ff_draw_edges_mmx;
-    }
+#define SUM(in0, in1, out0, out1)               \
+    "movq (%0), %%mm2\n"                        \
+    "movq 8(%0), %%mm3\n"                       \
+    "add %2,%0\n"                               \
+    "movq %%mm2, " #out0 "\n"                   \
+    "movq %%mm3, " #out1 "\n"                   \
+    "psubusb " #in0 ", %%mm2\n"                 \
+    "psubusb " #in1 ", %%mm3\n"                 \
+    "psubusb " #out0 ", " #in0 "\n"             \
+    "psubusb " #out1 ", " #in1 "\n"             \
+    "por %%mm2, " #in0 "\n"                     \
+    "por %%mm3, " #in1 "\n"                     \
+    "movq " #in0 ", %%mm2\n"                    \
+    "movq " #in1 ", %%mm3\n"                    \
+    "punpcklbw %%mm7, " #in0 "\n"               \
+    "punpcklbw %%mm7, " #in1 "\n"               \
+    "punpckhbw %%mm7, %%mm2\n"                  \
+    "punpckhbw %%mm7, %%mm3\n"                  \
+    "paddw " #in1 ", " #in0 "\n"                \
+    "paddw %%mm3, %%mm2\n"                      \
+    "paddw %%mm2, " #in0 "\n"                   \
+    "paddw " #in0 ", %%mm6\n"
 
-#if CONFIG_VIDEODSP && (ARCH_X86_32 || !HAVE_YASM)
-    c->gmc = ff_gmc_mmx;
-#endif
 
-    c->add_bytes = ff_add_bytes_mmx;
-#endif /* HAVE_MMX_INLINE */
+    __asm__ volatile (
+        "movl    %3, %%ecx\n"
+        "pxor %%mm6, %%mm6\n"
+        "pxor %%mm7, %%mm7\n"
+        "movq  (%0), %%mm0\n"
+        "movq 8(%0), %%mm1\n"
+        "add %2, %0\n"
+        "jmp 2f\n"
+        "1:\n"
 
-#if HAVE_MMX_EXTERNAL
-    c->vector_clip_int32 = ff_vector_clip_int32_mmx;
-#endif /* HAVE_MMX_EXTERNAL */
+        SUM(%%mm4, %%mm5, %%mm0, %%mm1)
+        "2:\n"
+        SUM(%%mm0, %%mm1, %%mm4, %%mm5)
+
+        "subl $2, %%ecx\n"
+        "jnz 1b\n"
+
+        "movq  %%mm6, %%mm0\n"
+        "psrlq $32,   %%mm6\n"
+        "paddw %%mm6, %%mm0\n"
+        "movq  %%mm0, %%mm6\n"
+        "psrlq $16,   %%mm0\n"
+        "paddw %%mm6, %%mm0\n"
+        "movd  %%mm0, %1\n"
+        : "+r" (pix), "=r" (tmp)
+        : "r" ((x86_reg) line_size), "m" (h)
+        : "%ecx");
+
+    return tmp & 0xFFFF;
 }
+#undef SUM
 
-static av_cold void dsputil_init_mmxext(DSPContext *c, AVCodecContext *avctx,
-                                        int cpu_flags)
+static int vsad_intra16_mmxext(MpegEncContext *v, uint8_t *pix, uint8_t *dummy,
+                               int line_size, int h)
 {
-#if HAVE_MMXEXT_INLINE
-    const int high_bit_depth = avctx->bits_per_raw_sample > 8;
+    int tmp;
 
-    if (!high_bit_depth && avctx->idct_algo == FF_IDCT_XVIDMMX && avctx->lowres == 0) {
-        c->idct_put = ff_idct_xvid_mmxext_put;
-        c->idct_add = ff_idct_xvid_mmxext_add;
-        c->idct     = ff_idct_xvid_mmxext;
-    }
-#endif /* HAVE_MMXEXT_INLINE */
+    av_assert2((((int) pix) & 7) == 0);
+    av_assert2((line_size & 7) == 0);
 
-#if HAVE_MMXEXT_EXTERNAL
-    SET_QPEL_FUNCS(avg_qpel,        0, 16, mmxext, );
-    SET_QPEL_FUNCS(avg_qpel,        1,  8, mmxext, );
+#define SUM(in0, in1, out0, out1)               \
+    "movq (%0), " #out0 "\n"                    \
+    "movq 8(%0), " #out1 "\n"                   \
+    "add %2, %0\n"                              \
+    "psadbw " #out0 ", " #in0 "\n"              \
+    "psadbw " #out1 ", " #in1 "\n"              \
+    "paddw " #in1 ", " #in0 "\n"                \
+    "paddw " #in0 ", %%mm6\n"
 
-    SET_QPEL_FUNCS(put_qpel,        0, 16, mmxext, );
-    SET_QPEL_FUNCS(put_qpel,        1,  8, mmxext, );
-    SET_QPEL_FUNCS(put_no_rnd_qpel, 0, 16, mmxext, );
-    SET_QPEL_FUNCS(put_no_rnd_qpel, 1,  8, mmxext, );
+    __asm__ volatile (
+        "movl %3, %%ecx\n"
+        "pxor %%mm6, %%mm6\n"
+        "pxor %%mm7, %%mm7\n"
+        "movq (%0), %%mm0\n"
+        "movq 8(%0), %%mm1\n"
+        "add %2, %0\n"
+        "jmp 2f\n"
+        "1:\n"
 
-    /* slower than cmov version on AMD */
-    if (!(cpu_flags & AV_CPU_FLAG_3DNOW))
-        c->add_hfyu_median_prediction = ff_add_hfyu_median_prediction_mmxext;
+        SUM(%%mm4, %%mm5, %%mm0, %%mm1)
+        "2:\n"
+        SUM(%%mm0, %%mm1, %%mm4, %%mm5)
 
-    c->scalarproduct_int16          = ff_scalarproduct_int16_mmxext;
-    c->scalarproduct_and_madd_int16 = ff_scalarproduct_and_madd_int16_mmxext;
-#endif /* HAVE_MMXEXT_EXTERNAL */
+        "subl $2, %%ecx\n"
+        "jnz 1b\n"
+
+        "movd %%mm6, %1\n"
+        : "+r" (pix), "=r" (tmp)
+        : "r" ((x86_reg) line_size), "m" (h)
+        : "%ecx");
+
+    return tmp;
 }
+#undef SUM
 
-static av_cold void dsputil_init_sse(DSPContext *c, AVCodecContext *avctx,
-                                     int cpu_flags)
+static int vsad16_mmx(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
+                      int line_size, int h)
 {
-#if HAVE_SSE_INLINE
-    const int high_bit_depth = avctx->bits_per_raw_sample > 8;
+    int tmp;
 
-    c->vector_clipf = ff_vector_clipf_sse;
+    av_assert2((((int) pix1) & 7) == 0);
+    av_assert2((((int) pix2) & 7) == 0);
+    av_assert2((line_size & 7) == 0);
 
-    /* XvMCCreateBlocks() may not allocate 16-byte aligned blocks */
-    if (CONFIG_XVMC && avctx->hwaccel && avctx->hwaccel->decode_mb)
-        return;
+#define SUM(in0, in1, out0, out1)       \
+    "movq (%0), %%mm2\n"                \
+    "movq (%1), " #out0 "\n"            \
+    "movq 8(%0), %%mm3\n"               \
+    "movq 8(%1), " #out1 "\n"           \
+    "add %3, %0\n"                      \
+    "add %3, %1\n"                      \
+    "psubb " #out0 ", %%mm2\n"          \
+    "psubb " #out1 ", %%mm3\n"          \
+    "pxor %%mm7, %%mm2\n"               \
+    "pxor %%mm7, %%mm3\n"               \
+    "movq %%mm2, " #out0 "\n"           \
+    "movq %%mm3, " #out1 "\n"           \
+    "psubusb " #in0 ", %%mm2\n"         \
+    "psubusb " #in1 ", %%mm3\n"         \
+    "psubusb " #out0 ", " #in0 "\n"     \
+    "psubusb " #out1 ", " #in1 "\n"     \
+    "por %%mm2, " #in0 "\n"             \
+    "por %%mm3, " #in1 "\n"             \
+    "movq " #in0 ", %%mm2\n"            \
+    "movq " #in1 ", %%mm3\n"            \
+    "punpcklbw %%mm7, " #in0 "\n"       \
+    "punpcklbw %%mm7, " #in1 "\n"       \
+    "punpckhbw %%mm7, %%mm2\n"          \
+    "punpckhbw %%mm7, %%mm3\n"          \
+    "paddw " #in1 ", " #in0 "\n"        \
+    "paddw %%mm3, %%mm2\n"              \
+    "paddw %%mm2, " #in0 "\n"           \
+    "paddw " #in0 ", %%mm6\n"
 
-    if (!high_bit_depth) {
-        c->clear_block  = ff_clear_block_sse;
-        c->clear_blocks = ff_clear_blocks_sse;
-    }
-#endif /* HAVE_SSE_INLINE */
 
-#if HAVE_YASM
-#if HAVE_INLINE_ASM && CONFIG_VIDEODSP
-    c->gmc = ff_gmc_sse;
-#endif
-#endif /* HAVE_YASM */
+    __asm__ volatile (
+        "movl %4, %%ecx\n"
+        "pxor %%mm6, %%mm6\n"
+        "pcmpeqw %%mm7, %%mm7\n"
+        "psllw $15, %%mm7\n"
+        "packsswb %%mm7, %%mm7\n"
+        "movq (%0), %%mm0\n"
+        "movq (%1), %%mm2\n"
+        "movq 8(%0), %%mm1\n"
+        "movq 8(%1), %%mm3\n"
+        "add %3, %0\n"
+        "add %3, %1\n"
+        "psubb %%mm2, %%mm0\n"
+        "psubb %%mm3, %%mm1\n"
+        "pxor %%mm7, %%mm0\n"
+        "pxor %%mm7, %%mm1\n"
+        "jmp 2f\n"
+        "1:\n"
+
+        SUM(%%mm4, %%mm5, %%mm0, %%mm1)
+        "2:\n"
+        SUM(%%mm0, %%mm1, %%mm4, %%mm5)
+
+        "subl $2, %%ecx\n"
+        "jnz 1b\n"
+
+        "movq %%mm6, %%mm0\n"
+        "psrlq $32, %%mm6\n"
+        "paddw %%mm6, %%mm0\n"
+        "movq %%mm0, %%mm6\n"
+        "psrlq $16, %%mm0\n"
+        "paddw %%mm6, %%mm0\n"
+        "movd %%mm0, %2\n"
+        : "+r" (pix1), "+r" (pix2), "=r" (tmp)
+        : "r" ((x86_reg) line_size), "m" (h)
+        : "%ecx");
+
+    return tmp & 0x7FFF;
 }
+#undef SUM
 
-static av_cold void dsputil_init_sse2(DSPContext *c, AVCodecContext *avctx,
-                                      int cpu_flags)
+static int vsad16_mmxext(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
+                         int line_size, int h)
 {
-#if HAVE_SSE2_INLINE
-    const int high_bit_depth = avctx->bits_per_raw_sample > 8;
+    int tmp;
 
-    if (!high_bit_depth && avctx->idct_algo == FF_IDCT_XVIDMMX && avctx->lowres == 0) {
-        c->idct_put              = ff_idct_xvid_sse2_put;
-        c->idct_add              = ff_idct_xvid_sse2_add;
-        c->idct                  = ff_idct_xvid_sse2;
-        c->idct_permutation_type = FF_SSE2_IDCT_PERM;
-    }
-#endif /* HAVE_SSE2_INLINE */
+    av_assert2((((int) pix1) & 7) == 0);
+    av_assert2((((int) pix2) & 7) == 0);
+    av_assert2((line_size & 7) == 0);
 
-#if HAVE_SSE2_EXTERNAL
-    c->scalarproduct_int16          = ff_scalarproduct_int16_sse2;
-    c->scalarproduct_and_madd_int16 = ff_scalarproduct_and_madd_int16_sse2;
-    if (cpu_flags & AV_CPU_FLAG_ATOM) {
-        c->vector_clip_int32 = ff_vector_clip_int32_int_sse2;
-    } else {
-        c->vector_clip_int32 = ff_vector_clip_int32_sse2;
-    }
-    c->bswap_buf = ff_bswap32_buf_sse2;
-#endif /* HAVE_SSE2_EXTERNAL */
+#define SUM(in0, in1, out0, out1)               \
+    "movq (%0), " #out0 "\n"                    \
+    "movq (%1), %%mm2\n"                        \
+    "movq 8(%0), " #out1 "\n"                   \
+    "movq 8(%1), %%mm3\n"                       \
+    "add %3, %0\n"                              \
+    "add %3, %1\n"                              \
+    "psubb %%mm2, " #out0 "\n"                  \
+    "psubb %%mm3, " #out1 "\n"                  \
+    "pxor %%mm7, " #out0 "\n"                   \
+    "pxor %%mm7, " #out1 "\n"                   \
+    "psadbw " #out0 ", " #in0 "\n"              \
+    "psadbw " #out1 ", " #in1 "\n"              \
+    "paddw " #in1 ", " #in0 "\n"                \
+    "paddw " #in0 ", %%mm6\n    "
+
+    __asm__ volatile (
+        "movl %4, %%ecx\n"
+        "pxor %%mm6, %%mm6\n"
+        "pcmpeqw %%mm7, %%mm7\n"
+        "psllw $15, %%mm7\n"
+        "packsswb %%mm7, %%mm7\n"
+        "movq (%0), %%mm0\n"
+        "movq (%1), %%mm2\n"
+        "movq 8(%0), %%mm1\n"
+        "movq 8(%1), %%mm3\n"
+        "add %3, %0\n"
+        "add %3, %1\n"
+        "psubb %%mm2, %%mm0\n"
+        "psubb %%mm3, %%mm1\n"
+        "pxor %%mm7, %%mm0\n"
+        "pxor %%mm7, %%mm1\n"
+        "jmp 2f\n"
+        "1:\n"
+
+        SUM(%%mm4, %%mm5, %%mm0, %%mm1)
+        "2:\n"
+        SUM(%%mm0, %%mm1, %%mm4, %%mm5)
+
+        "subl $2, %%ecx\n"
+        "jnz 1b\n"
+
+        "movd %%mm6, %2\n"
+        : "+r" (pix1), "+r" (pix2), "=r" (tmp)
+        : "r" ((x86_reg) line_size), "m" (h)
+        : "%ecx");
+
+    return tmp;
 }
+#undef SUM
 
-static av_cold void dsputil_init_ssse3(DSPContext *c, AVCodecContext *avctx,
-                                       int cpu_flags)
-{
-#if HAVE_SSSE3_EXTERNAL
-    c->add_hfyu_left_prediction = ff_add_hfyu_left_prediction_ssse3;
-    if (cpu_flags & AV_CPU_FLAG_SSE4) // not really SSE4, just slow on Conroe
-        c->add_hfyu_left_prediction = ff_add_hfyu_left_prediction_sse4;
 
-    if (!(cpu_flags & (AV_CPU_FLAG_SSE42 | AV_CPU_FLAG_3DNOW))) // cachesplit
-        c->scalarproduct_and_madd_int16 = ff_scalarproduct_and_madd_int16_ssse3;
-    c->bswap_buf = ff_bswap32_buf_ssse3;
-#endif /* HAVE_SSSE3_EXTERNAL */
-}
-
-static av_cold void dsputil_init_sse4(DSPContext *c, AVCodecContext *avctx,
-                                      int cpu_flags)
-{
-#if HAVE_SSE4_EXTERNAL
-    c->vector_clip_int32 = ff_vector_clip_int32_sse4;
-#endif /* HAVE_SSE4_EXTERNAL */
-}
+#endif /* HAVE_INLINE_ASM */
 
 av_cold void ff_dsputil_init_x86(DSPContext *c, AVCodecContext *avctx)
 {
     int cpu_flags = av_get_cpu_flags();
 
-#if HAVE_7REGS && HAVE_INLINE_ASM
-    if (HAVE_MMX && cpu_flags & AV_CPU_FLAG_CMOV)
-        c->add_hfyu_median_prediction = ff_add_hfyu_median_prediction_cmov;
-#endif
-
-    if (X86_MMX(cpu_flags)) {
 #if HAVE_INLINE_ASM
-        const int idct_algo = avctx->idct_algo;
+    if (INLINE_MMX(cpu_flags)) {
+        c->vsad[4] = vsad_intra16_mmx;
 
-        if (avctx->lowres == 0 && avctx->bits_per_raw_sample <= 8) {
-            if (idct_algo == FF_IDCT_AUTO || idct_algo == FF_IDCT_SIMPLEMMX) {
-                c->idct_put              = ff_simple_idct_put_mmx;
-                c->idct_add              = ff_simple_idct_add_mmx;
-                c->idct                  = ff_simple_idct_mmx;
-                c->idct_permutation_type = FF_SIMPLE_IDCT_PERM;
-            } else if (idct_algo == FF_IDCT_XVIDMMX) {
-                c->idct_put              = ff_idct_xvid_mmx_put;
-                c->idct_add              = ff_idct_xvid_mmx_add;
-                c->idct                  = ff_idct_xvid_mmx;
-            }
+        if (!(avctx->flags & CODEC_FLAG_BITEXACT)) {
+            c->vsad[0]      = vsad16_mmx;
         }
-#endif /* HAVE_INLINE_ASM */
-
-        dsputil_init_mmx(c, avctx, cpu_flags);
     }
 
-    if (X86_MMXEXT(cpu_flags))
-        dsputil_init_mmxext(c, avctx, cpu_flags);
+    if (INLINE_MMXEXT(cpu_flags)) {
+        c->vsad[4]         = vsad_intra16_mmxext;
 
-    if (X86_SSE(cpu_flags))
-        dsputil_init_sse(c, avctx, cpu_flags);
+        if (!(avctx->flags & CODEC_FLAG_BITEXACT)) {
+            c->vsad[0] = vsad16_mmxext;
+        }
+    }
+#endif /* HAVE_INLINE_ASM */
 
-    if (X86_SSE2(cpu_flags))
-        dsputil_init_sse2(c, avctx, cpu_flags);
+    if (EXTERNAL_MMX(cpu_flags)) {
+        c->hadamard8_diff[0] = ff_hadamard8_diff16_mmx;
+        c->hadamard8_diff[1] = ff_hadamard8_diff_mmx;
+        c->sum_abs_dctelem   = ff_sum_abs_dctelem_mmx;
+        c->sse[0]            = ff_sse16_mmx;
+        c->sse[1]            = ff_sse8_mmx;
+#if HAVE_YASM
+        c->nsse[0]           = nsse16_mmx;
+        c->nsse[1]           = nsse8_mmx;
+#endif
+    }
 
-    if (EXTERNAL_SSSE3(cpu_flags))
-        dsputil_init_ssse3(c, avctx, cpu_flags);
+    if (EXTERNAL_MMXEXT(cpu_flags)) {
+        c->hadamard8_diff[0] = ff_hadamard8_diff16_mmxext;
+        c->hadamard8_diff[1] = ff_hadamard8_diff_mmxext;
+        c->sum_abs_dctelem   = ff_sum_abs_dctelem_mmxext;
+    }
 
-    if (EXTERNAL_SSE4(cpu_flags))
-        dsputil_init_sse4(c, avctx, cpu_flags);
+    if (EXTERNAL_SSE2(cpu_flags)) {
+        c->sse[0] = ff_sse16_sse2;
+        c->sum_abs_dctelem   = ff_sum_abs_dctelem_sse2;
 
-    if (CONFIG_ENCODERS)
-        ff_dsputilenc_init_mmx(c, avctx);
+#if HAVE_ALIGNED_STACK
+        c->hadamard8_diff[0] = ff_hadamard8_diff16_sse2;
+        c->hadamard8_diff[1] = ff_hadamard8_diff_sse2;
+#endif
+    }
+
+    if (EXTERNAL_SSSE3(cpu_flags)) {
+        c->sum_abs_dctelem   = ff_sum_abs_dctelem_ssse3;
+#if HAVE_ALIGNED_STACK
+        c->hadamard8_diff[0] = ff_hadamard8_diff16_ssse3;
+        c->hadamard8_diff[1] = ff_hadamard8_diff_ssse3;
+#endif
+    }
+
+    ff_dsputil_init_pix_mmx(c, avctx);
 }

@@ -34,10 +34,12 @@
 #include "h263.h"
 #include "h263_parser.h"
 #include "internal.h"
+#include "mpeg_er.h"
 #include "mpeg4video.h"
 #include "mpeg4video_parser.h"
 #include "mpegvideo.h"
 #include "msmpeg4.h"
+#include "qpeldsp.h"
 #include "vdpau_internal.h"
 #include "thread.h"
 
@@ -60,7 +62,7 @@ av_cold int ff_h263_decode_init(AVCodecContext *avctx)
     if (avctx->codec->id == AV_CODEC_ID_MSS2)
         avctx->pix_fmt = AV_PIX_FMT_YUV420P;
     else
-        avctx->pix_fmt = avctx->get_format(avctx, avctx->codec->pix_fmts);
+        avctx->pix_fmt = ff_get_format(avctx, avctx->codec->pix_fmts);
     s->unrestricted_mv = 1;
 
     /* select sub codec */
@@ -112,7 +114,6 @@ av_cold int ff_h263_decode_init(AVCodecContext *avctx)
         return AVERROR(ENOSYS);
     }
     s->codec_id    = avctx->codec->id;
-    avctx->hwaccel = ff_find_hwaccel(avctx);
 
     if (avctx->stream_codec_tag == AV_RL32("l263") && avctx->extradata_size == 56 && avctx->extradata[0] == 1)
         s->ehc_mode = 1;
@@ -125,6 +126,7 @@ av_cold int ff_h263_decode_init(AVCodecContext *avctx)
             return ret;
 
     ff_h263dsp_init(&s->h263dsp);
+    ff_qpeldsp_init(&s->qdsp);
     ff_h263_decode_init_vlc();
 
     return 0;
@@ -235,6 +237,8 @@ static int decode_slice(MpegEncContext *s)
             s->mv_type = MV_TYPE_16X16;
             av_dlog(s, "%d %d %06X\n",
                     ret, get_bits_count(&s->gb), show_bits(&s->gb, 24));
+
+            tprintf(NULL, "Decoding MB at %dx%d\n", s->mb_x, s->mb_y);
             ret = s->decode_mb(s, s->block);
 
             if (s->pict_type != AV_PICTURE_TYPE_B)
@@ -271,6 +275,8 @@ static int decode_slice(MpegEncContext *s)
                 ff_er_add_slice(&s->er, s->resync_mb_x, s->resync_mb_y,
                                 s->mb_x, s->mb_y, ER_MB_ERROR & part_mask);
 
+                if (s->err_recognition & AV_EF_IGNORE_ERR)
+                    continue;
                 return AVERROR_INVALIDDATA;
             }
 
@@ -317,6 +323,17 @@ static int decode_slice(MpegEncContext *s)
             else
                 s->padding_bug_score++;
         }
+    }
+
+    if (s->codec_id == AV_CODEC_ID_H263          &&
+        (s->workaround_bugs & FF_BUG_AUTODETECT) &&
+        get_bits_left(&s->gb) >= 8               &&
+        get_bits_left(&s->gb) < 300              &&
+        s->pict_type == AV_PICTURE_TYPE_I        &&
+        show_bits(&s->gb, 8) == 0                &&
+        !s->data_partitioning) {
+
+        s->padding_bug_score += 32;
     }
 
     if (s->workaround_bugs & FF_BUG_AUTODETECT) {
@@ -383,7 +400,7 @@ int ff_h263_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     if (buf_size == 0) {
         /* special case for last picture */
         if (s->low_delay == 0 && s->next_picture_ptr) {
-            if ((ret = av_frame_ref(pict, &s->next_picture_ptr->f)) < 0)
+            if ((ret = av_frame_ref(pict, s->next_picture_ptr->f)) < 0)
                 return ret;
             s->next_picture_ptr = NULL;
 
@@ -444,7 +461,7 @@ retry:
 
     /* We need to set current_picture_ptr before reading the header,
      * otherwise we cannot store anyting in there */
-    if (s->current_picture_ptr == NULL || s->current_picture_ptr->f.data[0]) {
+    if (s->current_picture_ptr == NULL || s->current_picture_ptr->f->data[0]) {
         int i = ff_find_unused_picture(s, 0);
         if (i < 0)
             return i;
@@ -510,6 +527,8 @@ retry:
         if (ret < 0)
             return ret;
 
+        ff_set_sar(avctx, avctx->sample_aspect_ratio);
+
         if ((ret = ff_MPV_common_frame_size_change(s)))
             return ret;
     }
@@ -520,8 +539,8 @@ retry:
         s->gob_index = ff_h263_get_gob_height(s);
 
     // for skipping the frame
-    s->current_picture.f.pict_type = s->pict_type;
-    s->current_picture.f.key_frame = s->pict_type == AV_PICTURE_TYPE_I;
+    s->current_picture.f->pict_type = s->pict_type;
+    s->current_picture.f->key_frame = s->pict_type == AV_PICTURE_TYPE_I;
 
     /* skip B-frames if we don't have reference frames */
     if (s->last_picture_ptr == NULL &&
@@ -542,11 +561,11 @@ retry:
     }
 
     if ((!s->no_rounding) || s->pict_type == AV_PICTURE_TYPE_B) {
-        s->me.qpel_put = s->dsp.put_qpel_pixels_tab;
-        s->me.qpel_avg = s->dsp.avg_qpel_pixels_tab;
+        s->me.qpel_put = s->qdsp.put_qpel_pixels_tab;
+        s->me.qpel_avg = s->qdsp.avg_qpel_pixels_tab;
     } else {
-        s->me.qpel_put = s->dsp.put_no_rnd_qpel_pixels_tab;
-        s->me.qpel_avg = s->dsp.avg_qpel_pixels_tab;
+        s->me.qpel_put = s->qdsp.put_no_rnd_qpel_pixels_tab;
+        s->me.qpel_avg = s->qdsp.avg_qpel_pixels_tab;
     }
 
     if ((ret = ff_MPV_frame_start(s, avctx)) < 0)
@@ -556,7 +575,7 @@ retry:
         ff_thread_finish_setup(avctx);
 
     if (CONFIG_MPEG4_VDPAU_DECODER && (s->avctx->codec->capabilities & CODEC_CAP_HWACCEL_VDPAU)) {
-        ff_vdpau_mpeg4_decode_picture(s, s->gb.buffer, s->gb.buffer_end - s->gb.buffer);
+        ff_vdpau_mpeg4_decode_picture(avctx->priv_data, s->gb.buffer, s->gb.buffer_end - s->gb.buffer);
         goto frame_end;
     }
 
@@ -629,15 +648,15 @@ frame_end:
     if (!s->divx_packed && avctx->hwaccel)
         ff_thread_finish_setup(avctx);
 
-    av_assert1(s->current_picture.f.pict_type == s->current_picture_ptr->f.pict_type);
-    av_assert1(s->current_picture.f.pict_type == s->pict_type);
+    av_assert1(s->current_picture.f->pict_type == s->current_picture_ptr->f->pict_type);
+    av_assert1(s->current_picture.f->pict_type == s->pict_type);
     if (s->pict_type == AV_PICTURE_TYPE_B || s->low_delay) {
-        if ((ret = av_frame_ref(pict, &s->current_picture_ptr->f)) < 0)
+        if ((ret = av_frame_ref(pict, s->current_picture_ptr->f)) < 0)
             return ret;
         ff_print_debug_info(s, s->current_picture_ptr, pict);
         ff_mpv_export_qp_table(s, pict, s->current_picture_ptr, FF_QSCALE_TYPE_MPEG1);
     } else if (s->last_picture_ptr != NULL) {
-        if ((ret = av_frame_ref(pict, &s->last_picture_ptr->f)) < 0)
+        if ((ret = av_frame_ref(pict, s->last_picture_ptr->f)) < 0)
             return ret;
         ff_print_debug_info(s, s->last_picture_ptr, pict);
         ff_mpv_export_qp_table(s, pict, s->last_picture_ptr, FF_QSCALE_TYPE_MPEG1);
@@ -669,10 +688,10 @@ frame_end:
 }
 
 const enum AVPixelFormat ff_h263_hwaccel_pixfmt_list_420[] = {
-#if CONFIG_VAAPI
+#if CONFIG_H263_VAAPI_HWACCEL || CONFIG_MPEG4_VAAPI_HWACCEL
     AV_PIX_FMT_VAAPI_VLD,
 #endif
-#if CONFIG_VDPAU
+#if CONFIG_H263_VDPAU_HWACCEL || CONFIG_MPEG4_VDPAU_HWACCEL
     AV_PIX_FMT_VDPAU,
 #endif
     AV_PIX_FMT_YUV420P,

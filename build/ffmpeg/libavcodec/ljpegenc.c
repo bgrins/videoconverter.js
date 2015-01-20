@@ -35,14 +35,15 @@
 #include "libavutil/pixdesc.h"
 
 #include "avcodec.h"
-#include "dsputil.h"
+#include "idctdsp.h"
 #include "internal.h"
+#include "mjpegenc_common.h"
 #include "mpegvideo.h"
 #include "mjpeg.h"
 #include "mjpegenc.h"
 
 typedef struct LJpegEncContext {
-    DSPContext dsp;
+    IDCTDSPContext idsp;
     ScanTable scantable;
     uint16_t matrix[64];
 
@@ -275,7 +276,8 @@ static av_cold int ljpeg_encode_init(AVCodecContext *avctx)
 
     if ((avctx->pix_fmt == AV_PIX_FMT_YUV420P ||
          avctx->pix_fmt == AV_PIX_FMT_YUV422P ||
-         avctx->pix_fmt == AV_PIX_FMT_YUV444P) &&
+         avctx->pix_fmt == AV_PIX_FMT_YUV444P ||
+         avctx->color_range == AVCOL_RANGE_MPEG) &&
         avctx->strict_std_compliance > FF_COMPLIANCE_UNOFFICIAL) {
         av_log(avctx, AV_LOG_ERROR,
                "Limited range YUV is non-standard, set strict_std_compliance to "
@@ -292,8 +294,9 @@ static av_cold int ljpeg_encode_init(AVCodecContext *avctx)
 
     s->scratch = av_malloc_array(avctx->width + 1, sizeof(*s->scratch));
 
-    ff_dsputil_init(&s->dsp, avctx);
-    ff_init_scantable(s->dsp.idct_permutation, &s->scantable, ff_zigzag_direct);
+    ff_idctdsp_init(&s->idsp, avctx);
+    ff_init_scantable(s->idsp.idct_permutation, &s->scantable,
+                      ff_zigzag_direct);
 
     ff_mjpeg_init_hvsample(avctx, s->hsample, s->vsample);
 
@@ -318,6 +321,7 @@ AVCodec ff_ljpeg_encoder = {
     .init           = ljpeg_encode_init,
     .encode2        = ljpeg_encode_frame,
     .close          = ljpeg_encode_close,
+    .capabilities   = CODEC_CAP_FRAME_THREADS | CODEC_CAP_INTRA_ONLY,
     .pix_fmts       = (const enum AVPixelFormat[]){
         AV_PIX_FMT_BGR24   , AV_PIX_FMT_BGRA    , AV_PIX_FMT_BGR0,
         AV_PIX_FMT_YUVJ420P, AV_PIX_FMT_YUVJ444P, AV_PIX_FMT_YUVJ422P,

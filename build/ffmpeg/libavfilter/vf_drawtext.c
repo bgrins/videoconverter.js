@@ -27,10 +27,20 @@
  */
 
 #include "config.h"
+
 #if HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <time.h>
+#if HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+
+#if CONFIG_LIBFONTCONFIG
+#include <fontconfig/fontconfig.h>
+#endif
 
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
@@ -49,13 +59,14 @@
 #include "internal.h"
 #include "video.h"
 
+#if CONFIG_LIBFRIBIDI
+#include <fribidi.h>
+#endif
+
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_GLYPH_H
 #include FT_STROKER_H
-#if CONFIG_FONTCONFIG
-#include <fontconfig/fontconfig.h>
-#endif
 
 static const char *const var_names[] = {
     "dar",
@@ -121,10 +132,13 @@ enum expansion_mode {
     EXP_STRFTIME,
 };
 
-typedef struct {
+typedef struct DrawTextContext {
     const AVClass *class;
     enum expansion_mode exp_mode;   ///< expansion mode to use for the text
     int reinit;                     ///< tells if the filter is being reinited
+#if CONFIG_LIBFONTCONFIG
+    uint8_t *font;              ///< font to be used
+#endif
     uint8_t *fontfile;              ///< font to be used
     uint8_t *text;                  ///< text to be drawn
     AVBPrint expanded_text;         ///< used to contain the expanded text
@@ -172,6 +186,9 @@ typedef struct {
     int tc24hmax;                   ///< 1 if timecode is wrapped to 24 hours, 0 otherwise
     int reload;                     ///< reload text file for each frame
     int start_number;               ///< starting frame number for n/frame_num var
+#if CONFIG_LIBFRIBIDI
+    int text_shaping;               ///< 1 to shape the text before drawing it
+#endif
     AVDictionary *metadata;
 } DrawTextContext;
 
@@ -198,6 +215,9 @@ static const AVOption drawtext_options[]= {
 #if FF_API_DRAWTEXT_OLD_TIMELINE
     {"draw",        "if false do not draw (deprecated)", OFFSET(draw_expr), AV_OPT_TYPE_STRING, {.str=NULL},   CHAR_MIN, CHAR_MAX, FLAGS},
 #endif
+#if CONFIG_LIBFONTCONFIG
+    { "font",        "Font name",            OFFSET(font),               AV_OPT_TYPE_STRING, { .str = "Sans" },           .flags = FLAGS },
+#endif
 
     {"expansion", "set the expansion mode", OFFSET(exp_mode), AV_OPT_TYPE_INT, {.i64=EXP_NORMAL}, 0, 2, FLAGS, "expansion"},
         {"none",     "set no expansion",                    OFFSET(exp_mode), AV_OPT_TYPE_CONST, {.i64=EXP_NONE},     0, 0, FLAGS, "expansion"},
@@ -212,6 +232,10 @@ static const AVOption drawtext_options[]= {
     {"reload",     "reload text file for each frame",                       OFFSET(reload),     AV_OPT_TYPE_INT, {.i64=0}, 0, 1, FLAGS},
     {"fix_bounds", "if true, check and fix text coords to avoid clipping",  OFFSET(fix_bounds), AV_OPT_TYPE_INT, {.i64=1}, 0, 1, FLAGS},
     {"start_number", "start frame number for n/frame_num variable", OFFSET(start_number), AV_OPT_TYPE_INT, {.i64=0}, 0, INT_MAX, FLAGS},
+
+#if CONFIG_LIBFRIBIDI
+    {"text_shaping", "attempt to shape text before drawing", OFFSET(text_shaping), AV_OPT_TYPE_INT, {.i64=1}, 0, 1, FLAGS},
+#endif
 
     /* FT_LOAD_* flags */
     { "ft_load_flags", "set font loading flags for libfreetype", OFFSET(ft_load_flags), AV_OPT_TYPE_FLAGS, { .i64 = FT_LOAD_DEFAULT }, 0, INT_MAX, FLAGS, "ft_load_flags" },
@@ -249,8 +273,9 @@ struct ft_error
 
 #define FT_ERRMSG(e) ft_errors[e].err_msg
 
-typedef struct {
-    FT_Glyph *glyph;
+typedef struct Glyph {
+    FT_Glyph glyph;
+    FT_Glyph border_glyph;
     uint32_t code;
     FT_Bitmap bitmap; ///< array holding bitmaps of font
     FT_Bitmap border_bitmap; ///< array holding bitmaps of font border
@@ -282,33 +307,32 @@ static int load_glyph(AVFilterContext *ctx, Glyph **glyph_ptr, uint32_t code)
     if (FT_Load_Char(s->face, code, s->ft_load_flags))
         return AVERROR(EINVAL);
 
-    /* save glyph */
-    if (!(glyph = av_mallocz(sizeof(*glyph))) ||
-        !(glyph->glyph = av_mallocz(sizeof(*glyph->glyph)))) {
+    glyph = av_mallocz(sizeof(*glyph));
+    if (!glyph) {
         ret = AVERROR(ENOMEM);
         goto error;
     }
     glyph->code  = code;
 
-    if (FT_Get_Glyph(s->face->glyph, glyph->glyph)) {
+    if (FT_Get_Glyph(s->face->glyph, &glyph->glyph)) {
         ret = AVERROR(EINVAL);
         goto error;
     }
     if (s->borderw) {
-        FT_Glyph border_glyph = *glyph->glyph;
-        if (FT_Glyph_StrokeBorder(&border_glyph, s->stroker, 0, 0) ||
-            FT_Glyph_To_Bitmap(&border_glyph, FT_RENDER_MODE_NORMAL, 0, 1)) {
+        glyph->border_glyph = glyph->glyph;
+        if (FT_Glyph_StrokeBorder(&glyph->border_glyph, s->stroker, 0, 0) ||
+            FT_Glyph_To_Bitmap(&glyph->border_glyph, FT_RENDER_MODE_NORMAL, 0, 1)) {
             ret = AVERROR_EXTERNAL;
             goto error;
         }
-        bitmapglyph = (FT_BitmapGlyph) border_glyph;
+        bitmapglyph = (FT_BitmapGlyph) glyph->border_glyph;
         glyph->border_bitmap = bitmapglyph->bitmap;
     }
-    if (FT_Glyph_To_Bitmap(glyph->glyph, FT_RENDER_MODE_NORMAL, 0, 1)) {
+    if (FT_Glyph_To_Bitmap(&glyph->glyph, FT_RENDER_MODE_NORMAL, 0, 1)) {
         ret = AVERROR_EXTERNAL;
         goto error;
     }
-    bitmapglyph = (FT_BitmapGlyph) *glyph->glyph;
+    bitmapglyph = (FT_BitmapGlyph) glyph->glyph;
 
     glyph->bitmap      = bitmapglyph->bitmap;
     glyph->bitmap_left = bitmapglyph->left;
@@ -316,7 +340,7 @@ static int load_glyph(AVFilterContext *ctx, Glyph **glyph_ptr, uint32_t code)
     glyph->advance     = s->face->glyph->advance.x >> 6;
 
     /* measure text height to calculate text_height (or the maximum text height) */
-    FT_Glyph_Get_CBox(*glyph->glyph, ft_glyph_bbox_pixels, &glyph->bbox);
+    FT_Glyph_Get_CBox(glyph->glyph, ft_glyph_bbox_pixels, &glyph->bbox);
 
     /* cache the newly created glyph */
     if (!(node = av_tree_node_alloc())) {
@@ -332,73 +356,96 @@ static int load_glyph(AVFilterContext *ctx, Glyph **glyph_ptr, uint32_t code)
 error:
     if (glyph)
         av_freep(&glyph->glyph);
+
     av_freep(&glyph);
     av_freep(&node);
     return ret;
 }
 
-static int load_font_file(AVFilterContext *ctx, const char *path, int index,
-                          const char **error)
+static int load_font_file(AVFilterContext *ctx, const char *path, int index)
 {
     DrawTextContext *s = ctx->priv;
     int err;
 
     err = FT_New_Face(s->library, path, index, &s->face);
     if (err) {
-        *error = FT_ERRMSG(err);
+        av_log(ctx, AV_LOG_ERROR, "Could not load font \"%s\": %s\n",
+               s->fontfile, FT_ERRMSG(err));
         return AVERROR(EINVAL);
     }
     return 0;
 }
 
-#if CONFIG_FONTCONFIG
-static int load_font_fontconfig(AVFilterContext *ctx, const char **error)
+#if CONFIG_LIBFONTCONFIG
+static int load_font_fontconfig(AVFilterContext *ctx)
 {
     DrawTextContext *s = ctx->priv;
     FcConfig *fontconfig;
-    FcPattern *pattern, *fpat;
+    FcPattern *pat, *best;
     FcResult result = FcResultMatch;
     FcChar8 *filename;
-    int err, index;
+    int index;
     double size;
+    int err = AVERROR(ENOENT);
 
     fontconfig = FcInitLoadConfigAndFonts();
     if (!fontconfig) {
-        *error = "impossible to init fontconfig\n";
-        return AVERROR(EINVAL);
+        av_log(ctx, AV_LOG_ERROR, "impossible to init fontconfig\n");
+        return AVERROR_UNKNOWN;
     }
-    pattern = FcNameParse(s->fontfile ? s->fontfile :
+    pat = FcNameParse(s->fontfile ? s->fontfile :
                           (uint8_t *)(intptr_t)"default");
-    if (!pattern) {
-        *error = "could not parse fontconfig pattern";
+    if (!pat) {
+        av_log(ctx, AV_LOG_ERROR, "could not parse fontconfig pat");
         return AVERROR(EINVAL);
     }
-    if (!FcConfigSubstitute(fontconfig, pattern, FcMatchPattern)) {
-        *error = "could not substitue fontconfig options"; /* very unlikely */
+
+    FcPatternAddString(pat, FC_FAMILY, s->font);
+    if (s->fontsize)
+        FcPatternAddDouble(pat, FC_SIZE, (double)s->fontsize);
+
+    FcDefaultSubstitute(pat);
+
+    if (!FcConfigSubstitute(fontconfig, pat, FcMatchPattern)) {
+        av_log(ctx, AV_LOG_ERROR, "could not substitue fontconfig options"); /* very unlikely */
+        FcPatternDestroy(pat);
+        return AVERROR(ENOMEM);
+    }
+
+    best = FcFontMatch(fontconfig, pat, &result);
+    FcPatternDestroy(pat);
+
+    if (!best || result != FcResultMatch) {
+        av_log(ctx, AV_LOG_ERROR,
+               "Cannot find a valid font for the family %s\n",
+               s->font);
+        goto fail;
+    }
+
+    if (
+        FcPatternGetInteger(best, FC_INDEX, 0, &index   ) != FcResultMatch ||
+        FcPatternGetDouble (best, FC_SIZE,  0, &size    ) != FcResultMatch) {
+        av_log(ctx, AV_LOG_ERROR, "impossible to find font information");
         return AVERROR(EINVAL);
     }
-    FcDefaultSubstitute(pattern);
-    fpat = FcFontMatch(fontconfig, pattern, &result);
-    if (!fpat || result != FcResultMatch) {
-        *error = "impossible to find a matching font";
-        return AVERROR(EINVAL);
+
+    if (FcPatternGetString(best, FC_FILE, 0, &filename) != FcResultMatch) {
+        av_log(ctx, AV_LOG_ERROR, "No file path for %s\n",
+               s->font);
+        goto fail;
     }
-    if (FcPatternGetString (fpat, FC_FILE,  0, &filename) != FcResultMatch ||
-        FcPatternGetInteger(fpat, FC_INDEX, 0, &index   ) != FcResultMatch ||
-        FcPatternGetDouble (fpat, FC_SIZE,  0, &size    ) != FcResultMatch) {
-        *error = "impossible to find font information";
-        return AVERROR(EINVAL);
-    }
+
     av_log(ctx, AV_LOG_INFO, "Using \"%s\"\n", filename);
     if (!s->fontsize)
         s->fontsize = size + 0.5;
-    err = load_font_file(ctx, filename, index, error);
+
+    err = load_font_file(ctx, filename, index);
     if (err)
         return err;
-    FcPatternDestroy(fpat);
-    FcPatternDestroy(pattern);
     FcConfigDestroy(fontconfig);
-    return 0;
+fail:
+    FcPatternDestroy(best);
+    return err;
 }
 #endif
 
@@ -406,19 +453,16 @@ static int load_font(AVFilterContext *ctx)
 {
     DrawTextContext *s = ctx->priv;
     int err;
-    const char *error = "unknown error\n";
 
     /* load the face, and set up the encoding, which is by default UTF-8 */
-    err = load_font_file(ctx, s->fontfile, 0, &error);
+    err = load_font_file(ctx, s->fontfile, 0);
     if (!err)
         return 0;
-#if CONFIG_FONTCONFIG
-    err = load_font_fontconfig(ctx, &error);
+#if CONFIG_LIBFONTCONFIG
+    err = load_font_fontconfig(ctx);
     if (!err)
         return 0;
 #endif
-    av_log(ctx, AV_LOG_ERROR, "Could not load font \"%s\": %s\n",
-           s->fontfile, error);
     return err;
 }
 
@@ -427,6 +471,7 @@ static int load_textfile(AVFilterContext *ctx)
     DrawTextContext *s = ctx->priv;
     int err;
     uint8_t *textbuf;
+    uint8_t *tmp;
     size_t textbuf_size;
 
     if ((err = av_file_map(s->textfile, &textbuf, &textbuf_size, 0, ctx)) < 0) {
@@ -436,14 +481,110 @@ static int load_textfile(AVFilterContext *ctx)
         return err;
     }
 
-    if (!(s->text = av_realloc(s->text, textbuf_size + 1)))
+    if (!(tmp = av_realloc(s->text, textbuf_size + 1))) {
+        av_file_unmap(textbuf, textbuf_size);
         return AVERROR(ENOMEM);
+    }
+    s->text = tmp;
     memcpy(s->text, textbuf, textbuf_size);
     s->text[textbuf_size] = 0;
     av_file_unmap(textbuf, textbuf_size);
 
     return 0;
 }
+
+static inline int is_newline(uint32_t c)
+{
+    return c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
+
+#if CONFIG_LIBFRIBIDI
+static int shape_text(AVFilterContext *ctx)
+{
+    DrawTextContext *s = ctx->priv;
+    uint8_t *tmp;
+    int ret = AVERROR(ENOMEM);
+    static const FriBidiFlags flags = FRIBIDI_FLAGS_DEFAULT |
+                                      FRIBIDI_FLAGS_ARABIC;
+    FriBidiChar *unicodestr = NULL;
+    FriBidiStrIndex len;
+    FriBidiParType direction = FRIBIDI_PAR_LTR;
+    FriBidiStrIndex line_start = 0;
+    FriBidiStrIndex line_end = 0;
+    FriBidiLevel *embedding_levels = NULL;
+    FriBidiArabicProp *ar_props = NULL;
+    FriBidiCharType *bidi_types = NULL;
+    FriBidiStrIndex i,j;
+
+    len = strlen(s->text);
+    if (!(unicodestr = av_malloc_array(len, sizeof(*unicodestr)))) {
+        goto out;
+    }
+    len = fribidi_charset_to_unicode(FRIBIDI_CHAR_SET_UTF8,
+                                     s->text, len, unicodestr);
+
+    bidi_types = av_malloc_array(len, sizeof(*bidi_types));
+    if (!bidi_types) {
+        goto out;
+    }
+
+    fribidi_get_bidi_types(unicodestr, len, bidi_types);
+
+    embedding_levels = av_malloc_array(len, sizeof(*embedding_levels));
+    if (!embedding_levels) {
+        goto out;
+    }
+
+    if (!fribidi_get_par_embedding_levels(bidi_types, len, &direction,
+                                          embedding_levels)) {
+        goto out;
+    }
+
+    ar_props = av_malloc_array(len, sizeof(*ar_props));
+    if (!ar_props) {
+        goto out;
+    }
+
+    fribidi_get_joining_types(unicodestr, len, ar_props);
+    fribidi_join_arabic(bidi_types, len, embedding_levels, ar_props);
+    fribidi_shape(flags, embedding_levels, len, ar_props, unicodestr);
+
+    for (line_end = 0, line_start = 0; line_end < len; line_end++) {
+        if (is_newline(unicodestr[line_end]) || line_end == len - 1) {
+            if (!fribidi_reorder_line(flags, bidi_types,
+                                      line_end - line_start + 1, line_start,
+                                      direction, embedding_levels, unicodestr,
+                                      NULL)) {
+                goto out;
+            }
+            line_start = line_end + 1;
+        }
+    }
+
+    /* Remove zero-width fill chars put in by libfribidi */
+    for (i = 0, j = 0; i < len; i++)
+        if (unicodestr[i] != FRIBIDI_CHAR_FILL)
+            unicodestr[j++] = unicodestr[i];
+    len = j;
+
+    if (!(tmp = av_realloc(s->text, (len * 4 + 1) * sizeof(*s->text)))) {
+        /* Use len * 4, as a unicode character can be up to 4 bytes in UTF-8 */
+        goto out;
+    }
+
+    s->text = tmp;
+    len = fribidi_unicode_to_charset(FRIBIDI_CHAR_SET_UTF8,
+                                     unicodestr, len, s->text);
+    ret = 0;
+
+out:
+    av_free(unicodestr);
+    av_free(embedding_levels);
+    av_free(ar_props);
+    av_free(bidi_types);
+    return ret;
+}
+#endif
 
 static av_cold int init(AVFilterContext *ctx)
 {
@@ -457,7 +598,7 @@ static av_cold int init(AVFilterContext *ctx)
                "you are encouraged to use the generic timeline support through the 'enable' option\n");
 #endif
 
-    if (!s->fontfile && !CONFIG_FONTCONFIG) {
+    if (!s->fontfile && !CONFIG_LIBFONTCONFIG) {
         av_log(ctx, AV_LOG_ERROR, "No font filename provided\n");
         return AVERROR(EINVAL);
     }
@@ -471,6 +612,12 @@ static av_cold int init(AVFilterContext *ctx)
         if ((err = load_textfile(ctx)) < 0)
             return err;
     }
+
+#if CONFIG_LIBFRIBIDI
+    if (s->text_shaping)
+        if ((err = shape_text(ctx)) < 0)
+            return err;
+#endif
 
     if (s->reload && !s->textfile)
         av_log(ctx, AV_LOG_WARNING, "No file to reload\n");
@@ -549,8 +696,8 @@ static int glyph_enu_free(void *opaque, void *elem)
 {
     Glyph *glyph = elem;
 
-    FT_Done_Glyph(*glyph->glyph);
-    av_freep(&glyph->glyph);
+    FT_Done_Glyph(glyph->glyph);
+    FT_Done_Glyph(glyph->border_glyph);
     av_free(elem);
     return 0;
 }
@@ -578,11 +725,6 @@ static av_cold void uninit(AVFilterContext *ctx)
     FT_Done_FreeType(s->library);
 
     av_bprint_finalize(&s->expanded_text, NULL);
-}
-
-static inline int is_newline(uint32_t c)
-{
-    return c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -665,8 +807,41 @@ static int func_pts(AVFilterContext *ctx, AVBPrint *bp,
                     char *fct, unsigned argc, char **argv, int tag)
 {
     DrawTextContext *s = ctx->priv;
+    const char *fmt;
+    double pts = s->var_values[VAR_T];
+    int ret;
 
-    av_bprintf(bp, "%.6f", s->var_values[VAR_T]);
+    fmt = argc >= 1 ? argv[0] : "flt";
+    if (argc >= 2) {
+        int64_t delta;
+        if ((ret = av_parse_time(&delta, argv[1], 1)) < 0) {
+            av_log(ctx, AV_LOG_ERROR, "Invalid delta '%s'\n", argv[1]);
+            return ret;
+        }
+        pts += (double)delta / AV_TIME_BASE;
+    }
+    if (!strcmp(fmt, "flt")) {
+        av_bprintf(bp, "%.6f", s->var_values[VAR_T]);
+    } else if (!strcmp(fmt, "hms")) {
+        if (isnan(pts)) {
+            av_bprintf(bp, " ??:??:??.???");
+        } else {
+            int64_t ms = round(pts * 1000);
+            char sign = ' ';
+            if (ms < 0) {
+                sign = '-';
+                ms = -ms;
+            }
+            av_bprintf(bp, "%c%02d:%02d:%02d.%03d", sign,
+                       (int)(ms / (60 * 60 * 1000)),
+                       (int)(ms / (60 * 1000)) % 60,
+                       (int)(ms / 1000) % 60,
+                       (int)ms % 1000);
+        }
+    } else {
+        av_log(ctx, AV_LOG_ERROR, "Invalid format '%s'\n", fmt);
+        return AVERROR(EINVAL);
+    }
     return 0;
 }
 
@@ -742,7 +917,7 @@ static const struct drawtext_function {
     { "expr",      1, 1, 0,   func_eval_expr },
     { "e",         1, 1, 0,   func_eval_expr },
     { "pict_type", 0, 0, 0,   func_pict_type },
-    { "pts",       0, 0, 0,   func_pts      },
+    { "pts",       0, 2, 0,   func_pts      },
     { "gmtime",    0, 1, 'G', func_strftime },
     { "localtime", 0, 1, 'L', func_strftime },
     { "frame_num", 0, 0, 0,   func_frame_num },
@@ -844,7 +1019,7 @@ static int expand_text(AVFilterContext *ctx)
 }
 
 static int draw_glyphs(DrawTextContext *s, AVFrame *frame,
-                       int width, int height, const uint8_t rgbcolor[4],
+                       int width, int height,
                        FFDrawColor *color, int x, int y, int borderw)
 {
     char *text = s->expanded_text.str;
@@ -1038,17 +1213,17 @@ static int draw_text(AVFilterContext *ctx, AVFrame *frame,
                            s->x, s->y, box_w, box_h);
 
     if (s->shadowx || s->shadowy) {
-        if ((ret = draw_glyphs(s, frame, width, height, s->shadowcolor.rgba,
+        if ((ret = draw_glyphs(s, frame, width, height,
                                &s->shadowcolor, s->shadowx, s->shadowy, 0)) < 0)
             return ret;
     }
 
     if (s->borderw) {
-        if ((ret = draw_glyphs(s, frame, width, height, s->bordercolor.rgba,
+        if ((ret = draw_glyphs(s, frame, width, height,
                                &s->bordercolor, 0, 0, s->borderw)) < 0)
             return ret;
     }
-    if ((ret = draw_glyphs(s, frame, width, height, s->fontcolor.rgba,
+    if ((ret = draw_glyphs(s, frame, width, height,
                            &s->fontcolor, 0, 0, 0)) < 0)
         return ret;
 
@@ -1062,9 +1237,15 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     DrawTextContext *s = ctx->priv;
     int ret;
 
-    if (s->reload)
+    if (s->reload) {
         if ((ret = load_textfile(ctx)) < 0)
             return ret;
+#if CONFIG_LIBFRIBIDI
+        if (s->text_shaping)
+            if ((ret = shape_text(ctx)) < 0)
+                return ret;
+#endif
+    }
 
     s->var_values[VAR_N] = inlink->frame_count+s->start_number;
     s->var_values[VAR_T] = frame->pts == AV_NOPTS_VALUE ?

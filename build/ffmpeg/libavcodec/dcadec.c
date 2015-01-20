@@ -478,6 +478,8 @@ typedef struct {
     FmtConvertContext fmt_conv;
 } DCAContext;
 
+static float dca_dmix_code(unsigned code);
+
 static const uint16_t dca_vlc_offs[] = {
         0,   512,   640,   768,  1282,  1794,  2436,  3080,  3770,  4454,  5364,
      5372,  5380,  5388,  5392,  5396,  5412,  5420,  5428,  5460,  5492,  5508,
@@ -568,7 +570,7 @@ static int dca_parse_audio_coding_header(DCAContext *s, int base_channel,
     static const int bitlen[11] = { 0, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3 };
     static const int thr[11]    = { 0, 1, 3, 3, 3, 3, 7, 7, 7, 7, 7 };
     int hdr_pos = 0, hdr_size = 0;
-    float sign, mag, scale_factor;
+    float scale_factor;
     int this_chans, acc_mask;
     int embedded_downmix;
     int nchans, mask[8];
@@ -598,8 +600,14 @@ static int dca_parse_audio_coding_header(DCAContext *s, int base_channel,
         /* check for downmixing information */
         if (get_bits1(&s->gb)) {
             embedded_downmix = get_bits1(&s->gb);
-            scale_factor     =
-               1.0f / dca_dmixtable[(get_bits(&s->gb, 6) - 1) << 2];
+            coeff            = get_bits(&s->gb, 6);
+
+            if (coeff<1 || coeff>61) {
+                av_log(s->avctx, AV_LOG_ERROR, "6bit coeff %d is out of range\n", coeff);
+                return AVERROR_INVALIDDATA;
+            }
+
+            scale_factor     = -1.0f / dca_dmix_code((coeff<<2)-3);
 
             s->xxch_dmix_sf[s->xxch_chset] = scale_factor;
 
@@ -619,10 +627,12 @@ static int dca_parse_audio_coding_header(DCAContext *s, int base_channel,
                         }
 
                         coeff = get_bits(&s->gb, 7);
-                        sign  = (coeff & 64) ? 1.0 : -1.0;
-                        mag   = dca_dmixtable[((coeff & 63) - 1) << 2];
                         ichan = dca_xxch2index(s, 1 << i);
-                        s->xxch_dmix_coeff[j][ichan] = sign * mag;
+                        if ((coeff&63)<1 || (coeff&63)>61) {
+                            av_log(s->avctx, AV_LOG_ERROR, "7bit coeff %d is out of range\n", coeff);
+                            return AVERROR_INVALIDDATA;
+                        }
+                        s->xxch_dmix_coeff[j][ichan] = dca_dmix_code((coeff<<2)-3);
                     }
                 }
             }
@@ -1370,7 +1380,7 @@ static int dca_subsubframe(DCAContext *s, int base_channel, int block_index)
          * Decode VQ encoded high frequencies
          */
         if (s->subband_activity[k] > s->vq_start_subband[k]) {
-            if (!s->debug_flag & 0x01) {
+            if (!(s->debug_flag & 0x01)) {
                 av_log(s->avctx, AV_LOG_DEBUG,
                        "Stream with high frequencies VQ coding\n");
                 s->debug_flag |= 0x01;
@@ -2064,6 +2074,8 @@ static void dca_exss_parse_header(DCAContext *s)
         }
     }
 
+    av_assert0(num_assets > 0); // silence a warning
+
     for (i = 0; i < num_assets; i++)
         asset_size[i] = get_bits_long(&s->gb, 16 + 4 * blownup);
 
@@ -2075,7 +2087,6 @@ static void dca_exss_parse_header(DCAContext *s)
     /* not parsed further, we were only interested in the extensions mask
      * from the asset header */
 
-    if (num_assets > 0) {
         j = get_bits_count(&s->gb);
         if (start_posn + hdrsize * 8 > j)
             skip_bits_long(&s->gb, start_posn + hdrsize * 8 - j);
@@ -2100,7 +2111,13 @@ static void dca_exss_parse_header(DCAContext *s)
             if (start_posn + asset_size[i] * 8 > j)
                 skip_bits_long(&s->gb, start_posn + asset_size[i] * 8 - j);
         }
-    }
+}
+
+static float dca_dmix_code(unsigned code)
+{
+    int sign = (code >> 8) - 1;
+    code &= 0xff;
+    return ((dca_dmixtable[code] ^ sign) - sign) * (1.0 / (1 << 15));
 }
 
 /**
@@ -2142,7 +2159,6 @@ static int dca_decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR_INVALIDDATA;
     }
 
-    init_get_bits(&s->gb, s->dca_buffer, s->dca_buffer_size * 8);
     if ((ret = dca_parse_frame_header(s)) < 0) {
         //seems like the frame is corrupt, try with the next one
         return ret;
@@ -2172,16 +2188,10 @@ static int dca_decode_frame(AVCodecContext *avctx, void *data,
              */
             if (s->core_downmix && (s->core_downmix_amode == DCA_STEREO ||
                                     s->core_downmix_amode == DCA_STEREO_TOTAL)) {
-                int sign, code;
-                for (i = 0; i < s->prim_channels + !!s->lfe; i++) {
-                    sign = s->core_downmix_codes[i][0] & 0x100 ? 1 : -1;
-                    code = s->core_downmix_codes[i][0] & 0x0FF;
-                    s->downmix_coef[i][0] = (!code ? 0.0f :
-                                             sign * dca_dmixtable[code - 1]);
-                    sign = s->core_downmix_codes[i][1] & 0x100 ? 1 : -1;
-                    code = s->core_downmix_codes[i][1] & 0x0FF;
-                    s->downmix_coef[i][1] = (!code ? 0.0f :
-                                             sign * dca_dmixtable[code - 1]);
+                for (i = 0; i < num_core_channels + !!s->lfe; i++) {
+                    /* Range checked earlier */
+                    s->downmix_coef[i][0] = dca_dmix_code(s->core_downmix_codes[i][0]);
+                    s->downmix_coef[i][1] = dca_dmix_code(s->core_downmix_codes[i][1]);
                 }
                 s->output = s->core_downmix_amode;
             } else {
@@ -2191,19 +2201,19 @@ static int dca_decode_frame(AVCodecContext *avctx, void *data,
                            "Invalid channel mode %d\n", am);
                     return AVERROR_INVALIDDATA;
                 }
-                if (s->prim_channels + !!s->lfe >
+                if (num_core_channels + !!s->lfe >
                     FF_ARRAY_ELEMS(dca_default_coeffs[0])) {
                     avpriv_request_sample(s->avctx, "Downmixing %d channels",
                                           s->prim_channels + !!s->lfe);
                     return AVERROR_PATCHWELCOME;
                 }
-                for (i = 0; i < s->prim_channels + !!s->lfe; i++) {
+                for (i = 0; i < num_core_channels + !!s->lfe; i++) {
                     s->downmix_coef[i][0] = dca_default_coeffs[am][i][0];
                     s->downmix_coef[i][1] = dca_default_coeffs[am][i][1];
                 }
             }
             av_dlog(s->avctx, "Stereo downmix coeffs:\n");
-            for (i = 0; i < s->prim_channels + !!s->lfe; i++) {
+            for (i = 0; i < num_core_channels + !!s->lfe; i++) {
                 av_dlog(s->avctx, "L, input channel %d = %f\n", i,
                         s->downmix_coef[i][0]);
                 av_dlog(s->avctx, "R, input channel %d = %f\n", i,
@@ -2329,6 +2339,17 @@ static int dca_decode_frame(AVCodecContext *avctx, void *data,
     { /* xxx should also do MA extensions */
         if (s->amode < 16) {
             avctx->channel_layout = dca_core_channel_layout[s->amode];
+
+            if (s->prim_channels + !!s->lfe > 2 &&
+                avctx->request_channel_layout == AV_CH_LAYOUT_STEREO) {
+                /*
+                 * Neither the core's auxiliary data nor our default tables contain
+                 * downmix coefficients for the additional channel coded in the XCh
+                 * extension, so when we're doing a Stereo downmix, don't decode it.
+                 */
+                s->xch_disable = 1;
+            }
+
 #if FF_API_REQUEST_CHANNELS
 FF_DISABLE_DEPRECATION_WARNINGS
             if (s->xch_present && !s->xch_disable &&
@@ -2366,7 +2387,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
                 return AVERROR_INVALIDDATA;
             }
 
-            if (s->prim_channels + !!s->lfe > 2 &&
+            if (num_core_channels + !!s->lfe > 2 &&
                 avctx->request_channel_layout == AV_CH_LAYOUT_STEREO) {
                 channels = 2;
                 s->output = s->prim_channels == 2 ? s->amode : DCA_STEREO;
@@ -2411,11 +2432,11 @@ FF_ENABLE_DEPRECATION_WARNINGS
             }
         }
 
-        /* make sure that we have managed to get equivelant dts/avcodec channel
+        /* make sure that we have managed to get equivalent dts/avcodec channel
          * masks in some sense -- unfortunately some channels could overlap */
         if (av_popcount(channel_mask) != av_popcount(channel_layout)) {
             av_log(avctx, AV_LOG_DEBUG,
-                   "DTS-XXCH: Inconsistant avcodec/dts channel layouts\n");
+                   "DTS-XXCH: Inconsistent avcodec/dts channel layouts\n");
             return AVERROR_INVALIDDATA;
         }
 
@@ -2433,6 +2454,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
                         s->xxch_order_tab[j++] = posn;
                     }
                 }
+
             }
 
             s->lfe_index = av_popcount(channel_layout & (AV_CH_LOW_FREQUENCY-1));

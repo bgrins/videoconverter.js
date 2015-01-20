@@ -71,6 +71,9 @@ static av_cold int libssh_authentication(LIBSSHContext *libssh, const char *user
     if (user)
         ssh_options_set(libssh->session, SSH_OPTIONS_USER, user);
 
+    if (ssh_userauth_none(libssh->session, NULL) == SSH_AUTH_SUCCESS)
+        return 0;
+
     auth_methods = ssh_userauth_list(libssh->session, NULL);
 
     if (auth_methods & SSH_AUTH_METHOD_PUBLICKEY) {
@@ -164,13 +167,18 @@ static av_cold void libssh_stat_file(LIBSSHContext *libssh)
 static av_cold int libssh_close(URLContext *h)
 {
     LIBSSHContext *libssh = h->priv_data;
-    if (libssh->file)
+    if (libssh->file) {
         sftp_close(libssh->file);
-    if (libssh->sftp)
+        libssh->file = NULL;
+    }
+    if (libssh->sftp) {
         sftp_free(libssh->sftp);
+        libssh->sftp = NULL;
+    }
     if (libssh->session) {
         ssh_disconnect(libssh->session);
         ssh_free(libssh->session);
+        libssh->session = NULL;
     }
     return 0;
 }

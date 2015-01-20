@@ -37,12 +37,7 @@ static av_cold int encode_init(AVCodecContext *avctx)
 {
     SnowContext *s = avctx->priv_data;
     int plane_index, ret;
-
-    if(avctx->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL){
-        av_log(avctx, AV_LOG_ERROR, "This codec is under development, files encoded with it may not be decodable with future versions!!!\n"
-               "Use vstrict=-2 / -strict -2 to use it anyway.\n");
-        return -1;
-    }
+    int i;
 
     if(avctx->prediction_method == DWT_97
        && (avctx->flags & CODEC_FLAG_QSCALE)
@@ -78,7 +73,7 @@ static av_cold int encode_init(AVCodecContext *avctx)
     s->m.bit_rate= avctx->bit_rate;
 
     s->m.me.temp      =
-    s->m.me.scratchpad= av_mallocz((avctx->width+64)*2*16*2*sizeof(uint8_t));
+    s->m.me.scratchpad= av_mallocz_array((avctx->width+64), 2*16*2*sizeof(uint8_t));
     s->m.me.map       = av_mallocz(ME_MAP_SIZE*sizeof(uint32_t));
     s->m.me.score_map = av_mallocz(ME_MAP_SIZE*sizeof(uint32_t));
     s->m.obmc_scratchpad= av_mallocz(MB_SIZE*MB_SIZE*12*sizeof(uint32_t));
@@ -130,15 +125,15 @@ static av_cold int encode_init(AVCodecContext *avctx)
     s->input_picture = av_frame_alloc();
     if (!s->input_picture)
         return AVERROR(ENOMEM);
-    if ((ret = ff_get_buffer(s->avctx, s->input_picture, AV_GET_BUFFER_FLAG_REF)) < 0)
+
+    if ((ret = ff_snow_get_buffer(s, s->input_picture)) < 0)
         return ret;
 
     if(s->avctx->me_method == ME_ITER){
-        int i;
         int size= s->b_width * s->b_height << 2*s->block_max_depth;
         for(i=0; i<s->max_ref_frames; i++){
-            s->ref_mvs[i]= av_mallocz(size*sizeof(int16_t[2]));
-            s->ref_scores[i]= av_mallocz(size*sizeof(uint32_t));
+            s->ref_mvs[i]= av_mallocz_array(size, sizeof(int16_t[2]));
+            s->ref_scores[i]= av_mallocz_array(size, sizeof(uint32_t));
             if (!s->ref_mvs[i] || !s->ref_scores[i])
                 return AVERROR(ENOMEM);
         }
@@ -167,7 +162,7 @@ static int pix_sum(uint8_t * pix, int line_size, int w, int h)
 static int pix_norm1(uint8_t * pix, int line_size, int w)
 {
     int s, i, j;
-    uint32_t *sq = ff_squareTbl + 256;
+    uint32_t *sq = ff_square_tab + 256;
 
     s = 0;
     for (i = 0; i < w; i++) {
@@ -1549,7 +1544,7 @@ static void calculate_visual_weight(SnowContext *s, Plane *p){
 }
 
 static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
-                        AVFrame *pict, int *got_packet)
+                        const AVFrame *pict, int *got_packet)
 {
     SnowContext *s = avctx->priv_data;
     RangeCoder * const c= &s->c;
@@ -1573,10 +1568,10 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             memcpy(&s->input_picture->data[i][y * s->input_picture->linesize[i]],
                    &pict->data[i][y * pict->linesize[i]],
                    width>>hshift);
-        s->dsp.draw_edges(s->input_picture->data[i], s->input_picture->linesize[i],
-                            width >> hshift, height >> vshift,
-                            EDGE_WIDTH >> hshift, EDGE_WIDTH >> vshift,
-                            EDGE_TOP | EDGE_BOTTOM);
+        s->mpvencdsp.draw_edges(s->input_picture->data[i], s->input_picture->linesize[i],
+                                width >> hshift, height >> vshift,
+                                EDGE_WIDTH >> hshift, EDGE_WIDTH >> vshift,
+                                EDGE_TOP | EDGE_BOTTOM);
 
     }
     emms_c();
@@ -1611,8 +1606,8 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     avctx->coded_frame= s->current_picture;
 
     s->m.current_picture_ptr= &s->m.current_picture;
-    s->m.last_picture.f.pts = s->m.current_picture.f.pts;
-    s->m.current_picture.f.pts = pict->pts;
+    s->m.current_picture.f = s->current_picture;
+    s->m.current_picture.f->pts = pict->pts;
     if(pic->pict_type == AV_PICTURE_TYPE_P){
         int block_width = (width +15)>>4;
         int block_height= (height+15)>>4;
@@ -1622,14 +1617,10 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         av_assert0(s->last_picture[0]->data[0]);
 
         s->m.avctx= s->avctx;
-        s->m.current_picture.f.data[0] = s->current_picture->data[0];
-        s->m.   last_picture.f.data[0] = s->last_picture[0]->data[0];
-        s->m.    new_picture.f.data[0] = s->  input_picture->data[0];
+        s->m.   last_picture.f = s->last_picture[0];
+        s->m.    new_picture.f = s->input_picture;
         s->m.   last_picture_ptr= &s->m.   last_picture;
-        s->m.linesize=
-        s->m.   last_picture.f.linesize[0] =
-        s->m.    new_picture.f.linesize[0] =
-        s->m.current_picture.f.linesize[0] = stride;
+        s->m.linesize = stride;
         s->m.uvlinesize= s->current_picture->linesize[1];
         s->m.width = width;
         s->m.height= height;
@@ -1651,6 +1642,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         s->lambda2= s->m.lambda2= (s->m.lambda*s->m.lambda + FF_LAMBDA_SCALE/2) >> FF_LAMBDA_SHIFT;
 
         s->m.dsp= s->dsp; //move
+        s->m.qdsp= s->qdsp; //move
         s->m.hdsp = s->hdsp;
         ff_init_me(&s->m);
         s->hdsp = s->m.hdsp;
@@ -1664,10 +1656,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
 redo_frame:
 
-    if (pic->pict_type == AV_PICTURE_TYPE_I)
-        s->spatial_decomposition_count= 5;
-    else
-        s->spatial_decomposition_count= 5;
+    s->spatial_decomposition_count= 5;
 
     while(   !(width >>(s->chroma_h_shift + s->spatial_decomposition_count))
           || !(height>>(s->chroma_v_shift + s->spatial_decomposition_count)))
@@ -1824,9 +1813,9 @@ redo_frame:
     s->current_picture->quality = pict->quality;
     s->m.frame_bits = 8*(s->c.bytestream - s->c.bytestream_start);
     s->m.p_tex_bits = s->m.frame_bits - s->m.misc_bits - s->m.mv_bits;
-    s->m.current_picture.f.display_picture_number =
-    s->m.current_picture.f.coded_picture_number   = avctx->frame_number;
-    s->m.current_picture.f.quality                = pic->quality;
+    s->m.current_picture.f->display_picture_number =
+    s->m.current_picture.f->coded_picture_number   = avctx->frame_number;
+    s->m.current_picture.f->quality                = pic->quality;
     s->m.total_bits += 8*(s->c.bytestream - s->c.bytestream_start);
     if(s->pass1_rc)
         if (ff_rate_estimate_qscale(&s->m, 0) < 0)

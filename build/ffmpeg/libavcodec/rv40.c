@@ -27,6 +27,7 @@
 #include "libavutil/imgutils.h"
 
 #include "avcodec.h"
+#include "mpegutils.h"
 #include "mpegvideo.h"
 #include "golomb.h"
 
@@ -455,7 +456,7 @@ static void rv40_loop_filter(RV34DecContext *r, int row)
         }
 
         for(j = 0; j < 16; j += 4){
-            Y = s->current_picture_ptr->f.data[0] + mb_x*16 + (row*16 + j) * s->linesize;
+            Y = s->current_picture_ptr->f->data[0] + mb_x*16 + (row*16 + j) * s->linesize;
             for(i = 0; i < 4; i++, Y += 4){
                 int ij = i + j;
                 int clip_cur = y_to_deblock & (MASK_CUR << ij) ? clip[POS_CUR] : 0;
@@ -500,7 +501,7 @@ static void rv40_loop_filter(RV34DecContext *r, int row)
         }
         for(k = 0; k < 2; k++){
             for(j = 0; j < 2; j++){
-                C = s->current_picture_ptr->f.data[k + 1] + mb_x*8 + (row*8 + j*4) * s->uvlinesize;
+                C = s->current_picture_ptr->f->data[k + 1] + mb_x*8 + (row*8 + j*4) * s->uvlinesize;
                 for(i = 0; i < 2; i++, C += 4){
                     int ij = i + j*2;
                     int clip_cur = c_to_deblock[k] & (MASK_CUR << ij) ? clip[POS_CUR] : 0;
@@ -575,7 +576,10 @@ AVCodec ff_rv40_decoder = {
     .capabilities          = CODEC_CAP_DR1 | CODEC_CAP_DELAY |
                              CODEC_CAP_FRAME_THREADS,
     .flush                 = ff_mpeg_flush,
-    .pix_fmts              = ff_pixfmt_list_420,
+    .pix_fmts              = (const enum AVPixelFormat[]) {
+        AV_PIX_FMT_YUV420P,
+        AV_PIX_FMT_NONE
+    },
     .init_thread_copy      = ONLY_IF_THREADS_ENABLED(ff_rv34_decode_init_thread_copy),
     .update_thread_context = ONLY_IF_THREADS_ENABLED(ff_rv34_decode_update_thread_context),
 };

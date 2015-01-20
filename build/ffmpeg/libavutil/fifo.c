@@ -24,17 +24,32 @@
 #include "common.h"
 #include "fifo.h"
 
-AVFifoBuffer *av_fifo_alloc(unsigned int size)
+static AVFifoBuffer *fifo_alloc_common(void *buffer, size_t size)
 {
-    AVFifoBuffer *f = av_mallocz(sizeof(AVFifoBuffer));
-    if (!f)
+    AVFifoBuffer *f;
+    if (!buffer)
         return NULL;
-    f->buffer = av_malloc(size);
+    f = av_mallocz(sizeof(AVFifoBuffer));
+    if (!f) {
+        av_free(buffer);
+        return NULL;
+    }
+    f->buffer = buffer;
     f->end    = f->buffer + size;
     av_fifo_reset(f);
-    if (!f->buffer)
-        av_freep(&f);
     return f;
+}
+
+AVFifoBuffer *av_fifo_alloc(unsigned int size)
+{
+    void *buffer = av_malloc(size);
+    return fifo_alloc_common(buffer, size);
+}
+
+AVFifoBuffer *av_fifo_alloc_array(size_t nmemb, size_t size)
+{
+    void *buffer = av_malloc_array(nmemb, size);
+    return fifo_alloc_common(buffer, nmemb * size);
 }
 
 void av_fifo_free(AVFifoBuffer *f)
@@ -45,18 +60,26 @@ void av_fifo_free(AVFifoBuffer *f)
     }
 }
 
+void av_fifo_freep(AVFifoBuffer **f)
+{
+    if (f) {
+        av_fifo_free(*f);
+        *f = NULL;
+    }
+}
+
 void av_fifo_reset(AVFifoBuffer *f)
 {
     f->wptr = f->rptr = f->buffer;
     f->wndx = f->rndx = 0;
 }
 
-int av_fifo_size(AVFifoBuffer *f)
+int av_fifo_size(FF_CONST_AVUTIL53 AVFifoBuffer *f)
 {
     return (uint32_t)(f->wndx - f->rndx);
 }
 
-int av_fifo_space(AVFifoBuffer *f)
+int av_fifo_space(FF_CONST_AVUTIL53 AVFifoBuffer *f)
 {
     return f->end - f->buffer - av_fifo_size(f);
 }

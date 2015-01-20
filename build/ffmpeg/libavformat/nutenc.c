@@ -26,6 +26,8 @@
 #include "libavutil/tree.h"
 #include "libavutil/dict.h"
 #include "libavutil/avassert.h"
+#include "libavutil/time.h"
+#include "libavutil/opt.h"
 #include "libavcodec/bytestream.h"
 #include "libavcodec/mpegaudiodata.h"
 #include "nut.h"
@@ -338,9 +340,9 @@ static void write_mainheader(NUTContext *nut, AVIOContext *bc)
         tmp_head_idx;
     int64_t tmp_match;
 
-    ff_put_v(bc, nut->version = NUT_VERSION);
+    ff_put_v(bc, nut->version);
     if (nut->version > 3)
-        ff_put_v(bc, nut->minor_version);
+        ff_put_v(bc, nut->minor_version = 1);
     ff_put_v(bc, nut->avf->nb_streams);
     ff_put_v(bc, nut->max_distance);
     ff_put_v(bc, nut->time_base_count);
@@ -407,6 +409,9 @@ static void write_mainheader(NUTContext *nut, AVIOContext *bc)
         ff_put_v(bc, nut->header_len[i]);
         avio_write(bc, nut->header[i], nut->header_len[i]);
     }
+    // flags had been effectively introduced in version 4
+    if (nut->version > 3)
+        ff_put_v(bc, nut->flags);
 }
 
 static int write_streamheader(AVFormatContext *avctx, AVIOContext *bc,
@@ -692,6 +697,16 @@ static int nut_write_header(AVFormatContext *s)
 
     nut->avf = s;
 
+    nut->version = FFMAX(NUT_STABLE_VERSION, 3 + !!nut->flags);
+    if (nut->version > 3 && s->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL) {
+        av_log(s, AV_LOG_ERROR,
+               "The additional syncpoint modes require version %d, "
+               "that is currently not finalized, "
+               "please set -f_strict experimental in order to enable it.\n",
+               nut->version);
+        return AVERROR_EXPERIMENTAL;
+    }
+
     nut->stream   = av_calloc(s->nb_streams,  sizeof(*nut->stream ));
     nut->chapter  = av_calloc(s->nb_chapters, sizeof(*nut->chapter));
     nut->time_base= av_calloc(s->nb_streams +
@@ -707,7 +722,7 @@ static int nut_write_header(AVFormatContext *s)
         AVStream *st = s->streams[i];
         int ssize;
         AVRational time_base;
-        ff_parse_specific_params(st->codec, &time_base.den, &ssize, &time_base.num);
+        ff_parse_specific_params(st, &time_base.den, &ssize, &time_base.num);
 
         if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO && st->codec->sample_rate) {
             time_base = (AVRational) {1, st->codec->sample_rate};
@@ -815,7 +830,6 @@ static int find_best_header_idx(NUTContext *nut, AVPacket *pkt)
 
 static int write_sm_data(AVFormatContext *s, AVIOContext *bc, AVPacket *pkt, int is_meta)
 {
-    AVStream *st = s->streams[pkt->stream_index];
     int ret, i, dyn_size;
     unsigned flags;
     AVIOContext *dyn_bc;
@@ -835,14 +849,18 @@ static int write_sm_data(AVFormatContext *s, AVIOContext *bc, AVPacket *pkt, int
         if (is_meta) {
             if (   pkt->side_data[i].type == AV_PKT_DATA_METADATA_UPDATE
                 || pkt->side_data[i].type == AV_PKT_DATA_STRINGS_METADATA) {
-                if (!size || data[size-1])
-                    return AVERROR(EINVAL);
+                if (!size || data[size-1]) {
+                    ret = AVERROR(EINVAL);
+                    goto fail;
+                }
                 while (data < data_end) {
                     const uint8_t *key = data;
                     const uint8_t *val = data + strlen(key) + 1;
 
-                    if(val >= data_end)
-                        return AVERROR(EINVAL);
+                    if(val >= data_end) {
+                        ret = AVERROR(EINVAL);
+                        goto fail;
+                    }
                     put_str(dyn_bc, key);
                     put_s(dyn_bc, -1);
                     put_str(dyn_bc, val);
@@ -865,7 +883,7 @@ static int write_sm_data(AVFormatContext *s, AVIOContext *bc, AVPacket *pkt, int
                     put_str(dyn_bc, tmp);
                 } else {
                     snprintf(tmp, sizeof(tmp), "UserData%s-SD-%d",
-                            (st->codec->flags & CODEC_FLAG_BITEXACT) ? "Lavf" : LIBAVFORMAT_IDENT,
+                            (s->flags & AVFMT_FLAG_BITEXACT) ? "Lavf" : LIBAVFORMAT_IDENT,
                             pkt->side_data[i].type);
                     put_str(dyn_bc, tmp);
                 }
@@ -923,12 +941,13 @@ static int write_sm_data(AVFormatContext *s, AVIOContext *bc, AVPacket *pkt, int
         }
     }
 
+fail:
     ff_put_v(bc, sm_data_count);
     dyn_size = avio_close_dyn_buf(dyn_bc, &dyn_buf);
     avio_write(bc, dyn_buf, dyn_size);
     av_freep(&dyn_buf);
 
-    return 0;
+    return ret;
 }
 
 static int nut_write_packet(AVFormatContext *s, AVPacket *pkt)
@@ -942,15 +961,17 @@ static int nut_write_packet(AVFormatContext *s, AVPacket *pkt)
     int best_header_idx;
     int key_frame = !!(pkt->flags & AV_PKT_FLAG_KEY);
     int store_sp  = 0;
-    int ret;
+    int ret = 0;
     int sm_size = 0;
     int data_size = pkt->size;
-    uint8_t *sm_buf;
+    uint8_t *sm_buf = NULL;
 
     if (pkt->pts < 0) {
         av_log(s, AV_LOG_ERROR,
                "Negative pts not supported stream %d, pts %"PRId64"\n",
                pkt->stream_index, pkt->pts);
+        if (pkt->pts == AV_NOPTS_VALUE)
+            av_log(s, AV_LOG_ERROR, "Try to enable the genpts flag\n");
         return AVERROR(EINVAL);
     }
 
@@ -958,9 +979,12 @@ static int nut_write_packet(AVFormatContext *s, AVPacket *pkt)
         ret = avio_open_dyn_buf(&sm_bc);
         if (ret < 0)
             return ret;
-        write_sm_data(s, sm_bc, pkt, 0);
-        write_sm_data(s, sm_bc, pkt, 1);
+        ret = write_sm_data(s, sm_bc, pkt, 0);
+        if (ret >= 0)
+            ret = write_sm_data(s, sm_bc, pkt, 1);
         sm_size = avio_close_dyn_buf(sm_bc, &sm_buf);
+        if (ret < 0)
+            goto fail;
         data_size += sm_size;
     }
 
@@ -975,8 +999,9 @@ static int nut_write_packet(AVFormatContext *s, AVPacket *pkt)
 
 //FIXME: Ensure store_sp is 1 in the first place.
 
-    if (store_sp) {
-        Syncpoint *sp, dummy = { .pos = INT64_MAX };
+    if (store_sp &&
+        (!(nut->flags & NUT_PIPE) || nut->last_syncpoint_pos == INT_MIN)) {
+        int64_t sp_pos = INT64_MAX;
 
         ff_nut_reset_ts(nut, *nus->time_base, pkt->dts);
         for (i = 0; i < s->nb_streams; i++) {
@@ -987,34 +1012,46 @@ static int nut_write_packet(AVFormatContext *s, AVPacket *pkt)
                 AV_ROUND_DOWN);
             int index = av_index_search_timestamp(st, dts_tb,
                                                   AVSEEK_FLAG_BACKWARD);
-            if (index >= 0)
-                dummy.pos = FFMIN(dummy.pos, st->index_entries[index].pos);
+            if (index >= 0) {
+                sp_pos = FFMIN(sp_pos, st->index_entries[index].pos);
+                if (!nut->write_index && 2*index > st->nb_index_entries) {
+                    memmove(st->index_entries,
+                            st->index_entries + index,
+                            sizeof(*st->index_entries) * (st->nb_index_entries - index));
+                    st->nb_index_entries -=  index;
+                }
+            }
         }
-        if (dummy.pos == INT64_MAX)
-            dummy.pos = 0;
-        sp = av_tree_find(nut->syncpoints, &dummy, (void *)ff_nut_sp_pos_cmp,
-                          NULL);
 
         nut->last_syncpoint_pos = avio_tell(bc);
         ret                     = avio_open_dyn_buf(&dyn_bc);
         if (ret < 0)
-            return ret;
+            goto fail;
         put_tt(nut, nus->time_base, dyn_bc, pkt->dts);
-        ff_put_v(dyn_bc, sp ? (nut->last_syncpoint_pos - sp->pos) >> 4 : 0);
+        ff_put_v(dyn_bc, sp_pos != INT64_MAX ? (nut->last_syncpoint_pos - sp_pos) >> 4 : 0);
+
+        if (nut->flags & NUT_BROADCAST) {
+            put_tt(nut, nus->time_base, dyn_bc,
+                   av_rescale_q(av_gettime(), AV_TIME_BASE_Q, *nus->time_base));
+        }
         put_packet(nut, bc, dyn_bc, 1, SYNCPOINT_STARTCODE);
 
+        if (nut->write_index) {
         if ((ret = ff_nut_add_sp(nut, nut->last_syncpoint_pos, 0 /*unused*/, pkt->dts)) < 0)
-            return ret;
+            goto fail;
 
         if ((1ll<<60) % nut->sp_count == 0)
             for (i=0; i<s->nb_streams; i++) {
                 int j;
                 StreamContext *nus = &nut->stream[i];
                 av_reallocp_array(&nus->keyframe_pts, 2*nut->sp_count, sizeof(*nus->keyframe_pts));
-                if (!nus->keyframe_pts)
-                    return AVERROR(ENOMEM);
+                if (!nus->keyframe_pts) {
+                    ret = AVERROR(ENOMEM);
+                    goto fail;
+                }
                 for (j=nut->sp_count == 1 ? 0 : nut->sp_count; j<2*nut->sp_count; j++)
                     nus->keyframe_pts[j] = AV_NOPTS_VALUE;
+        }
         }
     }
     av_assert0(nus->last_pts != AV_NOPTS_VALUE);
@@ -1103,7 +1140,6 @@ static int nut_write_packet(AVFormatContext *s, AVPacket *pkt)
 
     if (flags & FLAG_SM_DATA) {
         avio_write(bc, sm_buf, sm_size);
-        av_freep(&sm_buf);
     }
     avio_write(bc, pkt->data + nut->header_len[header_idx], pkt->size - nut->header_len[header_idx]);
 
@@ -1111,7 +1147,7 @@ static int nut_write_packet(AVFormatContext *s, AVPacket *pkt)
     nus->last_pts   = pkt->pts;
 
     //FIXME just store one per syncpoint
-    if (flags & FLAG_KEY) {
+    if (flags & FLAG_KEY && !(nut->flags & NUT_PIPE)) {
         av_add_index_entry(
             s->streams[pkt->stream_index],
             nut->last_syncpoint_pos,
@@ -1128,7 +1164,10 @@ static int nut_write_packet(AVFormatContext *s, AVPacket *pkt)
         nut->max_pts_tb = nus->time_base;
     }
 
-    return 0;
+fail:
+    av_freep(&sm_buf);
+
+    return ret;
 }
 
 static int nut_write_trailer(AVFormatContext *s)
@@ -1142,6 +1181,7 @@ static int nut_write_trailer(AVFormatContext *s)
 
     ret = avio_open_dyn_buf(&dyn_bc);
     if (ret >= 0 && nut->sp_count) {
+        av_assert1(nut->write_index);
         write_index(nut, dyn_bc);
         put_packet(nut, bc, dyn_bc, 1, INDEX_STARTCODE);
     }
@@ -1157,6 +1197,24 @@ static int nut_write_trailer(AVFormatContext *s)
     return 0;
 }
 
+#define OFFSET(x) offsetof(NUTContext, x)
+#define E AV_OPT_FLAG_ENCODING_PARAM
+static const AVOption options[] = {
+    { "syncpoints",  "NUT syncpoint behaviour",                         OFFSET(flags), AV_OPT_TYPE_FLAGS, {.i64 = 0},             INT_MIN, INT_MAX, E, "syncpoints" },
+    { "default",     "",                                                0,             AV_OPT_TYPE_CONST, {.i64 = 0},             INT_MIN, INT_MAX, E, "syncpoints" },
+    { "none",        "Disable syncpoints, low overhead and unseekable", 0,             AV_OPT_TYPE_CONST, {.i64 = NUT_PIPE},      INT_MIN, INT_MAX, E, "syncpoints" },
+    { "timestamped", "Extend syncpoints with a wallclock timestamp",    0,             AV_OPT_TYPE_CONST, {.i64 = NUT_BROADCAST}, INT_MIN, INT_MAX, E, "syncpoints" },
+    { "write_index", "Write index",                               OFFSET(write_index), AV_OPT_TYPE_INT,   {.i64 = 1},                   0,       1, E, },
+    { NULL },
+};
+
+static const AVClass class = {
+    .class_name = "nutenc",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
+
 AVOutputFormat ff_nut_muxer = {
     .name           = "nut",
     .long_name      = NULL_IF_CONFIG_SMALL("NUT"),
@@ -1171,4 +1229,5 @@ AVOutputFormat ff_nut_muxer = {
     .write_trailer  = nut_write_trailer,
     .flags          = AVFMT_GLOBALHEADER | AVFMT_VARIABLE_FPS,
     .codec_tag      = ff_nut_codec_tags,
+    .priv_class     = &class,
 };

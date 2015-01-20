@@ -22,6 +22,7 @@
 
 #include "vaapi_internal.h"
 #include "h264.h"
+#include "mpegutils.h"
 
 /**
  * @file
@@ -51,14 +52,14 @@ static void init_vaapi_pic(VAPictureH264 *va_pic)
  *                             supersedes pic's field type if nonzero.
  */
 static void fill_vaapi_pic(VAPictureH264 *va_pic,
-                           Picture       *pic,
+                           H264Picture   *pic,
                            int            pic_structure)
 {
     if (pic_structure == 0)
         pic_structure = pic->reference;
     pic_structure &= PICT_FRAME; /* PICT_TOP_FIELD|PICT_BOTTOM_FIELD */
 
-    va_pic->picture_id = ff_vaapi_get_surface_id(pic);
+    va_pic->picture_id = ff_vaapi_get_surface_id(&pic->f);
     va_pic->frame_idx  = pic->long_ref ? pic->pic_id : pic->frame_num;
 
     va_pic->flags      = 0;
@@ -89,7 +90,7 @@ typedef struct DPB {
  * available.  The decoded picture buffer's size must be large enough
  * to receive the new VA API picture object.
  */
-static int dpb_add(DPB *dpb, Picture *pic)
+static int dpb_add(DPB *dpb, H264Picture *pic)
 {
     int i;
 
@@ -98,7 +99,7 @@ static int dpb_add(DPB *dpb, Picture *pic)
 
     for (i = 0; i < dpb->size; i++) {
         VAPictureH264 * const va_pic = &dpb->va_pics[i];
-        if (va_pic->picture_id == ff_vaapi_get_surface_id(pic)) {
+        if (va_pic->picture_id == ff_vaapi_get_surface_id(&pic->f)) {
             VAPictureH264 temp_va_pic;
             fill_vaapi_pic(&temp_va_pic, pic, 0);
 
@@ -133,13 +134,13 @@ static int fill_vaapi_ReferenceFrames(VAPictureParameterBufferH264 *pic_param,
         init_vaapi_pic(&dpb.va_pics[i]);
 
     for (i = 0; i < h->short_ref_count; i++) {
-        Picture * const pic = h->short_ref[i];
+        H264Picture * const pic = h->short_ref[i];
         if (pic && pic->reference && dpb_add(&dpb, pic) < 0)
             return -1;
     }
 
     for (i = 0; i < 16; i++) {
-        Picture * const pic = h->long_ref[i];
+        H264Picture * const pic = h->long_ref[i];
         if (pic && pic->reference && dpb_add(&dpb, pic) < 0)
             return -1;
     }
@@ -155,7 +156,7 @@ static int fill_vaapi_ReferenceFrames(VAPictureParameterBufferH264 *pic_param,
  * @param[in]  ref_count   The number of reference pictures in ref_list
  */
 static void fill_vaapi_RefPicList(VAPictureH264 RefPicList[32],
-                                  Picture      *ref_list,
+                                  H264Picture  *ref_list,
                                   unsigned int  ref_count)
 {
     unsigned int i, n = 0;
@@ -298,7 +299,7 @@ static int vaapi_h264_end_frame(AVCodecContext *avctx)
     if (ret < 0)
         goto finish;
 
-    ret = ff_vaapi_render_picture(vactx, ff_vaapi_get_surface_id(h->cur_pic_ptr));
+    ret = ff_vaapi_render_picture(vactx, ff_vaapi_get_surface_id(&h->cur_pic_ptr->f));
     if (ret < 0)
         goto finish;
 

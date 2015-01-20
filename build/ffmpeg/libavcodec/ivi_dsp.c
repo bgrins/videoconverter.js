@@ -235,15 +235,15 @@ void ff_ivi_recompose_haar(const IVIPlaneDesc *plane, uint8_t *dst,
 
 /** butterfly operation for the inverse Haar transform */
 #define IVI_HAAR_BFLY(s1, s2, o1, o2, t) \
-    t  = (s1 - s2) >> 1;\
-    o1 = (s1 + s2) >> 1;\
-    o2 = t;\
+    t  = ((s1) - (s2)) >> 1;\
+    o1 = ((s1) + (s2)) >> 1;\
+    o2 = (t);\
 
 /** inverse 8-point Haar transform */
 #define INV_HAAR8(s1, s5, s3, s7, s2, s4, s6, s8,\
                   d1, d2, d3, d4, d5, d6, d7, d8,\
                   t0, t1, t2, t3, t4, t5, t6, t7, t8) {\
-    t1 = s1 << 1; t5 = s5 << 1;\
+    t1 = (s1) << 1; t5 = (s5) << 1;\
     IVI_HAAR_BFLY(t1, t5, t1, t5, t0); IVI_HAAR_BFLY(t1, s3, t1, t3, t0);\
     IVI_HAAR_BFLY(t5, s7, t5, t7, t0); IVI_HAAR_BFLY(t1, s2, t1, t2, t0);\
     IVI_HAAR_BFLY(t3, s4, t3, t4, t0); IVI_HAAR_BFLY(t5, s6, t5, t6, t0);\
@@ -485,21 +485,21 @@ void ff_ivi_dc_haar_2d(const int32_t *in, int16_t *out, uint32_t pitch,
 
 /** butterfly operation for the inverse slant transform */
 #define IVI_SLANT_BFLY(s1, s2, o1, o2, t) \
-    t  = s1 - s2;\
-    o1 = s1 + s2;\
-    o2 = t;\
+    t  = (s1) - (s2);\
+    o1 = (s1) + (s2);\
+    o2 = (t);\
 
 /** This is a reflection a,b = 1/2, 5/4 for the inverse slant transform */
 #define IVI_IREFLECT(s1, s2, o1, o2, t) \
-    t  = ((s1 + s2*2 + 2) >> 2) + s1;\
-    o2 = ((s1*2 - s2 + 2) >> 2) - s2;\
-    o1 = t;\
+    t  = (((s1) + (s2)*2 + 2) >> 2) + (s1);\
+    o2 = (((s1)*2 - (s2) + 2) >> 2) - (s2);\
+    o1 = (t);\
 
 /** This is a reflection a,b = 1/2, 7/8 for the inverse slant transform */
 #define IVI_SLANT_PART4(s1, s2, o1, o2, t) \
-    t  = s2 + ((s1*4  - s2 + 4) >> 3);\
-    o2 = s1 + ((-s1 - s2*4 + 4) >> 3);\
-    o1 = t;\
+    t  = (s2) + (((s1)*4  - (s2) + 4) >> 3);\
+    o2 = (s1) + ((-(s1) - (s2)*4 + 4) >> 3);\
+    o1 = (t);\
 
 /** inverse slant8 transform */
 #define IVI_INV_SLANT8(s1, s4, s8, s5, s2, s6, s3, s7,\
@@ -557,7 +557,7 @@ void ff_ivi_inverse_slant_8x8(const int32_t *in, int16_t *out, uint32_t pitch, c
     }
 #undef COMPENSATE
 
-#define COMPENSATE(x) ((x + 1)>>1)
+#define COMPENSATE(x) (((x) + 1)>>1)
     src = tmp;
     for (i = 0; i < 8; i++) {
         if (!src[0] && !src[1] && !src[2] && !src[3] && !src[4] && !src[5] && !src[6] && !src[7]) {
@@ -597,7 +597,7 @@ void ff_ivi_inverse_slant_4x4(const int32_t *in, int16_t *out, uint32_t pitch, c
     }
 #undef COMPENSATE
 
-#define COMPENSATE(x) ((x + 1)>>1)
+#define COMPENSATE(x) (((x) + 1)>>1)
     src = tmp;
     for (i = 0; i < 4; i++) {
         if (!src[0] && !src[1] && !src[2] && !src[3]) {
@@ -631,7 +631,7 @@ void ff_ivi_row_slant8(const int32_t *in, int16_t *out, uint32_t pitch, const ui
     int     i;
     int     t0, t1, t2, t3, t4, t5, t6, t7, t8;
 
-#define COMPENSATE(x) ((x + 1)>>1)
+#define COMPENSATE(x) (((x) + 1)>>1)
     for (i = 0; i < 8; i++) {
         if (!in[0] && !in[1] && !in[2] && !in[3] && !in[4] && !in[5] && !in[6] && !in[7]) {
             memset(out, 0, 8*sizeof(out[0]));
@@ -673,7 +673,7 @@ void ff_ivi_col_slant8(const int32_t *in, int16_t *out, uint32_t pitch, const ui
     row4 = pitch << 2;
     row8 = pitch << 3;
 
-#define COMPENSATE(x) ((x + 1)>>1)
+#define COMPENSATE(x) (((x) + 1)>>1)
     for (i = 0; i < 8; i++) {
         if (flags[i]) {
             IVI_INV_SLANT8(in[0], in[8], in[16], in[24], in[32], in[40], in[48], in[56],
@@ -710,7 +710,7 @@ void ff_ivi_row_slant4(const int32_t *in, int16_t *out, uint32_t pitch, const ui
     int     i;
     int     t0, t1, t2, t3, t4;
 
-#define COMPENSATE(x) ((x + 1)>>1)
+#define COMPENSATE(x) (((x) + 1)>>1)
     for (i = 0; i < 4; i++) {
         if (!in[0] && !in[1] && !in[2] && !in[3]) {
             memset(out, 0, 4*sizeof(out[0]));
@@ -732,7 +732,7 @@ void ff_ivi_col_slant4(const int32_t *in, int16_t *out, uint32_t pitch, const ui
 
     row2 = pitch << 1;
 
-#define COMPENSATE(x) ((x + 1)>>1)
+#define COMPENSATE(x) (((x) + 1)>>1)
     for (i = 0; i < 4; i++) {
         if (flags[i]) {
             IVI_INV_SLANT4(in[0], in[4], in[8], in[12],
@@ -772,37 +772,64 @@ void ff_ivi_put_dc_pixel_8x8(const int32_t *in, int16_t *out, uint32_t pitch,
 }
 
 #define IVI_MC_TEMPLATE(size, suffix, OP) \
-void ff_ivi_mc_ ## size ##x## size ## suffix (int16_t *buf, const int16_t *ref_buf, \
-                                              uint32_t pitch, int mc_type) \
+static void ivi_mc_ ## size ##x## size ## suffix(int16_t *buf, \
+                                                 uint32_t dpitch, \
+                                                 const int16_t *ref_buf, \
+                                                 uint32_t pitch, int mc_type) \
 { \
     int     i, j; \
     const int16_t *wptr; \
 \
     switch (mc_type) { \
     case 0: /* fullpel (no interpolation) */ \
-        for (i = 0; i < size; i++, buf += pitch, ref_buf += pitch) { \
+        for (i = 0; i < size; i++, buf += dpitch, ref_buf += pitch) { \
             for (j = 0; j < size; j++) {\
                 OP(buf[j], ref_buf[j]); \
             } \
         } \
         break; \
     case 1: /* horizontal halfpel interpolation */ \
-        for (i = 0; i < size; i++, buf += pitch, ref_buf += pitch) \
+        for (i = 0; i < size; i++, buf += dpitch, ref_buf += pitch) \
             for (j = 0; j < size; j++) \
                 OP(buf[j], (ref_buf[j] + ref_buf[j+1]) >> 1); \
         break; \
     case 2: /* vertical halfpel interpolation */ \
         wptr = ref_buf + pitch; \
-        for (i = 0; i < size; i++, buf += pitch, wptr += pitch, ref_buf += pitch) \
+        for (i = 0; i < size; i++, buf += dpitch, wptr += pitch, ref_buf += pitch) \
             for (j = 0; j < size; j++) \
                 OP(buf[j], (ref_buf[j] + wptr[j]) >> 1); \
         break; \
     case 3: /* vertical and horizontal halfpel interpolation */ \
         wptr = ref_buf + pitch; \
-        for (i = 0; i < size; i++, buf += pitch, wptr += pitch, ref_buf += pitch) \
+        for (i = 0; i < size; i++, buf += dpitch, wptr += pitch, ref_buf += pitch) \
             for (j = 0; j < size; j++) \
                 OP(buf[j], (ref_buf[j] + ref_buf[j+1] + wptr[j] + wptr[j+1]) >> 2); \
         break; \
+    } \
+} \
+\
+void ff_ivi_mc_ ## size ##x## size ## suffix(int16_t *buf, const int16_t *ref_buf, \
+                                             uint32_t pitch, int mc_type) \
+{ \
+    ivi_mc_ ## size ##x## size ## suffix(buf, pitch, ref_buf, pitch, mc_type); \
+} \
+
+#define IVI_MC_AVG_TEMPLATE(size, suffix, OP) \
+void ff_ivi_mc_avg_ ## size ##x## size ## suffix(int16_t *buf, \
+                                                 const int16_t *ref_buf, \
+                                                 const int16_t *ref_buf2, \
+                                                 uint32_t pitch, \
+                                                 int mc_type, int mc_type2) \
+{ \
+    int16_t tmp[size * size]; \
+    int i, j; \
+\
+    ivi_mc_ ## size ##x## size ## _no_delta(tmp, size, ref_buf, pitch, mc_type); \
+    ivi_mc_ ## size ##x## size ## _delta(tmp, size, ref_buf2, pitch, mc_type2); \
+    for (i = 0; i < size; i++, buf += pitch) { \
+        for (j = 0; j < size; j++) {\
+            OP(buf[j], tmp[i * size + j] >> 1); \
+        } \
     } \
 } \
 
@@ -813,3 +840,7 @@ IVI_MC_TEMPLATE(8, _no_delta, OP_PUT)
 IVI_MC_TEMPLATE(8, _delta,    OP_ADD)
 IVI_MC_TEMPLATE(4, _no_delta, OP_PUT)
 IVI_MC_TEMPLATE(4, _delta,    OP_ADD)
+IVI_MC_AVG_TEMPLATE(8, _no_delta, OP_PUT)
+IVI_MC_AVG_TEMPLATE(8, _delta,    OP_ADD)
+IVI_MC_AVG_TEMPLATE(4, _no_delta, OP_PUT)
+IVI_MC_AVG_TEMPLATE(4, _delta,    OP_ADD)

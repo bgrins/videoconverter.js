@@ -73,6 +73,7 @@ typedef struct MOVFragment {
     unsigned track_id;
     uint64_t base_data_offset;
     uint64_t moof_offset;
+    uint64_t implicit_offset;
     unsigned stsd_id;
     unsigned duration;
     unsigned size;
@@ -145,6 +146,8 @@ typedef struct MOVStreamContext {
 
     int nb_frames_for_fps;
     int64_t duration_for_fps;
+
+    int32_t *display_matrix;
 } MOVStreamContext;
 
 typedef struct MOVContext {
@@ -167,6 +170,7 @@ typedef struct MOVContext {
     int64_t next_root_atom; ///< offset of the next root atom
     int *bitrates;          ///< bitrates read before streams creation
     int bitrates_count;
+    int moov_retry;
 } MOVContext;
 
 int ff_mp4_read_descr_len(AVIOContext *pb);
@@ -187,6 +191,7 @@ void ff_mp4_parse_es_descr(AVIOContext *pb, int *es_id);
 #define MOV_TFHD_DEFAULT_SIZE           0x10
 #define MOV_TFHD_DEFAULT_FLAGS          0x20
 #define MOV_TFHD_DURATION_IS_EMPTY  0x010000
+#define MOV_TFHD_DEFAULT_BASE_IS_MOOF 0x020000
 
 #define MOV_TRUN_DATA_OFFSET            0x01
 #define MOV_TRUN_FIRST_SAMPLE_FLAGS     0x04

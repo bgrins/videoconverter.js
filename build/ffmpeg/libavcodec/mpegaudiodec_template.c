@@ -216,7 +216,7 @@ static inline int l1_unscale(int n, int mant, int scale_factor)
     shift   = scale_factor_modshift[scale_factor];
     mod     = shift & 3;
     shift >>= 2;
-    val     = MUL64(mant + (-1 << n) + 1, scale_factor_mult[n-1][mod]);
+    val     = MUL64((int)(mant + (-1U << n) + 1), scale_factor_mult[n-1][mod]);
     shift  += n;
     /* NOTE: at this point, 1 <= shift >= 21 + 15 */
     return (int)((val + (1LL << (shift - 1))) >> shift);
@@ -1705,7 +1705,9 @@ static int decode_frame(AVCodecContext * avctx, void *data, int *got_frame_ptr,
 static void mp_flush(MPADecodeContext *ctx)
 {
     memset(ctx->synth_buf, 0, sizeof(ctx->synth_buf));
+    memset(ctx->mdct_buf, 0, sizeof(ctx->mdct_buf));
     ctx->last_buf_size = 0;
+    ctx->dither_state = 0;
 }
 
 static void flush(AVCodecContext *avctx)

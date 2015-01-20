@@ -166,7 +166,7 @@ This protocol accepts the following options.
 
 @table @option
 @item timeout
-Set timeout of socket I/O operations used by the underlying low level
+Set timeout in microseconds of socket I/O operations used by the underlying low level
 operation. By default it is set to -1, which means that the timeout is
 not specified.
 
@@ -244,7 +244,7 @@ Override the User-Agent header. If not specified the protocol will use a
 string describing the libavformat build. ("Lavf/<version>")
 
 @item timeout
-Set timeout of socket I/O operations used by the underlying low level
+Set timeout in microseconds of socket I/O operations used by the underlying low level
 operation. By default it is set to -1, which means that the timeout is
 not specified.
 
@@ -537,6 +537,35 @@ The Real-Time Messaging Protocol tunneled through HTTPS (RTMPTS) is used
 for streaming multimedia content within HTTPS requests to traverse
 firewalls.
 
+@section libsmbclient
+
+libsmbclient permits to manipulate CIFS/SMB network resources.
+
+Following syntax is required.
+
+@example
+smb://[[domain:]user[:password@@]]server[/share[/path[/file]]]
+@end example
+
+This protocol accepts the following options.
+
+@table @option
+@item timeout
+Set timeout in miliseconds of socket I/O operations used by the underlying
+low level operation. By default it is set to -1, which means that the timeout
+is not specified.
+
+@item truncate
+Truncate existing files on write, if set to 1. A value of 0 prevents
+truncating. Default value is 1.
+
+@item workgroup
+Set the workgroup used for making connections. By default workgroup is not specified.
+
+@end table
+
+For more information see: @url{http://www.samba.org/}.
+
 @section libssh
 
 Secure File Transfer Protocol via libssh
@@ -691,7 +720,7 @@ data transferred over RDT).
 
 The muxer can be used to send a stream using RTSP ANNOUNCE to a server
 supporting it (currently Darwin Streaming Server and Mischa Spiegelmock's
-@uref{http://github.com/revmischa/rtsp-server, RTSP server}).
+@uref{https://github.com/revmischa/rtsp-server, RTSP server}).
 
 The required syntax for a RTSP url is:
 @example
@@ -710,7 +739,7 @@ Do not start playing the stream immediately if set to 1. Default value
 is 0.
 
 @item rtsp_transport
-Set RTSP trasport protocols.
+Set RTSP transport protocols.
 
 It accepts the following values:
 @table @samp
@@ -742,6 +771,8 @@ The following values are accepted:
 Accept packets only from negotiated peer address and port.
 @item listen
 Act as a server, listening for an incoming connection.
+@item prefer_tcp
+Try TCP for RTP transport first, if TCP is available as RTSP RTP transport.
 @end table
 
 Default value is @samp{none}.
@@ -767,17 +798,17 @@ Set maximum local UDP port. Default value is 65000.
 @item timeout
 Set maximum timeout (in seconds) to wait for incoming connections.
 
-A value of -1 mean infinite (default). This option implies the
+A value of -1 means infinite (default). This option implies the
 @option{rtsp_flags} set to @samp{listen}.
 
 @item reorder_queue_size
 Set number of packets to buffer for handling of reordered packets.
 
 @item stimeout
-Set socket TCP I/O timeout in micro seconds.
+Set socket TCP I/O timeout in microseconds.
 
 @item user-agent
-Override User-Agent header. If not specified, it default to the
+Override User-Agent header. If not specified, it defaults to the
 libavformat identifier string.
 @end table
 
@@ -958,9 +989,33 @@ this binary block are used as master key, the following 14 bytes are
 used as master salt.
 @end table
 
+@section subfile
+
+Virtually extract a segment of a file or another stream.
+The underlying stream must be seekable.
+
+Accepted options:
+@table @option
+@item start
+Start offset of the extracted segment, in bytes.
+@item end
+End offset of the extracted segment, in bytes.
+@end table
+
+Examples:
+
+Extract a chapter from a DVD VOB file (start and end sectors obtained
+externally and multiplied by 2048):
+@example
+subfile,,start,153391104,end,268142592,,:/media/dvd/VIDEO_TS/VTS_08_1.VOB
+@end example
+
+Play an AVI file directly from a TAR archive:
+subfile,,start,183241728,end,366490624,,:archive.tar
+
 @section tcp
 
-Trasmission Control Protocol.
+Transmission Control Protocol.
 
 The required syntax for a TCP url is:
 @example
@@ -1066,7 +1121,7 @@ udp://@var{hostname}:@var{port}[?@var{options}]
 @var{options} contains a list of &-separated options of the form @var{key}=@var{val}.
 
 In case threading is enabled on the system, a circular buffer is used
-to store the incoming data, which allows to reduce loss of data due to
+to store the incoming data, which allows one to reduce loss of data due to
 UDP socket buffer overruns. The @var{fifo_size} and
 @var{overrun_nonfatal} options are related to this buffer.
 
@@ -1074,8 +1129,9 @@ The list of supported options follows.
 
 @table @option
 @item buffer_size=@var{size}
-Set the UDP socket buffer size in bytes. This is used both for the
-receiving and the sending buffer size.
+Set the UDP maximum socket buffer size in bytes. This is used to set either
+the receive or send buffer size, depending on what the socket is used for.
+Default is 64KB.  See also @var{fifo_size}.
 
 @item localport=@var{port}
 Override the local UDP port to bind with.
@@ -1126,6 +1182,12 @@ Set raise error timeout, expressed in microseconds.
 
 This option is only relevant in read mode: if no data arrived in more
 than this time interval, raise error.
+
+@item broadcast=@var{1|0}
+Explicitly allow or disallow UDP broadcasting.
+
+Note that broadcasting may not work properly on networks having
+a broadcast storm protection.
 @end table
 
 @subsection Examples

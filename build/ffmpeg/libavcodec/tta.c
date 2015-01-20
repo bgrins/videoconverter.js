@@ -104,12 +104,12 @@ static int allocate_buffers(AVCodecContext *avctx)
     TTAContext *s = avctx->priv_data;
 
     if (s->bps < 3) {
-        s->decode_buffer = av_mallocz(sizeof(int32_t)*s->frame_length*s->channels);
+        s->decode_buffer = av_mallocz_array(sizeof(int32_t)*s->frame_length, s->channels);
         if (!s->decode_buffer)
             return AVERROR(ENOMEM);
     } else
         s->decode_buffer = NULL;
-    s->ch_ctx = av_malloc(avctx->channels * sizeof(*s->ch_ctx));
+    s->ch_ctx = av_malloc_array(avctx->channels, sizeof(*s->ch_ctx));
     if (!s->ch_ctx) {
         av_freep(&s->decode_buffer);
         return AVERROR(ENOMEM);
@@ -312,7 +312,7 @@ static int tta_decode_frame(AVCodecContext *avctx, void *data,
                                      filter->shift, filter->round);
 
         // fixed order prediction
-#define PRED(x, k) (int32_t)((((uint64_t)x << k) - x) >> k)
+#define PRED(x, k) (int32_t)((((uint64_t)(x) << (k)) - (x)) >> (k))
         switch (s->bps) {
         case 1: *p += PRED(*predictor, 4); break;
         case 2:

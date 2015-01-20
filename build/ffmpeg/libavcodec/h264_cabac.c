@@ -29,6 +29,7 @@
 #define UNCHECKED_BITSTREAM_READER 1
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavutil/timer.h"
 #include "config.h"
 #include "cabac.h"
@@ -39,7 +40,7 @@
 #include "h264data.h"
 #include "h264_mvpred.h"
 #include "golomb.h"
-#include "libavutil/avassert.h"
+#include "mpegutils.h"
 
 #if ARCH_X86
 #include "x86/h264_i386.h"
@@ -1620,7 +1621,7 @@ decode_cabac_residual_internal(H264Context *h, int16_t *block,
     cc.range     = h->cabac.range;
     cc.low       = h->cabac.low;
     cc.bytestream= h->cabac.bytestream;
-#if !UNCHECKED_BITSTREAM_READER
+#if !UNCHECKED_BITSTREAM_READER || ARCH_AARCH64
     cc.bytestream_end = h->cabac.bytestream_end;
 #endif
 #else
@@ -2193,7 +2194,7 @@ decode_intra_mb:
                         }
                     }else
                         ref=0;
-                        fill_rectangle(&h->ref_cache[list][ scan8[0] ], 4, 4, 8, ref, 1);
+                    fill_rectangle(&h->ref_cache[list][ scan8[0] ], 4, 4, 8, ref, 1);
                 }
             }
             for(list=0; list<h->list_count; list++){

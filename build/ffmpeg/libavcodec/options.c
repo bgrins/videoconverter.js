@@ -154,8 +154,26 @@ AVCodecContext *avcodec_alloc_context3(const AVCodec *codec)
     return avctx;
 }
 
+void avcodec_free_context(AVCodecContext **pavctx)
+{
+    AVCodecContext *avctx = *pavctx;
+
+    if (!avctx)
+        return;
+
+    avcodec_close(avctx);
+
+    av_freep(&avctx->extradata);
+    av_freep(&avctx->subtitle_header);
+
+    av_freep(pavctx);
+}
+
 int avcodec_copy_context(AVCodecContext *dest, const AVCodecContext *src)
 {
+    const AVCodec *orig_codec = dest->codec;
+    uint8_t *orig_priv_data = dest->priv_data;
+
     if (avcodec_is_open(dest)) { // check that the dest context is uninitialized
         av_log(dest, AV_LOG_ERROR,
                "Tried to copy AVCodecContext %p into already-initialized %p\n",
@@ -164,13 +182,17 @@ int avcodec_copy_context(AVCodecContext *dest, const AVCodecContext *src)
     }
 
     av_opt_free(dest);
-    av_free(dest->priv_data);
 
     memcpy(dest, src, sizeof(*dest));
 
+    dest->priv_data       = orig_priv_data;
+
+    if (orig_priv_data)
+        av_opt_copy(orig_priv_data, src->priv_data);
+
+    dest->codec           = orig_codec;
+
     /* set values specific to opened codecs back to their default state */
-    dest->priv_data       = NULL;
-    dest->codec           = NULL;
     dest->slice_offset    = NULL;
     dest->hwaccel         = NULL;
     dest->internal        = NULL;
@@ -181,6 +203,7 @@ int avcodec_copy_context(AVCodecContext *dest, const AVCodecContext *src)
     dest->intra_matrix    = NULL;
     dest->inter_matrix    = NULL;
     dest->rc_override     = NULL;
+    dest->subtitle_header = NULL;
     if (src->rc_eq) {
         dest->rc_eq = av_strdup(src->rc_eq);
         if (!dest->rc_eq)
@@ -202,6 +225,7 @@ int avcodec_copy_context(AVCodecContext *dest, const AVCodecContext *src)
     alloc_and_copy_or_fail(inter_matrix, 64 * sizeof(int16_t), 0);
     alloc_and_copy_or_fail(rc_override,  src->rc_override_count * sizeof(*src->rc_override), 0);
     alloc_and_copy_or_fail(subtitle_header, src->subtitle_header_size, 1);
+    av_assert0(dest->subtitle_header_size == src->subtitle_header_size);
 #undef alloc_and_copy_or_fail
 
     return 0;

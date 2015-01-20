@@ -33,6 +33,19 @@
 #include "get_bits.h"
 #include <stdint.h>
 
+/**
+ *  Indeo 4 frame types.
+ */
+enum {
+    IVI4_FRAMETYPE_INTRA       = 0,
+    IVI4_FRAMETYPE_INTRA1      = 1,  ///< intra frame with slightly different bitstream coding
+    IVI4_FRAMETYPE_INTER       = 2,  ///< non-droppable P-frame
+    IVI4_FRAMETYPE_BIDIR       = 3,  ///< bidirectional frame
+    IVI4_FRAMETYPE_INTER_NOREF = 4,  ///< droppable P-frame
+    IVI4_FRAMETYPE_NULL_FIRST  = 5,  ///< empty frame with no data
+    IVI4_FRAMETYPE_NULL_LAST   = 6   ///< empty frame with no data
+};
+
 #define IVI_VLC_BITS 13 ///< max number of bits of the ivi's huffman codes
 #define IVI4_STREAM_ANALYSER    0
 #define IVI5_IS_PROTECTED       0x20
@@ -104,6 +117,8 @@ typedef struct IVIMbInfo {
     int8_t      q_delta;  ///< quant delta
     int8_t      mv_x;     ///< motion vector (x component)
     int8_t      mv_y;     ///< motion vector (y component)
+    int8_t      b_mv_x;   ///< second motion vector (x component)
+    int8_t      b_mv_y;   ///< second motion vector (y component)
 } IVIMbInfo;
 
 
@@ -137,7 +152,8 @@ typedef struct IVIBandDesc {
     int             data_size;      ///< size of the band data
     int16_t         *buf;           ///< pointer to the output buffer for this band
     int16_t         *ref_buf;       ///< pointer to the reference frame buffer (for motion compensation)
-    int16_t         *bufs[3];       ///< array of pointers to the band buffers
+    int16_t         *b_ref_buf;     ///< pointer to the second reference frame buffer (for motion compensation)
+    int16_t         *bufs[4];       ///< array of pointers to the band buffers
     int             pitch;          ///< pitch associated with the buffers above
     int             is_empty;       ///< = 1 if this band doesn't contain any data
     int             mb_size;        ///< macroblock size
@@ -219,6 +235,7 @@ typedef struct IVI45DecContext {
     int             dst_buf;         ///< buffer index for the currently decoded frame
     int             ref_buf;         ///< inter frame reference buffer index
     int             ref2_buf;        ///< temporal storage for switching buffers
+    int             b_ref_buf;       ///< second reference frame buffer index
 
     IVIHuffTab      mb_vlc;          ///< current macroblock table descriptor
     IVIHuffTab      blk_vlc;         ///< current block table descriptor
@@ -248,7 +265,12 @@ typedef struct IVI45DecContext {
     int             (*is_nonnull_frame)(struct IVI45DecContext *ctx);
 
     int gop_invalid;
-    int buf_invalid[3];
+    int buf_invalid[4];
+
+    int is_indeo4;
+
+    AVFrame         *p_frame;
+    int             got_p_frame;
 } IVI45DecContext;
 
 /** compare some properties of two pictures */
@@ -298,11 +320,13 @@ int  ff_ivi_dec_huff_desc(GetBitContext *gb, int desc_coded, int which_tab,
 /**
  *  Initialize planes (prepares descriptors, allocates buffers etc).
  *
- *  @param[in,out]  planes  pointer to the array of the plane descriptors
- *  @param[in]      cfg     pointer to the ivi_pic_config structure describing picture layout
+ *  @param[in,out]  planes     pointer to the array of the plane descriptors
+ *  @param[in]      cfg        pointer to the ivi_pic_config structure describing picture layout
+ *  @param[in]      is_indeo4  flag signalling if it is Indeo 4 or not
  *  @return             result code: 0 - OK
  */
-int  ff_ivi_init_planes(IVIPlaneDesc *planes, const IVIPicConfig *cfg);
+int  ff_ivi_init_planes(IVIPlaneDesc *planes, const IVIPicConfig *cfg,
+                        int is_indeo4);
 
 /**
  *  Initialize tile and macroblock descriptors.

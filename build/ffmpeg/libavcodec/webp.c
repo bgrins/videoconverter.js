@@ -309,7 +309,7 @@ static int huff_reader_build_canonical(HuffReader *r, int *code_lengths,
     if (max_code_length == 0 || max_code_length > MAX_HUFFMAN_CODE_LENGTH)
         return AVERROR(EINVAL);
 
-    codes = av_malloc(alphabet_size * sizeof(*codes));
+    codes = av_malloc_array(alphabet_size, sizeof(*codes));
     if (!codes)
         return AVERROR(ENOMEM);
 
@@ -482,7 +482,9 @@ static int decode_entropy_image(WebPContext *s)
     max = 0;
     for (y = 0; y < img->frame->height; y++) {
         for (x = 0; x < img->frame->width; x++) {
-            int p = GET_PIXEL_COMP(img->frame, x, y, 2);
+            int p0 = GET_PIXEL_COMP(img->frame, x, y, 1);
+            int p1 = GET_PIXEL_COMP(img->frame, x, y, 2);
+            int p  = p0 << 8 | p1;
             max = FFMAX(max, p);
         }
     }
@@ -567,7 +569,9 @@ static HuffReader *get_huffman_group(WebPContext *s, ImageContext *img,
     if (gimg->size_reduction > 0) {
         int group_x = x >> gimg->size_reduction;
         int group_y = y >> gimg->size_reduction;
-        group       = GET_PIXEL_COMP(gimg->frame, group_x, group_y, 2);
+        int g0      = GET_PIXEL_COMP(gimg->frame, group_x, group_y, 1);
+        int g1      = GET_PIXEL_COMP(gimg->frame, group_x, group_y, 2);
+        group       = g0 << 8 | g1;
     }
 
     return &img->huffman_groups[group * HUFFMAN_CODES_PER_META_CODE];
@@ -1449,7 +1453,7 @@ static int webp_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             }
 
             bytestream2_seek(&exif_gb, ifd_offset, SEEK_SET);
-            if (ff_exif_decode_ifd(avctx, &exif_gb, le, 0, &s->exif_metadata) < 0) {
+            if (avpriv_exif_decode_ifd(avctx, &exif_gb, le, 0, &s->exif_metadata) < 0) {
                 av_log(avctx, AV_LOG_ERROR, "error decoding Exif data\n");
                 goto exif_end;
             }

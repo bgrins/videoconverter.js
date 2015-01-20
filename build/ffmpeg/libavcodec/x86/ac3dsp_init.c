@@ -1,5 +1,5 @@
 /*
- * x86-optimized AC-3 DSP utils
+ * x86-optimized AC-3 DSP functions
  * Copyright (c) 2011 Justin Ruggles
  *
  * This file is part of FFmpeg.
@@ -23,7 +23,6 @@
 #include "libavutil/mem.h"
 #include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
-#include "dsputil_x86.h"
 #include "libavcodec/ac3.h"
 #include "libavcodec/ac3dsp.h"
 

@@ -30,11 +30,11 @@
 
 #include "internal.h"
 #include "avcodec.h"
-#include "mpegvideo.h"
 #include "h264.h"
 #include "h264data.h" // FIXME FIXME FIXME
 #include "h264_mvpred.h"
 #include "golomb.h"
+#include "mpegutils.h"
 #include "libavutil/avassert.h"
 
 

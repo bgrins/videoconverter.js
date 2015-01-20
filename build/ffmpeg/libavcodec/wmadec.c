@@ -100,6 +100,9 @@ static av_cold int wma_decode_init(AVCodecContext * avctx)
         }
     }
 
+    for (i=0; i<MAX_CHANNELS; i++)
+        s->max_exponent[i] = 1.0;
+
     if(ff_wma_init(avctx, flags2)<0)
         return -1;
 
@@ -924,7 +927,7 @@ static int wma_decode_superframe(AVCodecContext *avctx, void *data,
         samples_offset += s->frame_len;
     }
 
-    av_dlog(s->avctx, "%d %d %d %d outbytes:%td eaten:%d\n",
+    av_dlog(s->avctx, "%d %d %d %d outbytes:%"PTRDIFF_SPECIFIER" eaten:%d\n",
             s->frame_len_bits, s->block_len_bits, s->frame_len, s->block_len,
             (int8_t *)samples - (int8_t *)data, avctx->block_align);
 

@@ -36,7 +36,9 @@
 
 #define MAX_DISTANCE (1024*32-1)
 
-#define NUT_VERSION 3
+#define NUT_MAX_VERSION 4
+#define NUT_STABLE_VERSION 3
+#define NUT_MIN_VERSION 2
 
 typedef enum{
     FLAG_KEY        =   1, ///<if set, frame is keyframe
@@ -87,6 +89,7 @@ typedef struct ChapterContext {
 } ChapterContext;
 
 typedef struct NUTContext {
+    const AVClass *av_class;
     AVFormatContext *avf;
 //    int written_packet_size;
 //    int64_t packet_start;
@@ -103,15 +106,20 @@ typedef struct NUTContext {
     AVRational *time_base;
     struct AVTreeNode *syncpoints;
     int sp_count;
+    int write_index;
     int64_t max_pts;
     AVRational *max_pts_tb;
-    int version;
+#define NUT_BROADCAST 1 // use extended syncpoints
+#define NUT_PIPE 2      // do not write syncpoints
+    int flags;
+    int version; // version currently in use
     int minor_version;
 } NUTContext;
 
 extern const AVCodecTag ff_nut_subtitle_tags[];
 extern const AVCodecTag ff_nut_video_tags[];
 extern const AVCodecTag ff_nut_audio_tags[];
+extern const AVCodecTag ff_nut_audio_extra_tags[];
 extern const AVCodecTag ff_nut_data_tags[];
 
 extern const AVCodecTag * const ff_nut_codec_tags[];

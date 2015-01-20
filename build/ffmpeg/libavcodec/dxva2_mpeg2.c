@@ -20,7 +20,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/log.h"
 #include "dxva2_internal.h"
+#include "mpegutils.h"
 
 #define MAX_SLICES 1024
 struct dxva2_picture_context {
@@ -42,14 +44,14 @@ static void fill_picture_parameters(AVCodecContext *avctx,
     int is_field = s->picture_structure != PICT_FRAME;
 
     memset(pp, 0, sizeof(*pp));
-    pp->wDecodedPictureIndex         = ff_dxva2_get_surface_index(ctx, current_picture);
+    pp->wDecodedPictureIndex         = ff_dxva2_get_surface_index(ctx, current_picture->f);
     pp->wDeblockedPictureIndex       = 0;
     if (s->pict_type != AV_PICTURE_TYPE_I)
-        pp->wForwardRefPictureIndex  = ff_dxva2_get_surface_index(ctx, &s->last_picture);
+        pp->wForwardRefPictureIndex  = ff_dxva2_get_surface_index(ctx, s->last_picture.f);
     else
         pp->wForwardRefPictureIndex  = 0xffff;
     if (s->pict_type == AV_PICTURE_TYPE_B)
-        pp->wBackwardRefPictureIndex = ff_dxva2_get_surface_index(ctx, &s->next_picture);
+        pp->wBackwardRefPictureIndex = ff_dxva2_get_surface_index(ctx, s->next_picture.f);
     else
         pp->wBackwardRefPictureIndex = 0xffff;
     pp->wPicWidthInMBminus1          = s->mb_width  - 1;
@@ -108,7 +110,7 @@ static void fill_quantization_matrices(AVCodecContext *avctx,
     for (i = 0; i < 4; i++)
         qm->bNewQmatrix[i] = 1;
     for (i = 0; i < 64; i++) {
-        int n = s->dsp.idct_permutation[ff_zigzag_direct[i]];
+        int n = s->idsp.idct_permutation[ff_zigzag_direct[i]];
         qm->Qmatrix[0][i] = s->intra_matrix[n];
         qm->Qmatrix[1][i] = s->inter_matrix[n];
         qm->Qmatrix[2][i] = s->chroma_intra_matrix[n];
@@ -232,9 +234,11 @@ static int dxva2_mpeg2_decode_slice(AVCodecContext *avctx,
         s->current_picture_ptr->hwaccel_picture_private;
     unsigned position;
 
-    if (ctx_pic->slice_count >= MAX_SLICES)
+    if (ctx_pic->slice_count >= MAX_SLICES) {
+        avpriv_request_sample(avctx, "%d slices in dxva2",
+                              ctx_pic->slice_count);
         return -1;
-
+    }
     if (!ctx_pic->bitstream)
         ctx_pic->bitstream = buffer;
     ctx_pic->bitstream_size += size;
@@ -254,7 +258,7 @@ static int dxva2_mpeg2_end_frame(AVCodecContext *avctx)
 
     if (ctx_pic->slice_count <= 0 || ctx_pic->bitstream_size <= 0)
         return -1;
-    ret = ff_dxva2_common_end_frame(avctx, s->current_picture_ptr,
+    ret = ff_dxva2_common_end_frame(avctx, s->current_picture_ptr->f,
                                     &ctx_pic->pp, sizeof(ctx_pic->pp),
                                     &ctx_pic->qm, sizeof(ctx_pic->qm),
                                     commit_bitstream_and_slice_buffer);
@@ -271,5 +275,5 @@ AVHWAccel ff_mpeg2_dxva2_hwaccel = {
     .start_frame    = dxva2_mpeg2_start_frame,
     .decode_slice   = dxva2_mpeg2_decode_slice,
     .end_frame      = dxva2_mpeg2_end_frame,
-    .priv_data_size = sizeof(struct dxva2_picture_context),
+    .frame_priv_data_size = sizeof(struct dxva2_picture_context),
 };

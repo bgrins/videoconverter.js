@@ -233,6 +233,10 @@ to @var{wrap}.
 Start the playlist sequence number from @var{number}. Default value is
 0.
 
+@item hls_base_url @var{baseurl}
+Append @var{baseurl} to every entry in the playlist.
+Useful to generate playlists with absolute paths.
+
 Note that the playlist sequence number must be unique for each segment
 and it is not to be confused with the segment filename sequence number
 which can be cyclic, for example if the @option{wrap} option is
@@ -633,7 +637,10 @@ Set the first PID for data packets (default 0x0100, max 0x0f00).
 @item -mpegts_m2ts_mode @var{number}
 Enable m2ts mode if set to 1. Default value is -1 which disables m2ts mode.
 @item -muxrate @var{number}
-Set muxrate.
+Set a constant muxrate (default VBR).
+@item -pcr_period @var{numer}
+Override the default PCR retransmission time (default 20ms), ignored
+if variable muxrate is selected.
 @item -pes_payload_size @var{number}
 Set minimum PES packet payload in bytes.
 @item -mpegts_flags @var{flags}
@@ -702,6 +709,30 @@ Alternatively you can write the command as:
 ffmpeg -benchmark -i INPUT -f null -
 @end example
 
+@section nut
+
+@table @option
+@item -syncpoints @var{flags}
+Change the syncpoint usage in nut:
+@table @option
+@item @var{default} use the normal low-overhead seeking aids.
+@item @var{none} do not use the syncpoints at all, reducing the overhead but making the stream non-seekable;
+    Use of this option is not recommended, as the resulting files are very damage
+    sensitive and seeking is not possible. Also in general the overhead from
+    syncpoints is negligible. Note, -@code{write_index} 0 can be used to disable
+    all growing data tables, allowing to mux endless streams with limited memory
+    and wihout these disadvantages.
+@item @var{timestamped} extend the syncpoint with a wallclock field.
+@end table
+The @var{none} and @var{timestamped} flags are experimental.
+@item -write_index @var{bool}
+Write index at the end, the default is to write an index.
+@end table
+
+@example
+ffmpeg -i INPUT -f_strict experimental -syncpoints none - | processor
+@end example
+
 @section ogg
 
 Ogg container muxer.
@@ -758,7 +789,7 @@ The segment muxer supports the following options:
 @table @option
 @item reference_stream @var{specifier}
 Set the reference stream, as specified by the string @var{specifier}.
-If @var{specifier} is set to @code{auto}, the reference is choosen
+If @var{specifier} is set to @code{auto}, the reference is chosen
 automatically. Otherwise it must be a stream specifier (see the ``Stream
 specifiers'' chapter in the ffmpeg manual) which specifies the
 reference stream. The default value is @code{auto}.
@@ -783,17 +814,21 @@ Allow caching (only affects M3U8 list files).
 Allow live-friendly file generation.
 @end table
 
+@item segment_list_type @var{type}
+Select the listing format.
+@table @option
+@item @var{flat} use a simple flat list of entries.
+@item @var{hls} use a m3u8-like structure.
+@end table
+
 @item segment_list_size @var{size}
 Update the list file so that it contains at most the last @var{size}
 segments. If 0 the list file will contain all the segments. Default
 value is 0.
 
 @item segment_list_entry_prefix @var{prefix}
-Set @var{prefix} to prepend to the name of each entry filename. By
-default no prefix is applied.
-
-@item segment_list_type @var{type}
-Specify the format for the segment list file.
+Prepend @var{prefix} to each entry. Useful to generate absolute paths.
+By default no prefix is applied.
 
 The following values are recognized:
 @table @samp
@@ -843,6 +878,16 @@ specification. Default value is "2". See also the
 Note that splitting may not be accurate, unless you force the
 reference stream key-frames at the given time. See the introductory
 notice and the examples below.
+
+@item segment_atclocktime @var{1|0}
+If set to "1" split at regular clock time intervals starting from 00:00
+o'clock. The @var{time} value specified in @option{segment_time} is
+used for setting the length of the splitting interval.
+
+For example with @option{segment_time} set to "900" this makes it possible
+to create files at 12:00 o'clock, 12:15, 12:30, etc.
+
+Default value is "0".
 
 @item segment_time_delta @var{delta}
 Specify the accuracy time when selecting the start time for a
@@ -949,6 +994,28 @@ ffmpeg -re -i in.mkv -codec copy -map 0 -f segment -segment_list playlist.m3u8 \
 @end example
 @end itemize
 
+@section smoothstreaming
+
+Smooth Streaming muxer generates a set of files (Manifest, chunks) suitable for serving with conventional web server.
+
+@table @option
+@item window_size
+Specify the number of fragments kept in the manifest. Default 0 (keep all).
+
+@item extra_window_size
+Specify the number of fragments kept outside of the manifest before removing from disk. Default 5.
+
+@item lookahead_count
+Specify the number of lookahead fragments. Default 2.
+
+@item min_frag_duration
+Specify the minimum fragment duration (in microseconds). Default 5000000.
+
+@item remove_at_exit
+Specify whether to remove all fragments when finished. Default 0 (do not remove).
+
+@end table
+
 @section tee
 
 The tee muxer can be used to write the same data to several files or any
@@ -986,7 +1053,7 @@ It is possible to specify to which streams a given bitstream filter
 applies, by appending a stream specifier to the option separated by
 @code{/}. @var{spec} must be a stream specifier (see @ref{Format
 stream specifiers}).  If the stream specifier is not specified, the
-bistream filters will be applied to all streams in the output.
+bitstream filters will be applied to all streams in the output.
 
 Several bitstream filters can be specified, separated by ",".
 
@@ -1032,5 +1099,35 @@ ffmpeg -i ... -map 0 -flags +global_header -c:v libx264 -c:a aac -strict experim
 Note: some codecs may need different options depending on the output format;
 the auto-detection of this can not work with the tee muxer. The main example
 is the @option{global_header} flag.
+
+@section webm_dash_manifest
+
+WebM DASH Manifest muxer.
+
+This muxer implements the WebM DASH Manifest specification to generate the DASH manifest XML.
+
+@subsection Options
+
+This muxer supports the following options:
+
+@table @option
+@item adaptation_sets
+This option has the following syntax: "id=x,streams=a,b,c id=y,streams=d,e" where x and y are the
+unique identifiers of the adaptation sets and a,b,c,d and e are the indices of the corresponding
+audio and video streams. Any number of adaptation sets can be added using this option.
+@end table
+
+@subsection Example
+@example
+ffmpeg -f webm_dash_manifest -i video1.webm \
+       -f webm_dash_manifest -i video2.webm \
+       -f webm_dash_manifest -i audio1.webm \
+       -f webm_dash_manifest -i audio2.webm \
+       -map 0 -map 1 -map 2 -map 3 \
+       -c copy \
+       -f webm_dash_manifest \
+       -adaptation_sets "id=0,streams=0,1 id=1,streams=2,3" \
+       manifest.xml
+@end example
 
 @c man end MUXERS

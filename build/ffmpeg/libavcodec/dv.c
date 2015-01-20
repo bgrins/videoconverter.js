@@ -51,7 +51,7 @@
 /* XXX: also include quantization */
 RL_VLC_ELEM ff_dv_rl_vlc[1184];
 
-static inline void dv_calc_mb_coordinates(const DVprofile *d, int chan, int seq, int slot,
+static inline void dv_calc_mb_coordinates(const AVDVProfile *d, int chan, int seq, int slot,
                                           uint16_t *tbl)
 {
     static const uint8_t off[] = { 2, 6, 8, 0, 4 };
@@ -175,58 +175,54 @@ static const uint8_t dv100_qstep[16] = {
 
 static const uint8_t dv_quant_areas[4]  = { 6, 21, 43, 64 };
 
-int ff_dv_init_dynamic_tables(const DVprofile *d)
+int ff_dv_init_dynamic_tables(DVVideoContext *ctx, const AVDVProfile *d)
 {
     int j,i,c,s,p;
     uint32_t *factor1, *factor2;
     const int *iweight1, *iweight2;
 
-    if (!d->work_chunks[dv_work_pool_size(d)-1].buf_offset) {
-        p = i = 0;
-        for (c=0; c<d->n_difchan; c++) {
-            for (s=0; s<d->difseg_size; s++) {
-                p += 6;
-                for (j=0; j<27; j++) {
-                    p += !(j%3);
-                    if (!(DV_PROFILE_IS_1080i50(d) && c != 0 && s == 11) &&
-                        !(DV_PROFILE_IS_720p50(d) && s > 9)) {
-                          dv_calc_mb_coordinates(d, c, s, j, &d->work_chunks[i].mb_coordinates[0]);
-                          d->work_chunks[i++].buf_offset = p;
-                    }
-                    p += 5;
+    p = i = 0;
+    for (c = 0; c < d->n_difchan; c++) {
+        for (s = 0; s < d->difseg_size; s++) {
+            p += 6;
+            for (j = 0; j < 27; j++) {
+                p += !(j % 3);
+                if (!(DV_PROFILE_IS_1080i50(d) && c != 0 && s == 11) &&
+                    !(DV_PROFILE_IS_720p50(d) && s > 9)) {
+                      dv_calc_mb_coordinates(d, c, s, j, &ctx->work_chunks[i].mb_coordinates[0]);
+                      ctx->work_chunks[i++].buf_offset = p;
                 }
+                p += 5;
             }
         }
     }
 
-    if (!d->idct_factor[DV_PROFILE_IS_HD(d)?8191:5631]) {
-        factor1 = &d->idct_factor[0];
-        factor2 = &d->idct_factor[DV_PROFILE_IS_HD(d)?4096:2816];
-        if (d->height == 720) {
-            iweight1 = &ff_dv_iweight_720_y[0];
-            iweight2 = &ff_dv_iweight_720_c[0];
-        } else {
-            iweight1 = &ff_dv_iweight_1080_y[0];
-            iweight2 = &ff_dv_iweight_1080_c[0];
-        }
-        if (DV_PROFILE_IS_HD(d)) {
-            for (c = 0; c < 4; c++) {
-                for (s = 0; s < 16; s++) {
-                    for (i = 0; i < 64; i++) {
-                        *factor1++ = (dv100_qstep[s] << (c + 9)) * iweight1[i];
-                        *factor2++ = (dv100_qstep[s] << (c + 9)) * iweight2[i];
-                    }
+    factor1 = &ctx->idct_factor[0];
+    factor2 = &ctx->idct_factor[DV_PROFILE_IS_HD(d) ? 4096 : 2816];
+    if (d->height == 720) {
+        iweight1 = &ff_dv_iweight_720_y[0];
+        iweight2 = &ff_dv_iweight_720_c[0];
+    } else {
+        iweight1 = &ff_dv_iweight_1080_y[0];
+        iweight2 = &ff_dv_iweight_1080_c[0];
+    }
+    if (DV_PROFILE_IS_HD(d)) {
+        for (c = 0; c < 4; c++) {
+            for (s = 0; s < 16; s++) {
+                for (i = 0; i < 64; i++) {
+                    *factor1++ = (dv100_qstep[s] << (c + 9)) * iweight1[i];
+                    *factor2++ = (dv100_qstep[s] << (c + 9)) * iweight2[i];
                 }
             }
-        } else {
-            iweight1 = &ff_dv_iweight_88[0];
-            for (j = 0; j < 2; j++, iweight1 = &ff_dv_iweight_248[0]) {
-                for (s = 0; s < 22; s++) {
-                    for (i = c = 0; c < 4; c++) {
-                        for (; i < dv_quant_areas[c]; i++) {
-                            *factor1   = iweight1[i] << (ff_dv_quant_shifts[s][c] + 1);
-                            *factor2++ = (*factor1++) << 1;
-                        }
+        }
+    } else {
+        iweight1 = &ff_dv_iweight_88[0];
+        for (j = 0; j < 2; j++, iweight1 = &ff_dv_iweight_248[0]) {
+            for (s = 0; s < 22; s++) {
+                for (i = c = 0; c < 4; c++) {
+                    for (; i < dv_quant_areas[c]; i++) {
+                        *factor1   = iweight1[i] << (ff_dv_quant_shifts[s][c] + 1);
+                        *factor2++ = (*factor1++) << 1;
                     }
                 }
             }
@@ -239,7 +235,6 @@ int ff_dv_init_dynamic_tables(const DVprofile *d)
 av_cold int ff_dvvideo_init(AVCodecContext *avctx)
 {
     DVVideoContext *s = avctx->priv_data;
-    DSPContext dsp;
     static int done = 0;
     int i, j;
 
@@ -295,30 +290,6 @@ av_cold int ff_dvvideo_init(AVCodecContext *avctx)
         }
         ff_free_vlc(&dv_vlc);
     }
-
-    /* Generic DSP setup */
-    memset(&dsp,0, sizeof(dsp));
-    ff_dsputil_init(&dsp, avctx);
-    ff_set_cmp(&dsp, dsp.ildct_cmp, avctx->ildct_cmp);
-    s->get_pixels = dsp.get_pixels;
-    s->ildct_cmp = dsp.ildct_cmp[5];
-
-    /* 88DCT setup */
-    s->fdct[0]     = dsp.fdct;
-    s->idct_put[0] = dsp.idct_put;
-    for (i = 0; i < 64; i++)
-       s->dv_zigzag[0][i] = dsp.idct_permutation[ff_zigzag_direct[i]];
-
-    /* 248DCT setup */
-    s->fdct[1]     = dsp.fdct248;
-    s->idct_put[1] = ff_simple_idct248_put;  // FIXME: need to add it to DSP
-    if (avctx->lowres){
-        for (i = 0; i < 64; i++){
-            int j = ff_zigzag248_direct[i];
-            s->dv_zigzag[1][i] = dsp.idct_permutation[(j & 7) + (j & 8) * 4 + (j & 48) / 2];
-        }
-    }else
-        memcpy(s->dv_zigzag[1], ff_zigzag248_direct, 64);
 
     s->avctx = avctx;
     avctx->chroma_sample_location = AVCHROMA_LOC_TOPLEFT;

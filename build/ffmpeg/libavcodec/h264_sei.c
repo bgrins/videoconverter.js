@@ -41,6 +41,7 @@ void ff_h264_reset_sei(H264Context *h)
     h->sei_cpb_removal_delay        = -1;
     h->sei_buffering_period_present =  0;
     h->sei_frame_packing_present    =  0;
+    h->sei_display_orientation_present = 0;
 }
 
 static int decode_picture_timing(H264Context *h)
@@ -183,6 +184,8 @@ static int decode_recovery_point(H264Context *h)
     if (h->avctx->debug & FF_DEBUG_PICT_INFO)
         av_log(h->avctx, AV_LOG_DEBUG, "sei_recovery_frame_cnt: %d\n", h->sei_recovery_frame_cnt);
 
+    h->has_recovery_point = 1;
+
     return 0;
 }
 
@@ -260,6 +263,22 @@ static int decode_frame_packing_arrangement(H264Context *h)
     return 0;
 }
 
+static int decode_display_orientation(H264Context *h)
+{
+    h->sei_display_orientation_present = !get_bits1(&h->gb);
+
+    if (h->sei_display_orientation_present) {
+        h->sei_hflip = get_bits1(&h->gb);     // hor_flip
+        h->sei_vflip = get_bits1(&h->gb);     // ver_flip
+
+        h->sei_anticlockwise_rotation = get_bits(&h->gb, 16);
+        get_ue_golomb(&h->gb);  // display_orientation_repetition_period
+        skip_bits1(&h->gb);     // display_orientation_extension_flag
+    }
+
+    return 0;
+}
+
 int ff_h264_decode_sei(H264Context *h)
 {
     while (get_bits_left(&h->gb) > 16) {
@@ -317,6 +336,11 @@ int ff_h264_decode_sei(H264Context *h)
             break;
         case SEI_TYPE_FRAME_PACKING:
             ret = decode_frame_packing_arrangement(h);
+            if (ret < 0)
+                return ret;
+            break;
+        case SEI_TYPE_DISPLAY_ORIENTATION:
+            ret = decode_display_orientation(h);
             if (ret < 0)
                 return ret;
             break;

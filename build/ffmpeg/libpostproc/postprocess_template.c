@@ -490,6 +490,7 @@ static inline void RENAME(vertX1Filter)(uint8_t *src, int stride, PPContext *co)
 
         :
         : "r" (src), "r" ((x86_reg)stride), "m" (co->pQPb)
+          NAMED_CONSTRAINTS_ADD(b01)
         : "%"REG_a, "%"REG_c
     );
 #else //TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW
@@ -755,6 +756,7 @@ static inline void RENAME(doVertDefFilter)(uint8_t src[], int stride, PPContext 
 
         :
         : "r" (src), "r" ((x86_reg)stride), "m" (c->pQPb)
+          NAMED_CONSTRAINTS_ADD(b80,b00,b01)
         : "%"REG_a, "%"REG_c
     );
 
@@ -1042,6 +1044,7 @@ static inline void RENAME(doVertDefFilter)(uint8_t src[], int stride, PPContext 
 
         : "+r" (src)
         : "r" ((x86_reg)stride), "m" (c->pQPb), "r"(tmp)
+          NAMED_CONSTRAINTS_ADD(w05,w20)
         : "%"REG_a
     );
 #else //TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW
@@ -1313,6 +1316,7 @@ DERING_CORE((%0, %1, 8)    ,(%%REGd, %1, 4),%%mm2,%%mm4,%%mm0,%%mm3,%%mm5,%%mm1,
 
         "1:                        \n\t"
         : : "r" (src), "r" ((x86_reg)stride), "m" (c->pQPb), "m"(c->pQPb2), "q"(tmp)
+          NAMED_CONSTRAINTS_ADD(deringThreshold,b00,b02,b08)
         : "%"REG_a, "%"REG_d, "%"REG_SP
     );
 #else // HAVE_7REGS && (TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW)
@@ -1664,7 +1668,7 @@ DEINT_FF((%%REGd, %1), (%%REGd, %1, 2), (%0, %1, 8) , (%%REGd, %1, 4))
  */
 static inline void RENAME(deInterlaceL5)(uint8_t src[], int stride, uint8_t *tmp, uint8_t *tmp2)
 {
-#if TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW
+#if (TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW) && HAVE_6REGS
     src+= stride*4;
     __asm__ volatile(
         "lea (%0, %1), %%"REG_a"                \n\t"
@@ -1724,7 +1728,7 @@ DEINT_L5(%%mm1, %%mm0, (%%REGd, %1, 2), (%0, %1, 8)    , (%%REGd, %1, 4))
         : : "r" (src), "r" ((x86_reg)stride), "r"(tmp), "r"(tmp2)
         : "%"REG_a, "%"REG_d
     );
-#else //TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW
+#else //(TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW) && HAVE_6REGS
     int x;
     src+= stride*4;
     for(x=0; x<8; x++){
@@ -1753,7 +1757,7 @@ DEINT_L5(%%mm1, %%mm0, (%%REGd, %1, 2), (%0, %1, 8)    , (%%REGd, %1, 4))
 
         src++;
     }
-#endif //TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW
+#endif //(TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW) && HAVE_6REGS
 }
 
 /**
@@ -2160,7 +2164,7 @@ static inline void RENAME(tempNoiseReducer)(uint8_t *src, int stride,
 
 #define FAST_L2_DIFF
 //#define L1_DIFF //u should change the thresholds too if u try that one
-#if TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW
+#if (TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW) && HAVE_6REGS
     __asm__ volatile(
         "lea (%2, %2, 2), %%"REG_a"             \n\t" // 3*stride
         "lea (%2, %2, 4), %%"REG_d"             \n\t" // 5*stride
@@ -2446,9 +2450,10 @@ L2_DIFF_CORE((%0, %%REGc)  , (%1, %%REGc))
         "4:                                     \n\t"
 
         :: "r" (src), "r" (tempBlurred), "r"((x86_reg)stride), "m" (tempBlurredPast)
+          NAMED_CONSTRAINTS_ADD(b80)
         : "%"REG_a, "%"REG_d, "%"REG_c, "memory"
     );
-#else //TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW
+#else //(TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW) && HAVE_6REGS
 {
     int y;
     int d=0;
@@ -2531,7 +2536,7 @@ Switch between
         }
     }
 }
-#endif //TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW
+#endif //(TEMPLATE_PP_MMXEXT || TEMPLATE_PP_3DNOW) && HAVE_6REGS
 }
 #endif //TEMPLATE_PP_ALTIVEC
 
@@ -2790,6 +2795,7 @@ static av_always_inline void RENAME(do_a_deblock)(uint8_t *src, int step, int st
 
             : "+&r"(src)
             : "r" ((x86_reg)step), "m" (c->pQPb), "r"(sums), "g"(src)
+              NAMED_CONSTRAINTS_ADD(w04)
         );
 
         src+= step; // src points to begin of the 8x8 Block
@@ -3061,6 +3067,7 @@ static av_always_inline void RENAME(do_a_deblock)(uint8_t *src, int step, int st
 
             : "+r" (temp_src)
             : "r" ((x86_reg)step), "m" (c->pQPb), "m"(eq_mask), "r"(tmp)
+              NAMED_CONSTRAINTS_ADD(w05,w20)
             : "%"REG_a
         );
     }
@@ -3086,11 +3093,11 @@ static void RENAME(postProcess)(const uint8_t src[], int srcStride, uint8_t dst[
 static inline void RENAME(blockCopy)(uint8_t dst[], int dstStride, const uint8_t src[], int srcStride,
                                      int levelFix, int64_t *packedOffsetAndScale)
 {
-#if !TEMPLATE_PP_MMX
+#if !TEMPLATE_PP_MMX || !HAVE_6REGS
     int i;
 #endif
     if(levelFix){
-#if TEMPLATE_PP_MMX
+#if TEMPLATE_PP_MMX && HAVE_6REGS
     __asm__ volatile(
         "movq (%%"REG_a"), %%mm2        \n\t" // packedYOffset
         "movq 8(%%"REG_a"), %%mm3       \n\t" // packedYScale
@@ -3167,13 +3174,13 @@ SCALED_CPY((%%REGa, %4), (%%REGa, %4, 2), (%%REGd, %5), (%%REGd, %5, 2))
         "r" ((x86_reg)dstStride)
         : "%"REG_d
     );
-#else //TEMPLATE_PP_MMX
+#else //TEMPLATE_PP_MMX && HAVE_6REGS
     for(i=0; i<8; i++)
         memcpy( &(dst[dstStride*i]),
                 &(src[srcStride*i]), BLOCK_SIZE);
-#endif //TEMPLATE_PP_MMX
+#endif //TEMPLATE_PP_MMX && HAVE_6REGS
     }else{
-#if TEMPLATE_PP_MMX
+#if TEMPLATE_PP_MMX && HAVE_6REGS
     __asm__ volatile(
         "lea (%0,%2), %%"REG_a"                 \n\t"
         "lea (%1,%3), %%"REG_d"                 \n\t"
@@ -3200,11 +3207,11 @@ SIMPLE_CPY((%%REGa, %2), (%%REGa, %2, 2), (%%REGd, %3), (%%REGd, %3, 2))
         "r" ((x86_reg)dstStride)
         : "%"REG_a, "%"REG_d
     );
-#else //TEMPLATE_PP_MMX
+#else //TEMPLATE_PP_MMX && HAVE_6REGS
     for(i=0; i<8; i++)
         memcpy( &(dst[dstStride*i]),
                 &(src[srcStride*i]), BLOCK_SIZE);
-#endif //TEMPLATE_PP_MMX
+#endif //TEMPLATE_PP_MMX && HAVE_6REGS
     }
 }
 
@@ -3356,7 +3363,7 @@ static void RENAME(postProcess)(const uint8_t src[], int srcStride, uint8_t dst[
         // with the L1 Cache of the P4 ... or only a few blocks at a time or something
         for(x=0; x<width; x+=BLOCK_SIZE){
 
-#if TEMPLATE_PP_MMXEXT
+#if TEMPLATE_PP_MMXEXT && HAVE_6REGS
 /*
             prefetchnta(srcBlock + (((x>>2)&6) + 5)*srcStride + 32);
             prefetchnta(srcBlock + (((x>>2)&6) + 6)*srcStride + 32);
@@ -3492,7 +3499,7 @@ static void RENAME(postProcess)(const uint8_t src[], int srcStride, uint8_t dst[
 #endif
 
 
-#if TEMPLATE_PP_MMXEXT
+#if TEMPLATE_PP_MMXEXT && HAVE_6REGS
 /*
             prefetchnta(srcBlock + (((x>>2)&6) + 5)*srcStride + 32);
             prefetchnta(srcBlock + (((x>>2)&6) + 6)*srcStride + 32);

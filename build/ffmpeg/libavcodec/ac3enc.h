@@ -31,12 +31,15 @@
 #include <stdint.h>
 
 #include "libavutil/float_dsp.h"
+
 #include "ac3.h"
 #include "ac3dsp.h"
 #include "avcodec.h"
 #include "dsputil.h"
-#include "put_bits.h"
 #include "fft.h"
+#include "mathops.h"
+#include "put_bits.h"
+#include "audiodsp.h"
 
 #ifndef CONFIG_AC3ENC_FLOAT
 #define CONFIG_AC3ENC_FLOAT 0
@@ -160,6 +163,7 @@ typedef struct AC3EncodeContext {
     AVCodecContext *avctx;                  ///< parent AVCodecContext
     PutBitContext pb;                       ///< bitstream writer context
     DSPContext dsp;
+    AudioDSPContext adsp;
     AVFloatDSPContext fdsp;
     AC3DSPContext ac3dsp;                   ///< AC-3 optimized functions
     FFTContext mdct;                        ///< FFT context for MDCT calculation
@@ -264,6 +268,7 @@ typedef struct AC3EncodeContext {
 extern const uint64_t ff_ac3_channel_layouts[19];
 
 int ff_ac3_encode_init(AVCodecContext *avctx);
+int ff_ac3_float_encode_init(AVCodecContext *avctx);
 
 int ff_ac3_encode_close(AVCodecContext *avctx);
 

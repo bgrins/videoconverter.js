@@ -39,7 +39,7 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_H264,         MKTAG('S', 'M', 'V', '2') },
     { AV_CODEC_ID_H264,         MKTAG('V', 'S', 'S', 'H') },
     { AV_CODEC_ID_H264,         MKTAG('Q', '2', '6', '4') }, /* QNAP surveillance system */
-    { AV_CODEC_ID_H264,         MKTAG('V', '2', '6', '4') },
+    { AV_CODEC_ID_H264,         MKTAG('V', '2', '6', '4') }, /* CCTV recordings */
     { AV_CODEC_ID_H264,         MKTAG('G', 'A', 'V', 'C') }, /* GeoVision camera */
     { AV_CODEC_ID_H264,         MKTAG('U', 'M', 'S', 'V') },
     { AV_CODEC_ID_H264,         MKTAG('I', 'N', 'M', 'C') },
@@ -258,6 +258,8 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_VP6A,         MKTAG('V', 'P', '6', 'A') },
     { AV_CODEC_ID_VP6F,         MKTAG('V', 'P', '6', 'F') },
     { AV_CODEC_ID_VP6F,         MKTAG('F', 'L', 'V', '4') },
+    { AV_CODEC_ID_VP7,          MKTAG('V', 'P', '7', '0') },
+    { AV_CODEC_ID_VP7,          MKTAG('V', 'P', '7', '1') },
     { AV_CODEC_ID_VP8,          MKTAG('V', 'P', '8', '0') },
     { AV_CODEC_ID_VP9,          MKTAG('V', 'P', '9', '0') },
     { AV_CODEC_ID_ASV1,         MKTAG('A', 'S', 'V', '1') },
@@ -300,7 +302,7 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_LOCO,         MKTAG('L', 'O', 'C', 'O') },
     { AV_CODEC_ID_WNV1,         MKTAG('W', 'N', 'V', '1') },
     { AV_CODEC_ID_WNV1,         MKTAG('Y', 'U', 'V', '8') },
-    { AV_CODEC_ID_AASC,         MKTAG('A', 'A', 'S', '4') },
+    { AV_CODEC_ID_AASC,         MKTAG('A', 'A', 'S', '4') }, /* Autodesk 24 bit RLE compressor */
     { AV_CODEC_ID_AASC,         MKTAG('A', 'A', 'S', 'C') },
     { AV_CODEC_ID_INDEO2,       MKTAG('R', 'T', '2', '1') },
     { AV_CODEC_ID_FRAPS,        MKTAG('F', 'P', 'S', '1') },
@@ -408,6 +410,8 @@ const AVCodecTag ff_codec_wav_tags[] = {
     { AV_CODEC_ID_ADPCM_G722,      0x028F },
     { AV_CODEC_ID_IMC,             0x0401 },
     { AV_CODEC_ID_IAC,             0x0402 },
+    { AV_CODEC_ID_ON2AVC,          0x0500 },
+    { AV_CODEC_ID_ON2AVC,          0x0501 },
     { AV_CODEC_ID_GSM_MS,          0x1500 },
     { AV_CODEC_ID_TRUESPEECH,      0x1501 },
     /* ADTS AAC */
@@ -423,7 +427,7 @@ const AVCodecTag ff_codec_wav_tags[] = {
     { AV_CODEC_ID_AAC,             0x706d },
     { AV_CODEC_ID_AAC,             0x4143 },
     { AV_CODEC_ID_XAN_DPCM,        0x594a },
-    { AV_CODEC_ID_G723_1,          0xA100 },
+    { AV_CODEC_ID_G723_1,          0xA100 }, /* Comverse Infosys Ltd. G723 1 */
     { AV_CODEC_ID_AAC,             0xA106 },
     { AV_CODEC_ID_SPEEX,           0xA109 },
     { AV_CODEC_ID_FLAC,            0xF1AC },

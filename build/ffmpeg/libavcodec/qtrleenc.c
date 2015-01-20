@@ -86,6 +86,10 @@ static av_cold int qtrle_encode_init(AVCodecContext *avctx)
 
     switch (avctx->pix_fmt) {
     case AV_PIX_FMT_GRAY8:
+        if (avctx->width % 4) {
+            av_log(avctx, AV_LOG_ERROR, "Width not being a multiple of 4 is not supported\n");
+            return AVERROR(EINVAL);
+        }
         s->logical_width = avctx->width / 4;
         s->pixel_size = 4;
         break;
@@ -106,7 +110,7 @@ static av_cold int qtrle_encode_init(AVCodecContext *avctx)
 
     s->rlecode_table = av_mallocz(s->logical_width);
     s->skip_table    = av_mallocz(s->logical_width);
-    s->length_table  = av_mallocz((s->logical_width + 1)*sizeof(int));
+    s->length_table  = av_mallocz_array(s->logical_width + 1, sizeof(int));
     if (!s->skip_table || !s->length_table || !s->rlecode_table) {
         av_log(avctx, AV_LOG_ERROR, "Error allocating memory.\n");
         return AVERROR(ENOMEM);

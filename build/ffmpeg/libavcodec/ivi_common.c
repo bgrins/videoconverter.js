@@ -26,6 +26,8 @@
  * Indeo5 decoders.
  */
 
+#include <inttypes.h>
+
 #define BITSTREAM_READER_LE
 #include "libavutil/attributes.h"
 #include "libavutil/timer.h"
@@ -71,20 +73,43 @@ static VLC ivi_blk_vlc_tabs[8]; ///< static block Huffman tables
 
 typedef void (*ivi_mc_func) (int16_t *buf, const int16_t *ref_buf,
                              uint32_t pitch, int mc_type);
+typedef void (*ivi_mc_avg_func) (int16_t *buf, const int16_t *ref_buf1,
+                                 const int16_t *ref_buf2,
+                                 uint32_t pitch, int mc_type, int mc_type2);
 
-static int ivi_mc(IVIBandDesc *band, ivi_mc_func mc,
-                  int offs, int mv_x, int mv_y, int mc_type)
+static int ivi_mc(IVIBandDesc *band, ivi_mc_func mc, ivi_mc_avg_func mc_avg,
+                  int offs, int mv_x, int mv_y, int mv_x2, int mv_y2,
+                  int mc_type, int mc_type2)
 {
     int ref_offs = offs + mv_y * band->pitch + mv_x;
     int buf_size = band->pitch * band->aheight;
     int min_size = band->pitch * (band->blk_size - 1) + band->blk_size;
     int ref_size = (mc_type > 1) * band->pitch + (mc_type & 1);
 
-    av_assert0(offs >= 0 && ref_offs >= 0 && band->ref_buf);
-    av_assert0(buf_size - min_size >= offs);
-    av_assert0(buf_size - min_size - ref_size >= ref_offs);
+    if (mc_type != -1) {
+        av_assert0(offs >= 0 && ref_offs >= 0 && band->ref_buf);
+        av_assert0(buf_size - min_size >= offs);
+        av_assert0(buf_size - min_size - ref_size >= ref_offs);
+    }
 
-    mc(band->buf + offs, band->ref_buf + ref_offs, band->pitch, mc_type);
+    if (mc_type2 == -1) {
+        mc(band->buf + offs, band->ref_buf + ref_offs, band->pitch, mc_type);
+    } else {
+        int ref_offs2 = offs + mv_y2 * band->pitch + mv_x2;
+        int ref_size2 = (mc_type2 > 1) * band->pitch + (mc_type2 & 1);
+        if (offs < 0 || ref_offs2 < 0 || !band->b_ref_buf)
+            return AVERROR_INVALIDDATA;
+        if (buf_size - min_size - ref_size2 < ref_offs2)
+            return AVERROR_INVALIDDATA;
+
+        if (mc_type == -1)
+            mc(band->buf + offs, band->b_ref_buf + ref_offs2,
+               band->pitch, mc_type2);
+        else
+            mc_avg(band->buf + offs, band->ref_buf + ref_offs,
+                   band->b_ref_buf + ref_offs2, band->pitch,
+                   mc_type, mc_type2);
+    }
 
     return 0;
 }
@@ -262,6 +287,7 @@ static av_cold void ivi_free_buffers(IVIPlaneDesc *planes)
             av_freep(&planes[p].bands[b].bufs[0]);
             av_freep(&planes[p].bands[b].bufs[1]);
             av_freep(&planes[p].bands[b].bufs[2]);
+            av_freep(&planes[p].bands[b].bufs[3]);
 
             if (planes[p].bands[b].blk_vlc.cust_tab.table)
                 ff_free_vlc(&planes[p].bands[b].blk_vlc.cust_tab);
@@ -274,7 +300,8 @@ static av_cold void ivi_free_buffers(IVIPlaneDesc *planes)
     }
 }
 
-av_cold int ff_ivi_init_planes(IVIPlaneDesc *planes, const IVIPicConfig *cfg)
+av_cold int ff_ivi_init_planes(IVIPlaneDesc *planes, const IVIPicConfig *cfg,
+                               int is_indeo4)
 {
     int p, b;
     uint32_t b_width, b_height, align_fac, width_aligned,
@@ -298,7 +325,7 @@ av_cold int ff_ivi_init_planes(IVIPlaneDesc *planes, const IVIPicConfig *cfg)
     planes[1].num_bands = planes[2].num_bands = cfg->chroma_bands;
 
     for (p = 0; p < 3; p++) {
-        planes[p].bands = av_mallocz(planes[p].num_bands * sizeof(IVIBandDesc));
+        planes[p].bands = av_mallocz_array(planes[p].num_bands, sizeof(IVIBandDesc));
         if (!planes[p].bands)
             return AVERROR(ENOMEM);
 
@@ -337,6 +364,11 @@ av_cold int ff_ivi_init_planes(IVIPlaneDesc *planes, const IVIPicConfig *cfg)
                 if (!band->bufs[2])
                     return AVERROR(ENOMEM);
             }
+            if (is_indeo4) {
+                band->bufs[3]  = av_mallocz(buf_size);
+                if (!band->bufs[3])
+                    return AVERROR(ENOMEM);
+            }
             /* reset custom vlc */
             planes[p].bands[0].blk_vlc.cust_desc.num_rows = 0;
         }
@@ -364,7 +396,7 @@ static int ivi_init_tiles(IVIBandDesc *band, IVITile *ref_tile,
                                               band->mb_size);
 
             av_freep(&tile->mbs);
-            tile->mbs = av_mallocz(tile->num_MBs * sizeof(IVIMbInfo));
+            tile->mbs = av_mallocz_array(tile->num_MBs, sizeof(IVIMbInfo));
             if (!tile->mbs)
                 return AVERROR(ENOMEM);
 
@@ -408,7 +440,7 @@ av_cold int ff_ivi_init_tiles(IVIPlaneDesc *planes,
             band->num_tiles = x_tiles * y_tiles;
 
             av_freep(&band->tiles);
-            band->tiles = av_mallocz(band->num_tiles * sizeof(IVITile));
+            band->tiles = av_mallocz_array(band->num_tiles, sizeof(IVITile));
             if (!band->tiles)
                 return AVERROR(ENOMEM);
 
@@ -467,8 +499,11 @@ static int ivi_dc_transform(IVIBandDesc *band, int *prev_dc, int buf_offs,
 }
 
 static int ivi_decode_coded_blocks(GetBitContext *gb, IVIBandDesc *band,
-                                   ivi_mc_func mc, int mv_x, int mv_y,
-                                   int *prev_dc, int is_intra, int mc_type,
+                                   ivi_mc_func mc, ivi_mc_avg_func mc_avg,
+                                   int mv_x, int mv_y,
+                                   int mv_x2, int mv_y2,
+                                   int *prev_dc, int is_intra,
+                                   int mc_type, int mc_type2,
                                    uint32_t quant, int offs,
                                    AVCodecContext *avctx)
 {
@@ -513,7 +548,7 @@ static int ivi_decode_coded_blocks(GetBitContext *gb, IVIBandDesc *band,
             val = IVI_TOSIGNED((hi << 6) | lo);
         } else {
             if (sym >= 256U) {
-                av_log(avctx, AV_LOG_ERROR, "Invalid sym encountered: %d.\n", sym);
+                av_log(avctx, AV_LOG_ERROR, "Invalid sym encountered: %"PRIu32".\n", sym);
                 return AVERROR_INVALIDDATA;
             }
             run = rvmap->runtab[sym];
@@ -558,7 +593,8 @@ static int ivi_decode_coded_blocks(GetBitContext *gb, IVIBandDesc *band,
 
     /* apply motion compensation */
     if (!is_intra)
-        return ivi_mc(band, mc, offs, mv_x, mv_y, mc_type);
+        return ivi_mc(band, mc, mc_avg, offs, mv_x, mv_y, mv_x2, mv_y2,
+                      mc_type, mc_type2);
 
     return 0;
 }
@@ -576,12 +612,14 @@ static int ivi_decode_coded_blocks(GetBitContext *gb, IVIBandDesc *band,
 static int ivi_decode_blocks(GetBitContext *gb, IVIBandDesc *band,
                              IVITile *tile, AVCodecContext *avctx)
 {
-    int mbn, blk, num_blocks, blk_size, ret, is_intra, mc_type = 0;
-    int mv_x = 0, mv_y = 0;
+    int mbn, blk, num_blocks, blk_size, ret, is_intra;
+    int mc_type = 0, mc_type2 = -1;
+    int mv_x = 0, mv_y = 0, mv_x2 = 0, mv_y2 = 0;
     int32_t prev_dc;
     uint32_t cbp, quant, buf_offs;
     IVIMbInfo *mb;
     ivi_mc_func mc_with_delta_func, mc_no_delta_func;
+    ivi_mc_avg_func mc_avg_with_delta_func, mc_avg_no_delta_func;
     const uint8_t *scale_tab;
 
     /* init intra prediction for the DC coefficient */
@@ -590,11 +628,15 @@ static int ivi_decode_blocks(GetBitContext *gb, IVIBandDesc *band,
     /* number of blocks per mb */
     num_blocks = (band->mb_size != blk_size) ? 4 : 1;
     if (blk_size == 8) {
-        mc_with_delta_func = ff_ivi_mc_8x8_delta;
-        mc_no_delta_func   = ff_ivi_mc_8x8_no_delta;
+        mc_with_delta_func     = ff_ivi_mc_8x8_delta;
+        mc_no_delta_func       = ff_ivi_mc_8x8_no_delta;
+        mc_avg_with_delta_func = ff_ivi_mc_avg_8x8_delta;
+        mc_avg_no_delta_func   = ff_ivi_mc_avg_8x8_no_delta;
     } else {
-        mc_with_delta_func = ff_ivi_mc_4x4_delta;
-        mc_no_delta_func   = ff_ivi_mc_4x4_no_delta;
+        mc_with_delta_func     = ff_ivi_mc_4x4_delta;
+        mc_no_delta_func       = ff_ivi_mc_4x4_no_delta;
+        mc_avg_with_delta_func = ff_ivi_mc_avg_4x4_delta;
+        mc_avg_no_delta_func   = ff_ivi_mc_avg_4x4_no_delta;
     }
 
     for (mbn = 0, mb = tile->mbs; mbn < tile->num_MBs; mb++, mbn++) {
@@ -613,13 +655,22 @@ static int ivi_decode_blocks(GetBitContext *gb, IVIBandDesc *band,
             quant = scale_tab[quant];
 
         if (!is_intra) {
-            mv_x = mb->mv_x;
-            mv_y = mb->mv_y;
+            mv_x  = mb->mv_x;
+            mv_y  = mb->mv_y;
+            mv_x2 = mb->b_mv_x;
+            mv_y2 = mb->b_mv_y;
             if (band->is_halfpel) {
-                mc_type = ((mv_y & 1) << 1) | (mv_x & 1);
-                mv_x >>= 1;
-                mv_y >>= 1; /* convert halfpel vectors into fullpel ones */
+                mc_type  = ((mv_y  & 1) << 1) | (mv_x  & 1);
+                mc_type2 = ((mv_y2 & 1) << 1) | (mv_x2 & 1);
+                mv_x  >>= 1;
+                mv_y  >>= 1;
+                mv_x2 >>= 1;
+                mv_y2 >>= 1; /* convert halfpel vectors into fullpel ones */
             }
+            if (mb->type == 2)
+                mc_type = -1;
+            if (mb->type != 2 && mb->type != 3)
+                mc_type2 = -1;
             if (mb->type) {
                 int dmv_x, dmv_y, cx, cy;
 
@@ -627,6 +678,21 @@ static int ivi_decode_blocks(GetBitContext *gb, IVIBandDesc *band,
                 dmv_y = mb->mv_y >> band->is_halfpel;
                 cx    = mb->mv_x &  band->is_halfpel;
                 cy    = mb->mv_y &  band->is_halfpel;
+
+                if (mb->xpos + dmv_x < 0 ||
+                    mb->xpos + dmv_x + band->mb_size + cx > band->pitch ||
+                    mb->ypos + dmv_y < 0 ||
+                    mb->ypos + dmv_y + band->mb_size + cy > band->aheight) {
+                    return AVERROR_INVALIDDATA;
+                }
+            }
+            if (mb->type == 2 || mb->type == 3) {
+                int dmv_x, dmv_y, cx, cy;
+
+                dmv_x = mb->b_mv_x >> band->is_halfpel;
+                dmv_y = mb->b_mv_y >> band->is_halfpel;
+                cx    = mb->b_mv_x &  band->is_halfpel;
+                cy    = mb->b_mv_y &  band->is_halfpel;
 
                 if (mb->xpos + dmv_x < 0 ||
                     mb->xpos + dmv_x + band->mb_size + cx > band->pitch ||
@@ -648,8 +714,11 @@ static int ivi_decode_blocks(GetBitContext *gb, IVIBandDesc *band,
 
             if (cbp & 1) { /* block coded ? */
                 ret = ivi_decode_coded_blocks(gb, band, mc_with_delta_func,
-                                              mv_x, mv_y, &prev_dc, is_intra,
-                                              mc_type, quant, buf_offs, avctx);
+                                              mc_avg_with_delta_func,
+                                              mv_x, mv_y, mv_x2, mv_y2,
+                                              &prev_dc, is_intra,
+                                              mc_type, mc_type2, quant,
+                                              buf_offs, avctx);
                 if (ret < 0)
                     return ret;
             } else {
@@ -661,8 +730,9 @@ static int ivi_decode_blocks(GetBitContext *gb, IVIBandDesc *band,
                     if (ret < 0)
                         return ret;
                 } else {
-                    ret = ivi_mc(band, mc_no_delta_func, buf_offs,
-                                 mv_x, mv_y, mc_type);
+                    ret = ivi_mc(band, mc_no_delta_func, mc_avg_no_delta_func,
+                                 buf_offs, mv_x, mv_y, mv_x2, mv_y2,
+                                 mc_type, mc_type2);
                     if (ret < 0)
                         return ret;
                 }
@@ -784,8 +854,8 @@ static int ivi_process_empty_tile(AVCodecContext *avctx, IVIBandDesc *band,
             for (blk = 0; blk < num_blocks; blk++) {
                 /* adjust block position in the buffer according with its number */
                 offs = mb->buf_offs + band->blk_size * ((blk & 1) + !!(blk & 2) * band->pitch);
-                ret = ivi_mc(band, mc_no_delta_func, offs,
-                             mv_x, mv_y, mc_type);
+                ret = ivi_mc(band, mc_no_delta_func, 0, offs,
+                             mv_x, mv_y, 0, 0, mc_type, -1);
                 if (ret < 0)
                     return ret;
             }
@@ -867,8 +937,14 @@ static int decode_band(IVI45DecContext *ctx,
         av_log(avctx, AV_LOG_ERROR, "Band buffer points to no data!\n");
         return AVERROR_INVALIDDATA;
     }
-    band->ref_buf = band->bufs[ctx->ref_buf];
-    band->data_ptr = ctx->frame_data + (get_bits_count(&ctx->gb) >> 3);
+    if (ctx->is_indeo4 && ctx->frame_type == IVI4_FRAMETYPE_BIDIR) {
+        band->ref_buf   = band->bufs[ctx->b_ref_buf];
+        band->b_ref_buf = band->bufs[ctx->ref_buf];
+    } else {
+        band->ref_buf   = band->bufs[ctx->ref_buf];
+        band->b_ref_buf = 0;
+    }
+    band->data_ptr  = ctx->frame_data + (get_bits_count(&ctx->gb) >> 3);
 
     result = ctx->decode_band_hdr(ctx, band, avctx);
     if (result) {
@@ -962,7 +1038,7 @@ static int decode_band(IVI45DecContext *ctx,
         if (chksum != band->checksum) {
             av_log(avctx, AV_LOG_ERROR,
                    "Band checksum mismatch! Plane %d, band %d, "
-                   "received: %x, calculated: %x\n",
+                   "received: %"PRIx32", calculated: %"PRIx16"\n",
                    band->plane, band->band_num, band->checksum, chksum);
         }
     }
@@ -994,6 +1070,17 @@ int ff_ivi_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     }
     if (ctx->gop_invalid)
         return AVERROR_INVALIDDATA;
+
+    if (ctx->is_indeo4 && ctx->frame_type == IVI4_FRAMETYPE_NULL_LAST) {
+        if (ctx->got_p_frame) {
+            av_frame_move_ref(data, ctx->p_frame);
+            *got_frame = 1;
+            ctx->got_p_frame = 0;
+        } else {
+            *got_frame = 0;
+        }
+        return buf_size;
+    }
 
     if (ctx->gop_flags & IVI5_IS_PROTECTED) {
         avpriv_report_missing_feature(avctx, "Password-protected clip!\n");
@@ -1036,24 +1123,6 @@ int ff_ivi_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
     //STOP_TIMER("decode_planes"); }
 
-    /* If the bidirectional mode is enabled, next I and the following P
-     * frame will be sent together. Unfortunately the approach below seems
-     * to be the only way to handle the B-frames mode.
-     * That's exactly the same Intel decoders do.
-     */
-    if (avctx->codec_id == AV_CODEC_ID_INDEO4 &&
-        ctx->frame_type == 0/*FRAMETYPE_INTRA*/) {
-            // skip version string
-        while (get_bits(&ctx->gb, 8)) {
-            if (get_bits_left(&ctx->gb) < 8)
-                return AVERROR_INVALIDDATA;
-        }
-
-        skip_bits_long(&ctx->gb, 64);  // skip padding, TODO: implement correct 8-bytes alignment
-        if (get_bits_left(&ctx->gb) > 18 && show_bits(&ctx->gb, 18) == 0x3FFF8)
-            av_log(avctx, AV_LOG_ERROR, "Buffer contains IP frames!\n");
-    }
-
     if (!ctx->is_nonnull_frame(ctx))
         return buf_size;
 
@@ -1065,7 +1134,7 @@ int ff_ivi_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         return result;
 
     if (ctx->is_scalable) {
-        if (avctx->codec_id == AV_CODEC_ID_INDEO4)
+        if (ctx->is_indeo4)
             ff_ivi_recompose_haar(&ctx->planes[0], frame->data[0], frame->linesize[0]);
         else
             ff_ivi_recompose53   (&ctx->planes[0], frame->data[0], frame->linesize[0]);
@@ -1077,6 +1146,30 @@ int ff_ivi_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     ivi_output_plane(&ctx->planes[1], frame->data[2], frame->linesize[2]);
 
     *got_frame = 1;
+
+    /* If the bidirectional mode is enabled, next I and the following P
+     * frame will be sent together. Unfortunately the approach below seems
+     * to be the only way to handle the B-frames mode.
+     * That's exactly the same Intel decoders do.
+     */
+    if (ctx->is_indeo4 && ctx->frame_type == IVI4_FRAMETYPE_INTRA) {
+        int left;
+
+            // skip version string
+        while (get_bits(&ctx->gb, 8)) {
+            if (get_bits_left(&ctx->gb) < 8)
+                return AVERROR_INVALIDDATA;
+        }
+        left = get_bits_count(&ctx->gb) & 0x18;
+        skip_bits_long(&ctx->gb, 64 - left);
+        if (get_bits_left(&ctx->gb) > 18 &&
+            show_bits_long(&ctx->gb, 21) == 0xBFFF8) { // syncheader + inter type
+            AVPacket pkt;
+            pkt.data = avpkt->data + (get_bits_count(&ctx->gb) >> 3);
+            pkt.size = get_bits_left(&ctx->gb) >> 3;
+            ff_ivi_decode_frame(avctx, ctx->p_frame, &ctx->got_p_frame, &pkt);
+        }
+    }
 
     return buf_size;
 }
@@ -1094,7 +1187,7 @@ av_cold int ff_ivi_decode_close(AVCodecContext *avctx)
         ff_free_vlc(&ctx->mb_vlc.cust_tab);
 
 #if IVI4_STREAM_ANALYSER
-    if (avctx->codec_id == AV_CODEC_ID_INDEO4) {
+    if (ctx->is_indeo4) {
     if (ctx->is_scalable)
         av_log(avctx, AV_LOG_ERROR, "This video uses scalability mode!\n");
     if (ctx->uses_tiling)
@@ -1109,6 +1202,8 @@ av_cold int ff_ivi_decode_close(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "This video uses fullpel motion vectors!\n");
     }
 #endif
+
+    av_frame_free(&ctx->p_frame);
 
     return 0;
 }

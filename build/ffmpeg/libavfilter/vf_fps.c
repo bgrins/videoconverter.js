@@ -79,7 +79,7 @@ static av_cold int init(AVFilterContext *ctx)
 {
     FPSContext *s = ctx->priv;
 
-    if (!(s->fifo = av_fifo_alloc(2*sizeof(AVFrame*))))
+    if (!(s->fifo = av_fifo_alloc_array(2, sizeof(AVFrame*))))
         return AVERROR(ENOMEM);
 
     s->first_pts    = AV_NOPTS_VALUE;
@@ -103,7 +103,7 @@ static av_cold void uninit(AVFilterContext *ctx)
     if (s->fifo) {
         s->drop += av_fifo_size(s->fifo) / sizeof(AVFrame*);
         flush_fifo(s->fifo);
-        av_fifo_free(s->fifo);
+        av_fifo_freep(&s->fifo);
     }
 
     av_log(ctx, AV_LOG_VERBOSE, "%d frames in, %d frames out; %d frames dropped, "

@@ -325,7 +325,7 @@ static int update_size(AVCodecContext *ctx, int w, int h)
     s->cols     = (w + 7) >> 3;
     s->rows     = (h + 7) >> 3;
 
-#define assign(var, type, n) var = (type) p; p += s->sb_cols * n * sizeof(*var)
+#define assign(var, type, n) var = (type) p; p += s->sb_cols * (n) * sizeof(*var)
     av_freep(&s->intra_pred_data[0]);
     p = av_malloc(s->sb_cols * (240 + sizeof(*s->lflvl) + 16 * sizeof(*s->above_mv_ctx)));
     if (!p)
@@ -2258,7 +2258,11 @@ static void decode_coeffs(AVCodecContext *ctx)
                                   16 * step * step, c, e, p, a[x] + l[y], \
                                   uvscan, uvnb, uv_band_counts, qmul[1]); \
             a[x] = l[y] = !!res; \
-            s->uveob[pl][n] = res; \
+            if (step >= 4) { \
+                AV_WN16A(&s->uveob[pl][n], res); \
+            } else { \
+                s->uveob[pl][n] = res; \
+            } \
         } \
     }
 
@@ -2448,8 +2452,8 @@ static void intra_recon(AVCodecContext *ctx, ptrdiff_t y_off, ptrdiff_t uv_off)
     int tx = 4 * s->lossless + b->tx, uvtx = b->uvtx + 4 * s->lossless;
     int uvstep1d = 1 << b->uvtx, p;
     uint8_t *dst = s->dst[0], *dst_r = s->frames[CUR_FRAME].tf.f->data[0] + y_off;
-    LOCAL_ALIGNED_16(uint8_t, a_buf, [48]);
-    LOCAL_ALIGNED_16(uint8_t, l, [32]);
+    LOCAL_ALIGNED_32(uint8_t, a_buf, [64]);
+    LOCAL_ALIGNED_32(uint8_t, l, [32]);
 
     for (n = 0, y = 0; y < end_y; y += step1d) {
         uint8_t *ptr = dst, *ptr_r = dst_r;
@@ -2457,7 +2461,7 @@ static void intra_recon(AVCodecContext *ctx, ptrdiff_t y_off, ptrdiff_t uv_off)
                                ptr_r += 4 * step1d, n += step) {
             int mode = b->mode[b->bs > BS_8x8 && b->tx == TX_4X4 ?
                                y * 2 + x : 0];
-            uint8_t *a = &a_buf[16];
+            uint8_t *a = &a_buf[32];
             enum TxfmType txtp = vp9_intra_txfm_type[mode];
             int eob = b->skip ? 0 : b->tx > TX_8X8 ? AV_RN16A(&s->eob[n]) : s->eob[n];
 

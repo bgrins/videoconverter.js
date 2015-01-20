@@ -23,7 +23,7 @@
  */
 
 #include "avcodec.h"
-#include "dsputil.h"
+#include "mpegutils.h"
 #include "mpegvideo.h"
 #include "msmpeg4.h"
 #include "libavutil/imgutils.h"
@@ -179,7 +179,7 @@ static int msmpeg4v12_decode_mb(MpegEncContext *s, int16_t block[6][64])
         *mb_type_ptr = MB_TYPE_INTRA;
     }
 
-    s->dsp.clear_blocks(s->block[0]);
+    s->bdsp.clear_blocks(s->block[0]);
     for (i = 0; i < 6; i++) {
         if (ff_msmpeg4_decode_block(s, block[i], i, (cbp >> (5 - i)) & 1, NULL) < 0)
         {
@@ -270,7 +270,7 @@ static int msmpeg4v34_decode_mb(MpegEncContext *s, int16_t block[6][64])
         }
     }
 
-    s->dsp.clear_blocks(s->block[0]);
+    s->bdsp.clear_blocks(s->block[0]);
     for (i = 0; i < 6; i++) {
         if (ff_msmpeg4_decode_block(s, block[i], i, (cbp >> (5 - i)) & 1, NULL) < 0)
         {
@@ -922,7 +922,10 @@ AVCodec ff_msmpeg4v1_decoder = {
     .decode         = ff_h263_decode_frame,
     .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1,
     .max_lowres     = 3,
-    .pix_fmts       = ff_pixfmt_list_420,
+    .pix_fmts       = (const enum AVPixelFormat[]) {
+        AV_PIX_FMT_YUV420P,
+        AV_PIX_FMT_NONE
+    },
 };
 
 AVCodec ff_msmpeg4v2_decoder = {
@@ -936,7 +939,10 @@ AVCodec ff_msmpeg4v2_decoder = {
     .decode         = ff_h263_decode_frame,
     .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1,
     .max_lowres     = 3,
-    .pix_fmts       = ff_pixfmt_list_420,
+    .pix_fmts       = (const enum AVPixelFormat[]) {
+        AV_PIX_FMT_YUV420P,
+        AV_PIX_FMT_NONE
+    },
 };
 
 AVCodec ff_msmpeg4v3_decoder = {
@@ -950,7 +956,10 @@ AVCodec ff_msmpeg4v3_decoder = {
     .decode         = ff_h263_decode_frame,
     .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1,
     .max_lowres     = 3,
-    .pix_fmts       = ff_pixfmt_list_420,
+    .pix_fmts       = (const enum AVPixelFormat[]) {
+        AV_PIX_FMT_YUV420P,
+        AV_PIX_FMT_NONE
+    },
 };
 
 AVCodec ff_wmv1_decoder = {
@@ -964,5 +973,8 @@ AVCodec ff_wmv1_decoder = {
     .decode         = ff_h263_decode_frame,
     .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1,
     .max_lowres     = 3,
-    .pix_fmts       = ff_pixfmt_list_420,
+    .pix_fmts       = (const enum AVPixelFormat[]) {
+        AV_PIX_FMT_YUV420P,
+        AV_PIX_FMT_NONE
+    },
 };

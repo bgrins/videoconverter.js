@@ -58,10 +58,6 @@ DECLARE_ALIGNED(8, const uint64_t, ff_M24A)         = 0x00FF0000FF0000FFLL;
 DECLARE_ALIGNED(8, const uint64_t, ff_M24B)         = 0xFF0000FF0000FF00LL;
 DECLARE_ALIGNED(8, const uint64_t, ff_M24C)         = 0x0000FF0000FF0000LL;
 
-DECLARE_ALIGNED(8, const uint64_t, ff_bgr2YCoeff)   = 0x000020E540830C8BULL;
-DECLARE_ALIGNED(8, const uint64_t, ff_bgr2UCoeff)   = 0x0000ED0FDAC23831ULL;
-DECLARE_ALIGNED(8, const uint64_t, ff_bgr2VCoeff)   = 0x00003831D0E6F6EAULL;
-
 DECLARE_ALIGNED(8, const uint64_t, ff_bgr2YOffset)  = 0x1010101010101010ULL;
 DECLARE_ALIGNED(8, const uint64_t, ff_bgr2UVOffset) = 0x8080808080808080ULL;
 DECLARE_ALIGNED(8, const uint64_t, ff_w1111)        = 0x0001000100010001ULL;
@@ -206,7 +202,8 @@ static void yuv2yuvX_sse3(const int16_t *filter, int filterSize,
                            const uint8_t *dither, int offset)
 {
     if(((int)dest) & 15){
-        return yuv2yuvX_mmxext(filter, filterSize, src, dest, dstW, dither, offset);
+        yuv2yuvX_mmxext(filter, filterSize, src, dest, dstW, dither, offset);
+        return;
     }
     if (offset) {
         __asm__ volatile("movq       (%0), %%xmm3\n\t"

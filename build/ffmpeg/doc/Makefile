@@ -48,6 +48,7 @@ DOC_EXAMPLES-$(CONFIG_REMUXING_EXAMPLE)          += remuxing
 DOC_EXAMPLES-$(CONFIG_RESAMPLING_AUDIO_EXAMPLE)  += resampling_audio
 DOC_EXAMPLES-$(CONFIG_SCALING_VIDEO_EXAMPLE)     += scaling_video
 DOC_EXAMPLES-$(CONFIG_TRANSCODE_AAC_EXAMPLE)     += transcode_aac
+DOC_EXAMPLES-$(CONFIG_TRANSCODING_EXAMPLE)       += transcoding
 ALL_DOC_EXAMPLES_LIST = $(DOC_EXAMPLES-) $(DOC_EXAMPLES-yes)
 
 DOC_EXAMPLES       := $(DOC_EXAMPLES-yes:%=doc/examples/%$(PROGSSUF)$(EXESUF))
@@ -110,8 +111,9 @@ OBJDIRS += doc/examples
 
 DOXY_INPUT      = $(addprefix $(SRC_PATH)/, $(INSTHEADERS) $(DOC_EXAMPLES:%$(EXESUF)=%.c) $(LIB_EXAMPLES:%$(EXESUF)=%.c))
 
-doc/doxy/html: $(SRC_PATH)/doc/Doxyfile $(DOXY_INPUT)
-	$(M)$(SRC_PATH)/doc/doxy-wrapper.sh $(SRC_PATH) $< $(DOXY_INPUT)
+doc/doxy/html: TAG = DOXY
+doc/doxy/html: $(SRC_PATH)/doc/Doxyfile $(SRC_PATH)/doc/doxy-wrapper.sh $(DOXY_INPUT)
+	$(M)$(SRC_PATH)/doc/doxy-wrapper.sh $(SRC_PATH) $< $(DOXYGEN) $(DOXY_INPUT)
 
 install-doc: install-html install-man
 

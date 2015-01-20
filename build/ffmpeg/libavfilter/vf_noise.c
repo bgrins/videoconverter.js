@@ -172,7 +172,7 @@ static int query_formats(AVFilterContext *ctx)
     AVFilterFormats *formats = NULL;
     int fmt;
 
-    for (fmt = 0; fmt < AV_PIX_FMT_NB; fmt++) {
+    for (fmt = 0; av_pix_fmt_desc_get(fmt); fmt++) {
         const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(fmt);
         if (desc->flags & AV_PIX_FMT_FLAG_PLANAR && !((desc->comp[0].depth_minus1 + 1) & 7))
             ff_add_format(&formats, fmt);
@@ -289,7 +289,7 @@ static inline void line_noise_avg_c(uint8_t *dst, const uint8_t *src,
 static inline void line_noise_avg_mmx(uint8_t *dst, const uint8_t *src,
                                       int len, int8_t **shift)
 {
-#if HAVE_MMX_INLINE
+#if HAVE_MMX_INLINE && HAVE_6REGS
     x86_reg mmx_len= len&(~7);
 
     __asm__ volatile(
@@ -438,7 +438,9 @@ static av_cold int init(AVFilterContext *ctx)
     if (HAVE_MMX_INLINE &&
         cpu_flags & AV_CPU_FLAG_MMX) {
         n->line_noise = line_noise_mmx;
+#if HAVE_6REGS
         n->line_noise_avg = line_noise_avg_mmx;
+#endif
     }
     if (HAVE_MMXEXT_INLINE &&
         cpu_flags & AV_CPU_FLAG_MMXEXT)

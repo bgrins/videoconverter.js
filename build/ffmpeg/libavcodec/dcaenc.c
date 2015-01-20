@@ -29,6 +29,7 @@
 #include "dcadata.h"
 #include "dcaenc.h"
 #include "internal.h"
+#include "mathops.h"
 #include "put_bits.h"
 
 #define MAX_CHANNELS 6
@@ -867,7 +868,7 @@ static void put_subframe(DCAContext *c, int subframe)
         for (band = 0; band < DCA_SUBBANDS; band++)
             put_bits(&c->pb, 1, 0);
 
-    /* Prediction VQ addres: not transmitted */
+    /* Prediction VQ address: not transmitted */
     /* Bit allocation index */
     for (ch = 0; ch < c->fullband_channels; ch++)
         for (band = 0; band < DCA_SUBBANDS; band++)

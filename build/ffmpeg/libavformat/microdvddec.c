@@ -24,12 +24,15 @@
 #include "internal.h"
 #include "subtitles.h"
 #include "libavutil/intreadwrite.h"
+#include "libavutil/opt.h"
 
 #define MAX_LINESIZE 2048
 
 
 typedef struct {
+    const AVClass *class;
     FFDemuxSubtitlesQueue q;
+    AVRational frame_rate;
 } MicroDVDContext;
 
 
@@ -71,22 +74,30 @@ static int get_duration(const char *buf)
     return -1;
 }
 
+static const char *bom = "\xEF\xBB\xBF";
+
 static int microdvd_read_header(AVFormatContext *s)
 {
     AVRational pts_info = (AVRational){ 2997, 125 };  /* default: 23.976 fps */
     MicroDVDContext *microdvd = s->priv_data;
     AVStream *st = avformat_new_stream(s, NULL);
     int i = 0;
-    char line[MAX_LINESIZE];
+    char line_buf[MAX_LINESIZE];
+    int has_real_fps = 0;
 
     if (!st)
         return AVERROR(ENOMEM);
 
     while (!url_feof(s->pb)) {
-        char *p = line;
+        char *p;
         AVPacket *sub;
         int64_t pos = avio_tell(s->pb);
-        int len = ff_get_line(s->pb, line, sizeof(line));
+        int len = ff_get_line(s->pb, line_buf, sizeof(line_buf));
+        char *line = line_buf;
+
+        if (!strncmp(line, bom, 3))
+            line += 3;
+        p = line;
 
         if (!len)
             break;
@@ -98,8 +109,10 @@ static int microdvd_read_header(AVFormatContext *s)
 
             if ((sscanf(line, "{%d}{}%6lf",    &frame, &fps) == 2 ||
                  sscanf(line, "{%d}{%*d}%6lf", &frame, &fps) == 2)
-                && frame <= 1 && fps > 3 && fps < 100)
+                && frame <= 1 && fps > 3 && fps < 100) {
                 pts_info = av_d2q(fps, 100000);
+                has_real_fps = 1;
+            }
             if (!st->codec->extradata && sscanf(line, "{DEFAULT}{}%c", &c) == 1) {
                 st->codec->extradata = av_strdup(line + 11);
                 if (!st->codec->extradata)
@@ -128,6 +141,13 @@ static int microdvd_read_header(AVFormatContext *s)
         sub->duration = get_duration(line);
     }
     ff_subtitles_queue_finalize(&microdvd->q);
+    if (has_real_fps) {
+        /* export the FPS info only if set in the file */
+        microdvd->frame_rate = pts_info;
+    } else if (microdvd->frame_rate.num) {
+        /* fallback on user specified frame rate */
+        pts_info = microdvd->frame_rate;
+    }
     avpriv_set_pts_info(st, 64, pts_info.den, pts_info.num);
     st->codec->codec_type = AVMEDIA_TYPE_SUBTITLE;
     st->codec->codec_id   = AV_CODEC_ID_MICRODVD;
@@ -155,6 +175,21 @@ static int microdvd_read_close(AVFormatContext *s)
     return 0;
 }
 
+
+#define OFFSET(x) offsetof(MicroDVDContext, x)
+#define SD AV_OPT_FLAG_SUBTITLE_PARAM|AV_OPT_FLAG_DECODING_PARAM
+static const AVOption microdvd_options[] = {
+    { "subfps", "set the movie frame rate fallback", OFFSET(frame_rate), AV_OPT_TYPE_RATIONAL, {.dbl=0}, 0, INT_MAX, SD },
+    { NULL }
+};
+
+static const AVClass microdvd_class = {
+    .class_name = "microdvddec",
+    .item_name  = av_default_item_name,
+    .option     = microdvd_options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
+
 AVInputFormat ff_microdvd_demuxer = {
     .name           = "microdvd",
     .long_name      = NULL_IF_CONFIG_SMALL("MicroDVD subtitle format"),
@@ -164,4 +199,5 @@ AVInputFormat ff_microdvd_demuxer = {
     .read_packet    = microdvd_read_packet,
     .read_seek2     = microdvd_read_seek,
     .read_close     = microdvd_read_close,
+    .priv_class     = &microdvd_class,
 };

@@ -169,7 +169,7 @@ static inline int parse_nal_units(AVCodecParserContext *s, AVCodecContext *avctx
             s->picture_structure = h->picture_struct;
             s->field_order = h->picture_struct;
 
-            if (h->nal_unit_type >= 16 && h->nal_unit_type <= 23) {
+            if (IS_IRAP(h)) {
                 s->key_frame = 1;
                 sh->no_output_of_prior_pics_flag = get_bits1(gb);
             }
@@ -330,6 +330,9 @@ static void hevc_close(AVCodecParserContext *s)
         av_buffer_unref(&h->sps_list[i]);
     for (i = 0; i < FF_ARRAY_ELEMS(h->pps_list); i++)
         av_buffer_unref(&h->pps_list[i]);
+
+    av_buffer_unref(&h->current_sps);
+    h->sps = NULL;
 
     for (i = 0; i < h->nals_allocated; i++)
         av_freep(&h->nals[i].rbsp_buffer);

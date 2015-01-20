@@ -36,13 +36,20 @@
 #include "hevcpred_template.c"
 #undef BIT_DEPTH
 
+#define BIT_DEPTH 12
+#include "hevcpred_template.c"
+#undef BIT_DEPTH
+
 void ff_hevc_pred_init(HEVCPredContext *hpc, int bit_depth)
 {
 #undef FUNC
 #define FUNC(a, depth) a ## _ ## depth
 
 #define HEVC_PRED(depth)                                \
-    hpc->intra_pred      = FUNC(intra_pred, depth);     \
+    hpc->intra_pred[0]   = FUNC(intra_pred_2, depth);   \
+    hpc->intra_pred[1]   = FUNC(intra_pred_3, depth);   \
+    hpc->intra_pred[2]   = FUNC(intra_pred_4, depth);   \
+    hpc->intra_pred[3]   = FUNC(intra_pred_5, depth);   \
     hpc->pred_planar[0]  = FUNC(pred_planar_0, depth);  \
     hpc->pred_planar[1]  = FUNC(pred_planar_1, depth);  \
     hpc->pred_planar[2]  = FUNC(pred_planar_2, depth);  \
@@ -59,6 +66,9 @@ void ff_hevc_pred_init(HEVCPredContext *hpc, int bit_depth)
         break;
     case 10:
         HEVC_PRED(10);
+        break;
+    case 12:
+        HEVC_PRED(12);
         break;
     default:
         HEVC_PRED(8);

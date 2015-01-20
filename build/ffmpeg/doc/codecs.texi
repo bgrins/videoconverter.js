@@ -285,6 +285,11 @@ detect bitstream specification deviations
 detect improper bitstream length
 @item explode
 abort decoding on minor error detection
+@item ignore_err
+ignore decoding errors, and continue decoding.
+This is useful if you want to analyze the content of a video and thus want
+everything to be decoded no matter what. This option will not result in a video
+that is pleasing to watch in case of errors.
 @item careful
 consider things that violate the spec and have not been seen in the wild as errors
 @item compliant
@@ -389,6 +394,9 @@ Possible values:
 
 @item simplemmx
 
+@item simpleauto
+Automatically pick a IDCT compatible with the simple one
+
 @item arm
 
 @item altivec
@@ -424,6 +432,8 @@ Possible values:
 iterative motion vector (MV) search (slow)
 @item deblock
 use strong deblock filter for damaged MBs
+@item favor_inter
+favor predicting from the previous frame instead of the current
 @end table
 
 @item bits_per_coded_sample @var{integer}
@@ -879,7 +889,7 @@ Set frame skip factor.
 Set frame skip exponent.
 Negative values behave identical to the corresponding positive ones, except
 that the score is normalized.
-Positive values exist primarly for compatibility reasons and are not so useful.
+Positive values exist primarily for compatibility reasons and are not so useful.
 
 @item skipcmp @var{integer} (@emph{encoding,video})
 Set frame skip compare function.
@@ -1025,15 +1035,26 @@ Set the log level offset.
 Number of slices, used in parallelized encoding.
 
 @item thread_type @var{flags} (@emph{decoding/encoding,video})
-Select multithreading type.
+Select which multithreading methods to use.
+
+Use of @samp{frame} will increase decoding delay by one frame per
+thread, so clients which cannot provide future frames should not use
+it.
 
 Possible values:
 @table @samp
 @item slice
+Decode more than one part of a single frame at once.
+
+Multithreading using slices works only when the video was encoded with
+slices.
 
 @item frame
-
+Decode more than one frame at once.
 @end table
+
+Default value is @samp{slice+frame}.
+
 @item audio_service_type @var{integer} (@emph{encoding,audio})
 Set audio service type.
 

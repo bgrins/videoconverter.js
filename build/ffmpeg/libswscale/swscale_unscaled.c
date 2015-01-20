@@ -1585,7 +1585,7 @@ void ff_get_unscaled_swscale(SwsContext *c)
         c->swscale = ff_yuv2rgb_get_func_ptr(c);
     }
 
-    if (srcFormat == AV_PIX_FMT_YUV410P &&
+    if (srcFormat == AV_PIX_FMT_YUV410P && !(dstH & 3) &&
         (dstFormat == AV_PIX_FMT_YUV420P || dstFormat == AV_PIX_FMT_YUVA420P) &&
         !(flags & SWS_BITEXACT)) {
         c->swscale = yvu9ToYv12Wrapper;
@@ -1666,6 +1666,7 @@ void ff_get_unscaled_swscale(SwsContext *c)
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BGRA64) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BGR555) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BGR565) ||
+        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BGRA64) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GRAY16) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GBRP9)  ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GBRP10) ||
@@ -1678,6 +1679,7 @@ void ff_get_unscaled_swscale(SwsContext *c)
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_RGBA64) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_RGB555) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_RGB565) ||
+        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_RGBA64) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_XYZ12)  ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV420P9)  ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV420P10) ||
@@ -1747,13 +1749,10 @@ void ff_get_unscaled_swscale(SwsContext *c)
             c->swscale = planarCopyWrapper;
     }
 
-    if (ARCH_BFIN)
-        ff_get_unscaled_swscale_bfin(c);
     if (ARCH_PPC)
         ff_get_unscaled_swscale_ppc(c);
 //     if (ARCH_ARM)
 //         ff_get_unscaled_swscale_arm(c);
-
 }
 
 /* Convert the palette to the same packed 32-bit format as the palette */

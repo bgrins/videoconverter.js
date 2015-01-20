@@ -23,12 +23,13 @@
 
 #include "libavcodec/cabac.h"
 #include "libavutil/attributes.h"
+#include "libavutil/macros.h"
 #include "libavutil/x86/asm.h"
-#include "libavutil/internal.h"
 #include "config.h"
 
 #if   (defined(__i386) && defined(__clang__) && (__clang_major__<2 || (__clang_major__==2 && __clang_minor__<10)))\
-   || (                  !defined(__clang__) && defined(__llvm__) && __GNUC__==4 && __GNUC_MINOR__==2 && __GNUC_PATCHLEVEL__<=1)
+   || (                  !defined(__clang__) && defined(__llvm__) && __GNUC__==4 && __GNUC_MINOR__==2 && __GNUC_PATCHLEVEL__<=1)\
+   || (defined(__INTEL_COMPILER) && defined(_MSC_VER))
 #       define BROKEN_COMPILER 1
 #else
 #       define BROKEN_COMPILER 0
@@ -110,7 +111,7 @@
         "2:                                                             \n\t"
 
 #else /* BROKEN_RELOCATIONS */
-#define TABLES_ARG
+#define TABLES_ARG NAMED_CONSTRAINTS_ARRAY_ADD(ff_h264_cabac_tables)
 #define RIP_ARG
 
 #if HAVE_FAST_CMOV
@@ -184,6 +185,7 @@ static av_always_inline int get_cabac_inline_x86(CABACContext *c,
     __asm__ volatile(
         "lea    "MANGLE(ff_h264_cabac_tables)", %0      \n\t"
         : "=&r"(tables)
+        : NAMED_CONSTRAINTS_ARRAY(ff_h264_cabac_tables)
     );
 #endif
 
@@ -205,7 +207,7 @@ static av_always_inline int get_cabac_inline_x86(CABACContext *c,
     );
     return bit & 1;
 }
-#endif /* HAVE_7REGS */
+#endif /* HAVE_7REGS && !BROKEN_COMPILER */
 
 #if !BROKEN_COMPILER
 #define get_cabac_bypass_sign get_cabac_bypass_sign_x86
@@ -218,7 +220,7 @@ static av_always_inline int get_cabac_bypass_sign_x86(CABACContext *c, int val)
         "shl             $17, %k1       \n\t"
         "add           %%eax, %%eax     \n\t"
         "sub             %k1, %%eax     \n\t"
-        "cltd                           \n\t"
+        "cdq                            \n\t"
         "and           %%edx, %k1       \n\t"
         "add             %k1, %%eax     \n\t"
         "xor           %%edx, %%ecx     \n\t"
@@ -265,7 +267,7 @@ static av_always_inline int get_cabac_bypass_x86(CABACContext *c)
         "shl             $17, %k1       \n\t"
         "add           %%eax, %%eax     \n\t"
         "sub             %k1, %%eax     \n\t"
-        "cltd                           \n\t"
+        "cdq                            \n\t"
         "and           %%edx, %k1       \n\t"
         "add             %k1, %%eax     \n\t"
         "inc           %%edx            \n\t"

@@ -41,7 +41,7 @@
 #include "video.h"
 #include "avcodec.h"
 
-typedef struct {
+typedef struct BufferSourceContext {
     const AVClass    *class;
     AVFifoBuffer     *fifo;
     AVRational        time_base;     ///< time_base to set in the output link
@@ -271,7 +271,7 @@ do {                                                                    \
 
         if (planes > FF_ARRAY_ELEMS(frame->buf)) {
             frame->nb_extended_buf = planes - FF_ARRAY_ELEMS(frame->buf);
-            frame->extended_buf = av_mallocz(sizeof(*frame->extended_buf) *
+            frame->extended_buf = av_mallocz_array(sizeof(*frame->extended_buf),
                                              frame->nb_extended_buf);
             if (!frame->extended_buf) {
                 ret = AVERROR(ENOMEM);
@@ -379,13 +379,13 @@ static av_cold int init_audio(AVFilterContext *ctx)
 
     if (s->channel_layout_str) {
         int n;
-        /* TODO reindent */
-    s->channel_layout = av_get_channel_layout(s->channel_layout_str);
-    if (!s->channel_layout) {
-        av_log(ctx, AV_LOG_ERROR, "Invalid channel layout %s.\n",
-               s->channel_layout_str);
-        return AVERROR(EINVAL);
-    }
+
+        s->channel_layout = av_get_channel_layout(s->channel_layout_str);
+        if (!s->channel_layout) {
+            av_log(ctx, AV_LOG_ERROR, "Invalid channel layout %s.\n",
+                   s->channel_layout_str);
+            return AVERROR(EINVAL);
+        }
         n = av_get_channel_layout_nb_channels(s->channel_layout);
         if (s->channels) {
             if (n != s->channels) {
@@ -426,8 +426,7 @@ static av_cold void uninit(AVFilterContext *ctx)
         av_fifo_generic_read(s->fifo, &frame, sizeof(frame), NULL);
         av_frame_free(&frame);
     }
-    av_fifo_free(s->fifo);
-    s->fifo = NULL;
+    av_fifo_freep(&s->fifo);
 }
 
 static int query_formats(AVFilterContext *ctx)

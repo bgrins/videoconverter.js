@@ -28,13 +28,18 @@
  */
 
 #include "avcodec.h"
+#include "blockdsp.h"
+#include "bswapdsp.h"
+#include "idctdsp.h"
 #include "mpegvideo.h"
 #include "mpeg12.h"
 #include "thread.h"
 
 typedef struct MDECContext {
     AVCodecContext *avctx;
-    DSPContext dsp;
+    BlockDSPContext bdsp;
+    BswapDSPContext bbdsp;
+    IDCTDSPContext idsp;
     ThreadFrame frame;
     GetBitContext gb;
     ScanTable scantable;
@@ -123,7 +128,7 @@ static inline int decode_mb(MDECContext *a, int16_t block[6][64])
     int i, ret;
     static const int block_index[6] = { 5, 4, 0, 1, 2, 3 };
 
-    a->dsp.clear_blocks(block[0]);
+    a->bdsp.clear_blocks(block[0]);
 
     for (i = 0; i < 6; i++) {
         if ((ret = mdec_decode_block_intra(a, block[block_index[i]],
@@ -144,14 +149,14 @@ static inline void idct_put(MDECContext *a, AVFrame *frame, int mb_x, int mb_y)
     uint8_t *dest_cb = frame->data[1] + (mb_y * 8 * frame->linesize[1]) + mb_x * 8;
     uint8_t *dest_cr = frame->data[2] + (mb_y * 8 * frame->linesize[2]) + mb_x * 8;
 
-    a->dsp.idct_put(dest_y,                    linesize, block[0]);
-    a->dsp.idct_put(dest_y                + 8, linesize, block[1]);
-    a->dsp.idct_put(dest_y + 8 * linesize,     linesize, block[2]);
-    a->dsp.idct_put(dest_y + 8 * linesize + 8, linesize, block[3]);
+    a->idsp.idct_put(dest_y,                    linesize, block[0]);
+    a->idsp.idct_put(dest_y + 8,                linesize, block[1]);
+    a->idsp.idct_put(dest_y + 8 * linesize,     linesize, block[2]);
+    a->idsp.idct_put(dest_y + 8 * linesize + 8, linesize, block[3]);
 
     if (!(a->avctx->flags & CODEC_FLAG_GRAY)) {
-        a->dsp.idct_put(dest_cb, frame->linesize[1], block[4]);
-        a->dsp.idct_put(dest_cr, frame->linesize[2], block[5]);
+        a->idsp.idct_put(dest_cb, frame->linesize[1], block[4]);
+        a->idsp.idct_put(dest_cr, frame->linesize[2], block[5]);
     }
 }
 
@@ -173,7 +178,7 @@ static int decode_frame(AVCodecContext *avctx,
     av_fast_padded_malloc(&a->bitstream_buffer, &a->bitstream_buffer_size, buf_size);
     if (!a->bitstream_buffer)
         return AVERROR(ENOMEM);
-    a->dsp.bswap16_buf((uint16_t *)a->bitstream_buffer, (uint16_t *)buf, (buf_size + 1) / 2);
+    a->bbdsp.bswap16_buf((uint16_t *)a->bitstream_buffer, (uint16_t *)buf, (buf_size + 1) / 2);
     if ((ret = init_get_bits8(&a->gb, a->bitstream_buffer, buf_size)) < 0)
         return ret;
 
@@ -208,13 +213,17 @@ static av_cold int decode_init(AVCodecContext *avctx)
 
     a->avctx           = avctx;
 
-    ff_dsputil_init(&a->dsp, avctx);
+    ff_blockdsp_init(&a->bdsp, avctx);
+    ff_bswapdsp_init(&a->bbdsp);
+    ff_idctdsp_init(&a->idsp, avctx);
     ff_mpeg12_init_vlcs();
-    ff_init_scantable(a->dsp.idct_permutation, &a->scantable, ff_zigzag_direct);
+    ff_init_scantable(a->idsp.idct_permutation, &a->scantable,
+                      ff_zigzag_direct);
 
     if (avctx->idct_algo == FF_IDCT_AUTO)
         avctx->idct_algo = FF_IDCT_SIMPLE;
     avctx->pix_fmt  = AV_PIX_FMT_YUVJ420P;
+    avctx->color_range = AVCOL_RANGE_JPEG;
 
     return 0;
 }

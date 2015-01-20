@@ -25,6 +25,7 @@
  */
 
 #include "avcodec.h"
+#include "mpegutils.h"
 #include "mpegvideo.h"
 #include "golomb.h"
 
@@ -132,7 +133,7 @@ static int rv30_decode_mb_info(RV34DecContext *r)
 static inline void rv30_weak_loop_filter(uint8_t *src, const int step,
                                          const int stride, const int lim)
 {
-    const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;
+    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;
     int i, diff;
 
     for(i = 0; i < 4; i++){
@@ -170,7 +171,7 @@ static void rv30_loop_filter(RV34DecContext *r, int row)
         if(mb_x)
             left_lim = rv30_loop_filt_lim[s->current_picture_ptr->qscale_table[mb_pos - 1]];
         for(j = 0; j < 16; j += 4){
-            Y = s->current_picture_ptr->f.data[0] + mb_x*16 + (row*16 + j) * s->linesize + 4 * !mb_x;
+            Y = s->current_picture_ptr->f->data[0] + mb_x*16 + (row*16 + j) * s->linesize + 4 * !mb_x;
             for(i = !mb_x; i < 4; i++, Y += 4){
                 int ij = i + j;
                 loc_lim = 0;
@@ -190,7 +191,7 @@ static void rv30_loop_filter(RV34DecContext *r, int row)
             if(mb_x)
                 left_cbp = (r->cbp_chroma[mb_pos - 1] >> (k*4)) & 0xF;
             for(j = 0; j < 8; j += 4){
-                C = s->current_picture_ptr->f.data[k + 1] + mb_x*8 + (row*8 + j) * s->uvlinesize + 4 * !mb_x;
+                C = s->current_picture_ptr->f->data[k + 1] + mb_x*8 + (row*8 + j) * s->uvlinesize + 4 * !mb_x;
                 for(i = !mb_x; i < 2; i++, C += 4){
                     int ij = i + (j >> 1);
                     loc_lim = 0;
@@ -212,7 +213,7 @@ static void rv30_loop_filter(RV34DecContext *r, int row)
         if(row)
             top_lim = rv30_loop_filt_lim[s->current_picture_ptr->qscale_table[mb_pos - s->mb_stride]];
         for(j = 4*!row; j < 16; j += 4){
-            Y = s->current_picture_ptr->f.data[0] + mb_x*16 + (row*16 + j) * s->linesize;
+            Y = s->current_picture_ptr->f->data[0] + mb_x*16 + (row*16 + j) * s->linesize;
             for(i = 0; i < 4; i++, Y += 4){
                 int ij = i + j;
                 loc_lim = 0;
@@ -232,7 +233,7 @@ static void rv30_loop_filter(RV34DecContext *r, int row)
             if(row)
                 top_cbp = (r->cbp_chroma[mb_pos - s->mb_stride] >> (k*4)) & 0xF;
             for(j = 4*!row; j < 8; j += 4){
-                C = s->current_picture_ptr->f.data[k+1] + mb_x*8 + (row*8 + j) * s->uvlinesize;
+                C = s->current_picture_ptr->f->data[k+1] + mb_x*8 + (row*8 + j) * s->uvlinesize;
                 for(i = 0; i < 2; i++, C += 4){
                     int ij = i + (j >> 1);
                     loc_lim = 0;
@@ -293,7 +294,10 @@ AVCodec ff_rv30_decoder = {
     .capabilities          = CODEC_CAP_DR1 | CODEC_CAP_DELAY |
                              CODEC_CAP_FRAME_THREADS,
     .flush                 = ff_mpeg_flush,
-    .pix_fmts              = ff_pixfmt_list_420,
+    .pix_fmts              = (const enum AVPixelFormat[]) {
+        AV_PIX_FMT_YUV420P,
+        AV_PIX_FMT_NONE
+    },
     .init_thread_copy      = ONLY_IF_THREADS_ENABLED(ff_rv34_decode_init_thread_copy),
     .update_thread_context = ONLY_IF_THREADS_ENABLED(ff_rv34_decode_update_thread_context),
 };

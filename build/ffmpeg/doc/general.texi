@@ -205,7 +205,7 @@ library:
 @item American Laser Games MM   @tab   @tab X
     @tab Multimedia format used in games like Mad Dog McCree.
 @item 3GPP AMR                  @tab X @tab X
-@item Amazing Studio Packed Animation File        @tab   @tab X
+@item Amazing Studio Packed Animation File  @tab   @tab X
     @tab Multimedia format used in game Heart Of Darkness.
 @item Apple HTTP Live Streaming @tab   @tab X
 @item Artworx Data Format       @tab   @tab X
@@ -245,6 +245,7 @@ library:
     @tab Multimedia format used by Delphine Software games.
 @item CD+G                      @tab   @tab X
     @tab Video format used by CD+G karaoke disks
+@item Phantom Cine              @tab   @tab X
 @item Commodore CDXL            @tab   @tab X
     @tab Amiga CD video format
 @item Core Audio Format         @tab X @tab X
@@ -258,6 +259,7 @@ library:
 @item Deluxe Paint Animation    @tab   @tab X
 @item DFA                       @tab   @tab X
     @tab This format is used in Chronomaster game
+@item DSD Stream File (DSF)     @tab   @tab X
 @item DV video                  @tab X @tab X
 @item DXA                       @tab   @tab X
     @tab This format is used in the non-Windows version of the Feeble Files
@@ -308,9 +310,11 @@ library:
     @tab Used by Linux Media Labs MPEG-4 PCI boards
 @item LOAS                      @tab   @tab X
     @tab contains LATM multiplexed AAC audio
+@item LRC                       @tab X @tab X
 @item LVF                       @tab   @tab X
 @item LXF                       @tab   @tab X
     @tab VR native stream format, used by Leitch/Harris' video servers.
+@item Magic Lantern Video (MLV) @tab   @tab X
 @item Matroska                  @tab X @tab X
 @item Matroska audio            @tab X @tab
 @item FFmpeg metadata           @tab X @tab X
@@ -488,11 +492,13 @@ following image formats are supported:
 @item Name @tab Encoding @tab Decoding @tab Comments
 @item .Y.U.V       @tab X @tab X
     @tab one raw file per component
+@item Alias PIX    @tab X @tab X
+    @tab Alias/Wavefront PIX image format
 @item animated GIF @tab X @tab X
 @item BMP          @tab X @tab X
     @tab Microsoft BMP image
-@item PIX          @tab   @tab X
-    @tab PIX is an image format used in the Argonaut BRender engine.
+@item BRender PIX  @tab   @tab X
+    @tab Argonaut BRender 3D engine image format.
 @item DPX          @tab X @tab X
     @tab Digital Picture Exchange
 @item EXR          @tab   @tab X
@@ -680,8 +686,8 @@ following image formats are supported:
 @item LCL (LossLess Codec Library) MSZH  @tab     @tab  X
 @item LCL (LossLess Codec Library) ZLIB  @tab  E  @tab  E
 @item LOCO                   @tab     @tab  X
-@item LucasArts Smush        @tab     @tab  X
-    @tab Used in LucasArts games.
+@item LucasArts SANM/Smush   @tab     @tab  X
+    @tab Used in LucasArts games / SMUSH animations.
 @item lossless MJPEG         @tab  X  @tab  X
 @item Microsoft ATC Screen   @tab     @tab  X
     @tab Also known as Microsoft Screen 3.
@@ -716,6 +722,8 @@ following image formats are supported:
     @tab fourcc: VP50
 @item On2 VP6                @tab     @tab  X
     @tab fourcc: VP60,VP61,VP62
+@item On2 VP7                @tab     @tab  X
+    @tab fourcc: VP70,VP71
 @item VP8                    @tab  E  @tab  X
     @tab fourcc: VP80, encoding supported through external library libvpx
 @item VP9                    @tab  E  @tab  X
@@ -745,11 +753,11 @@ following image formats are supported:
     @tab Texture dictionaries used by the Renderware Engine.
 @item RL2 video              @tab     @tab  X
     @tab used in some games by Entertainment Software Partners
-@item SGI RLE 8-bit          @tab     @tab  X
 @item Sierra VMD video       @tab     @tab  X
     @tab Used in Sierra VMD files.
 @item Silicon Graphics Motion Video Compressor 1 (MVC1)  @tab     @tab  X
 @item Silicon Graphics Motion Video Compressor 2 (MVC2)  @tab     @tab  X
+@item Silicon Graphics RLE 8-bit video  @tab     @tab  X
 @item Smacker video          @tab     @tab  X
     @tab Video encoding used in Smacker.
 @item SMPTE VC-1             @tab     @tab  X
@@ -815,7 +823,7 @@ following image formats are supported:
     @tab encoding supported through external library libaacplus
 @item AAC                    @tab  E  @tab  X
     @tab encoding supported through external library libfaac and libvo-aacenc
-@item AC-3                   @tab IX  @tab  X
+@item AC-3                   @tab IX  @tab  IX
 @item ADPCM 4X Movie         @tab     @tab  X
 @item ADPCM CDROM XA         @tab     @tab  X
 @item ADPCM Creative Technology @tab     @tab  X
@@ -859,6 +867,8 @@ following image formats are supported:
 @item ADPCM Sound Blaster Pro 2-bit  @tab     @tab  X
 @item ADPCM Sound Blaster Pro 2.6-bit  @tab     @tab  X
 @item ADPCM Sound Blaster Pro 4-bit  @tab     @tab  X
+@item ADPCM VIMA
+    @tab Used in LucasArts SMUSH animations.
 @item ADPCM Westwood Studios IMA @tab     @tab  X
     @tab Used in Westwood Studios games like Command and Conquer.
 @item ADPCM Yamaha           @tab  X  @tab  X
@@ -891,6 +901,10 @@ following image formats are supported:
 @item DPCM Sol               @tab     @tab  X
 @item DPCM Xan               @tab     @tab  X
     @tab Used in Origin's Wing Commander IV AVI files.
+@item DSD (Direct Stream Digitial), least significant bit first  @tab  @tab  X
+@item DSD (Direct Stream Digitial), most significant bit first   @tab  @tab  X
+@item DSD (Direct Stream Digitial), least significant bit first, planar  @tab  @tab  X
+@item DSD (Direct Stream Digitial), most significant bit first, planar   @tab  @tab  X
 @item DSP Group TrueSpeech   @tab     @tab  X
 @item DV audio               @tab     @tab  X
 @item Enhanced AC-3          @tab  X  @tab  X
@@ -913,13 +927,14 @@ following image formats are supported:
 @item Monkey's Audio         @tab     @tab  X
 @item MP1 (MPEG audio layer 1)  @tab     @tab IX
 @item MP2 (MPEG audio layer 2)  @tab IX  @tab IX
-    @tab libtwolame can be used alternatively for encoding.
+    @tab encoding supported also through external library TwoLAME
 @item MP3 (MPEG audio layer 3)  @tab  E  @tab IX
     @tab encoding supported through external library LAME, ADU MP3 and MP3onMP4 also supported
 @item MPEG-4 Audio Lossless Coding (ALS)  @tab     @tab  X
 @item Musepack SV7           @tab     @tab  X
 @item Musepack SV8           @tab     @tab  X
 @item Nellymoser Asao        @tab  X  @tab  X
+@item On2 AVC (Audio for Video Codec) @tab     @tab  X
 @item Opus                   @tab  E  @tab  E
     @tab supported through external library libopus
 @item PCM A-law              @tab  X  @tab  X
@@ -1022,7 +1037,7 @@ performance on systems without hardware floating point support).
 @item TED Talks captions @tab @tab X @tab   @tab X
 @item VobSub (IDX+SUB) @tab   @tab X @tab   @tab X
 @item VPlayer          @tab   @tab X @tab   @tab X
-@item WebVTT           @tab X @tab X @tab   @tab X
+@item WebVTT           @tab X @tab X @tab X @tab X
 @item XSUB             @tab   @tab   @tab X @tab X
 @end multitable
 
@@ -1050,6 +1065,7 @@ performance on systems without hardware floating point support).
 @item RTMPTE       @tab X
 @item RTMPTS       @tab X
 @item RTP          @tab X
+@item SAMBA        @tab E
 @item SCTP         @tab X
 @item SFTP         @tab E
 @item TCP          @tab X
@@ -1083,6 +1099,7 @@ performance on systems without hardware floating point support).
 @item Video4Linux2      @tab X      @tab X
 @item VfW capture       @tab X      @tab
 @item X11 grabbing      @tab X      @tab
+@item Win32 grabbing    @tab X      @tab
 @end multitable
 
 @code{X} means that input/output is supported.

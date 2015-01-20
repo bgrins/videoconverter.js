@@ -34,6 +34,7 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/opt.h"
+#include "libavutil/timestamp.h"
 #include "internal.h"
 #include "dualinput.h"
 #include "drawutils.h"
@@ -91,7 +92,7 @@ static const char *eof_action_str[] = {
 #define U 1
 #define V 2
 
-typedef struct {
+typedef struct OverlayContext {
     const AVClass *class;
     int x, y;                   ///< position of overlayed picture
 
@@ -554,21 +555,20 @@ static AVFrame *do_blend(AVFilterContext *ctx, AVFrame *mainpic,
     OverlayContext *s = ctx->priv;
     AVFilterLink *inlink = ctx->inputs[0];
 
-        /* TODO: reindent */
-        if (s->eval_mode == EVAL_MODE_FRAME) {
-            int64_t pos = av_frame_get_pkt_pos(mainpic);
+    if (s->eval_mode == EVAL_MODE_FRAME) {
+        int64_t pos = av_frame_get_pkt_pos(mainpic);
 
-            s->var_values[VAR_N] = inlink->frame_count;
-            s->var_values[VAR_T] = mainpic->pts == AV_NOPTS_VALUE ?
-                NAN : mainpic->pts * av_q2d(inlink->time_base);
-            s->var_values[VAR_POS] = pos == -1 ? NAN : pos;
+        s->var_values[VAR_N] = inlink->frame_count;
+        s->var_values[VAR_T] = mainpic->pts == AV_NOPTS_VALUE ?
+            NAN : mainpic->pts * av_q2d(inlink->time_base);
+        s->var_values[VAR_POS] = pos == -1 ? NAN : pos;
 
-            eval_expr(ctx);
-            av_log(ctx, AV_LOG_DEBUG, "n:%f t:%f pos:%f x:%f xi:%d y:%f yi:%d\n",
-                   s->var_values[VAR_N], s->var_values[VAR_T], s->var_values[VAR_POS],
-                   s->var_values[VAR_X], s->x,
-                   s->var_values[VAR_Y], s->y);
-        }
+        eval_expr(ctx);
+        av_log(ctx, AV_LOG_DEBUG, "n:%f t:%f pos:%f x:%f xi:%d y:%f yi:%d\n",
+               s->var_values[VAR_N], s->var_values[VAR_T], s->var_values[VAR_POS],
+               s->var_values[VAR_X], s->x,
+               s->var_values[VAR_Y], s->y);
+    }
 
     blend_image(ctx, mainpic, second, s->x, s->y);
     return mainpic;
@@ -577,6 +577,7 @@ static AVFrame *do_blend(AVFilterContext *ctx, AVFrame *mainpic,
 static int filter_frame(AVFilterLink *inlink, AVFrame *inpicref)
 {
     OverlayContext *s = inlink->dst->priv;
+    av_log(inlink->dst, AV_LOG_DEBUG, "Incoming frame (time:%s) from link #%d\n", av_ts2timestr(inpicref->pts, &inlink->time_base), FF_INLINK_IDX(inlink));
     return ff_dualinput_filter_frame(&s->dinput, inlink, inpicref);
 }
 

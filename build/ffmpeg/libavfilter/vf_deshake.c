@@ -62,8 +62,8 @@
 #include "deshake.h"
 #include "deshake_opencl.h"
 
-#define CHROMA_WIDTH(link)  -((-link->w) >> av_pix_fmt_desc_get(link->format)->log2_chroma_w)
-#define CHROMA_HEIGHT(link) -((-link->h) >> av_pix_fmt_desc_get(link->format)->log2_chroma_h)
+#define CHROMA_WIDTH(link)  (-((-(link)->w) >> av_pix_fmt_desc_get((link)->format)->log2_chroma_w))
+#define CHROMA_HEIGHT(link) (-((-(link)->h) >> av_pix_fmt_desc_get((link)->format)->log2_chroma_h))
 
 #define OFFSET(x) offsetof(DeshakeContext, x)
 #define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
@@ -132,7 +132,7 @@ static void find_block_motion(DeshakeContext *deshake, uint8_t *src1,
     int smallest = INT_MAX;
     int tmp, tmp2;
 
-    #define CMP(i, j) deshake->c.sad[0](deshake, src1 + cy * stride + cx, \
+    #define CMP(i, j) deshake->c.sad[0](NULL, src1 + cy * stride + cx, \
                                         src2 + (j) * stride + (i), stride, \
                                         deshake->blocksize)
 
@@ -249,7 +249,7 @@ static void find_motion(DeshakeContext *deshake, uint8_t *src1, uint8_t *src2,
     int contrast;
 
     int pos;
-    double *angles = av_malloc(sizeof(*angles) * width * height / (16 * deshake->blocksize));
+    double *angles = av_malloc_array(width * height / (16 * deshake->blocksize), sizeof(*angles));
     int center_x = 0, center_y = 0;
     double p_x, p_y;
 
@@ -306,8 +306,8 @@ static void find_motion(DeshakeContext *deshake, uint8_t *src1, uint8_t *src2,
         //av_log(NULL, AV_LOG_ERROR, "\n");
     }
 
-    p_x = (center_x - width / 2);
-    p_y = (center_y - height / 2);
+    p_x = (center_x - width / 2.0);
+    p_y = (center_y - height / 2.0);
     t->vector.x += (cos(t->angle)-1)*p_x  - sin(t->angle)*p_y;
     t->vector.y += sin(t->angle)*p_x  + (cos(t->angle)-1)*p_y;
 

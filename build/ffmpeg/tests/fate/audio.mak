@@ -24,6 +24,11 @@ fate-dts: CMD = pcm -i $(TARGET_SAMPLES)/dts/dts.ts
 fate-dts: CMP = oneoff
 fate-dts: REF = $(SAMPLES)/dts/dts.pcm
 
+FATE_SAMPLES_AUDIO-$(call DEMDEC, DTS, DCA) += fate-dts_es
+fate-dts_es: CMD = pcm -i $(TARGET_SAMPLES)/dts/dts_es.dts
+fate-dts_es: CMP = oneoff
+fate-dts_es: REF = $(SAMPLES)/dts/dts_es.pcm
+
 FATE_SAMPLES_AUDIO-$(call DEMDEC, AVI, IMC) += fate-imc
 fate-imc: CMD = pcm -i $(TARGET_SAMPLES)/imc/imc.avi
 fate-imc: CMP = oneoff
@@ -43,6 +48,9 @@ fate-nellymoser-aref-encode: CMP_SHIFT = -244
 fate-nellymoser-aref-encode: CMP_TARGET = 9612
 fate-nellymoser-aref-encode: SIZE_TOLERANCE = 268
 
+FATE_SAMPLES_AUDIO-$(call DEMDEC, AVI, ON2AVC) += fate-on2avc
+fate-on2avc: CMD = framecrc -i $(TARGET_SAMPLES)/vp7/potter-40.vp7 -frames 30 -vn
+
 FATE_SAMPLES_AUDIO-$(call DEMDEC, PAF, PAF_AUDIO) += fate-paf-audio
 fate-paf-audio: CMD = framecrc -i $(TARGET_SAMPLES)/paf/hod1-partial.paf -vn
 
@@ -51,9 +59,6 @@ fate-sierra-vmd-audio: CMD = framecrc -i $(TARGET_SAMPLES)/vmd/12.vmd -vn
 
 FATE_SAMPLES_AUDIO-$(call DEMDEC, SMACKER, SMACKAUD) += fate-smacker-audio
 fate-smacker-audio: CMD = framecrc -i $(TARGET_SAMPLES)/smacker/wetlogo.smk -vn
-
-FATE_SAMPLES_AUDIO-$(call DEMDEC, SMUSH, VIMA) += fate-vima
-fate-vima: CMD = framecrc -i $(TARGET_SAMPLES)/smush/ronin_part.znm -vn
 
 FATE_SAMPLES_AUDIO-$(call DEMDEC, WSVQA, WS_SND1) += fate-ws_snd
 fate-ws_snd: CMD = md5 -i $(TARGET_SAMPLES)/vqa/ws_snd.vqa -f s16le

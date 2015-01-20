@@ -58,7 +58,7 @@ typedef struct TiffEncoderContext {
     unsigned int bpp;                       ///< bits per pixel
     int compr;                              ///< compression level
     int bpp_tab_size;                       ///< bpp_tab size
-    int photometric_interpretation;         ///< photometric interpretation
+    enum TiffPhotometric photometric_interpretation;  ///< photometric interpretation
     int strips;                             ///< number of strips
     uint32_t *strip_sizes;
     unsigned int strip_sizes_size;
@@ -238,6 +238,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     int ret = -1;
     int is_yuv = 0, alpha = 0;
     int shift_h, shift_v;
+    int packet_size;
 
     s->width          = avctx->width;
     s->height         = avctx->height;
@@ -254,7 +255,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         alpha = 1;
     case AV_PIX_FMT_RGB48LE:
     case AV_PIX_FMT_RGB24:
-        s->photometric_interpretation = 2;
+        s->photometric_interpretation = TIFF_PHOTOMETRIC_RGB;
         break;
     case AV_PIX_FMT_GRAY8:
         avctx->bits_per_coded_sample = 0x28;
@@ -262,13 +263,13 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         alpha = avctx->pix_fmt == AV_PIX_FMT_GRAY8A;
     case AV_PIX_FMT_GRAY16LE:
     case AV_PIX_FMT_MONOBLACK:
-        s->photometric_interpretation = 1;
+        s->photometric_interpretation = TIFF_PHOTOMETRIC_BLACK_IS_ZERO;
         break;
     case AV_PIX_FMT_PAL8:
-        s->photometric_interpretation = 3;
+        s->photometric_interpretation = TIFF_PHOTOMETRIC_PALETTE;
         break;
     case AV_PIX_FMT_MONOWHITE:
-        s->photometric_interpretation = 0;
+        s->photometric_interpretation = TIFF_PHOTOMETRIC_WHITE_IS_ZERO;
         break;
     case AV_PIX_FMT_YUV420P:
     case AV_PIX_FMT_YUV422P:
@@ -277,7 +278,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     case AV_PIX_FMT_YUV410P:
     case AV_PIX_FMT_YUV411P:
         av_pix_fmt_get_chroma_sub_sample(avctx->pix_fmt, &shift_h, &shift_v);
-        s->photometric_interpretation = 6;
+        s->photometric_interpretation = TIFF_PHOTOMETRIC_YCBCR;
         s->subsampling[0]             = 1 << shift_h;
         s->subsampling[1]             = 1 << shift_v;
         is_yuv                        = 1;
@@ -304,9 +305,10 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     strips = (s->height - 1) / s->rps + 1;
 
-    if ((ret = ff_alloc_packet2(avctx, pkt,
-                             avctx->width * avctx->height * s->bpp * 2 +
-                             avctx->height * 4 + FF_MIN_BUFFER_SIZE)) < 0)
+    packet_size = avctx->height * ((avctx->width * s->bpp + 7) >> 3) * 2 +
+                  avctx->height * 4 + FF_MIN_BUFFER_SIZE;
+
+    if ((ret = ff_alloc_packet2(avctx, pkt, packet_size)) < 0)
         return ret;
     ptr          = pkt->data;
     s->buf_start = pkt->data;
@@ -426,9 +428,9 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     if (s->bpp_tab_size)
         add_entry(s, TIFF_BPP, TIFF_SHORT, s->bpp_tab_size, bpp_tab);
 
-    add_entry1(s, TIFF_COMPR,      TIFF_SHORT, s->compr);
-    add_entry1(s, TIFF_INVERT,     TIFF_SHORT, s->photometric_interpretation);
-    add_entry(s,  TIFF_STRIP_OFFS, TIFF_LONG,  strips, s->strip_offsets);
+    add_entry1(s, TIFF_COMPR,       TIFF_SHORT, s->compr);
+    add_entry1(s, TIFF_PHOTOMETRIC, TIFF_SHORT, s->photometric_interpretation);
+    add_entry(s,  TIFF_STRIP_OFFS,  TIFF_LONG,  strips, s->strip_offsets);
 
     if (s->bpp_tab_size)
         add_entry1(s, TIFF_SAMPLES_PER_PIXEL, TIFF_SHORT, s->bpp_tab_size);
@@ -436,6 +438,13 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     add_entry1(s, TIFF_ROWSPERSTRIP, TIFF_LONG,     s->rps);
     add_entry(s,  TIFF_STRIP_SIZE,   TIFF_LONG,     strips, s->strip_sizes);
     add_entry(s,  TIFF_XRES,         TIFF_RATIONAL, 1,      res);
+    if (avctx->sample_aspect_ratio.num > 0 &&
+        avctx->sample_aspect_ratio.den > 0) {
+        AVRational y = av_mul_q(av_make_q(s->dpi, 1),
+                                avctx->sample_aspect_ratio);
+        res[0] = y.num;
+        res[1] = y.den;
+    }
     add_entry(s,  TIFF_YRES,         TIFF_RATIONAL, 1,      res);
     add_entry1(s, TIFF_RES_UNIT,     TIFF_SHORT,    2);
 
@@ -538,6 +547,7 @@ AVCodec ff_tiff_encoder = {
     .priv_data_size = sizeof(TiffEncoderContext),
     .init           = encode_init,
     .close          = encode_close,
+    .capabilities   = CODEC_CAP_FRAME_THREADS | CODEC_CAP_INTRA_ONLY,
     .encode2        = encode_frame,
     .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_RGB24, AV_PIX_FMT_PAL8, AV_PIX_FMT_GRAY8,

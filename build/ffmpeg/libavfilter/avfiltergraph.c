@@ -31,7 +31,6 @@
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
-#include "libavcodec/avcodec.h" // avcodec_find_best_pix_fmt_of_2()
 
 #include "avfilter.h"
 #include "formats.h"
@@ -281,7 +280,7 @@ static int graph_config_links(AVFilterGraph *graph, AVClass *log_ctx)
     return 0;
 }
 
-AVFilterContext *avfilter_graph_get_filter(AVFilterGraph *graph, char *name)
+AVFilterContext *avfilter_graph_get_filter(AVFilterGraph *graph, const char *name)
 {
     int i;
 
@@ -565,19 +564,19 @@ static int query_formats(AVFilterGraph *graph, AVClass *log_ctx)
                 outlink = convert->outputs[0];
                 if (!ff_merge_formats( inlink->in_formats,  inlink->out_formats,  inlink->type) ||
                     !ff_merge_formats(outlink->in_formats, outlink->out_formats, outlink->type))
-                    ret |= AVERROR(ENOSYS);
+                    ret = AVERROR(ENOSYS);
                 if (inlink->type == AVMEDIA_TYPE_AUDIO &&
                     (!ff_merge_samplerates(inlink->in_samplerates,
                                            inlink->out_samplerates) ||
                      !ff_merge_channel_layouts(inlink->in_channel_layouts,
                                                inlink->out_channel_layouts)))
-                    ret |= AVERROR(ENOSYS);
+                    ret = AVERROR(ENOSYS);
                 if (outlink->type == AVMEDIA_TYPE_AUDIO &&
                     (!ff_merge_samplerates(outlink->in_samplerates,
                                            outlink->out_samplerates) ||
                      !ff_merge_channel_layouts(outlink->in_channel_layouts,
                                                outlink->out_channel_layouts)))
-                    ret |= AVERROR(ENOSYS);
+                    ret = AVERROR(ENOSYS);
 
                 if (ret < 0) {
                     av_log(log_ctx, AV_LOG_ERROR,
@@ -628,7 +627,7 @@ static int pick_format(AVFilterLink *link, AVFilterLink *ref)
             int i;
             for (i=0; i<link->in_formats->nb_formats; i++) {
                 enum AVPixelFormat p = link->in_formats->formats[i];
-                best= avcodec_find_best_pix_fmt_of_2(best, p, ref->format, has_alpha, NULL);
+                best= av_find_best_pix_fmt_of_2(best, p, ref->format, has_alpha, NULL);
             }
             av_log(link->src,AV_LOG_DEBUG, "picking %s out of %d ref:%s alpha:%d\n",
                    av_get_pix_fmt_name(best), link->in_formats->nb_formats,

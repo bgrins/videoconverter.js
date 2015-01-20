@@ -35,42 +35,52 @@ int av_dict_count(const AVDictionary *m)
     return m ? m->count : 0;
 }
 
-AVDictionaryEntry *
-av_dict_get(AVDictionary *m, const char *key, const AVDictionaryEntry *prev, int flags)
+AVDictionaryEntry *av_dict_get(FF_CONST_AVUTIL53 AVDictionary *m, const char *key,
+                               const AVDictionaryEntry *prev, int flags)
 {
     unsigned int i, j;
 
-    if(!m)
+    if (!m)
         return NULL;
 
-    if(prev) i= prev - m->elems + 1;
-    else     i= 0;
+    if (prev)
+        i = prev - m->elems + 1;
+    else
+        i = 0;
 
-    for(; i<m->count; i++){
-        const char *s= m->elems[i].key;
-        if(flags & AV_DICT_MATCH_CASE) for(j=0;            s[j]  ==            key[j]  && key[j]; j++);
-        else                           for(j=0; av_toupper(s[j]) == av_toupper(key[j]) && key[j]; j++);
-        if(key[j])
+    for (; i < m->count; i++) {
+        const char *s = m->elems[i].key;
+        if (flags & AV_DICT_MATCH_CASE)
+            for (j = 0; s[j] == key[j] && key[j]; j++)
+                ;
+        else
+            for (j = 0; av_toupper(s[j]) == av_toupper(key[j]) && key[j]; j++)
+                ;
+        if (key[j])
             continue;
-        if(s[j] && !(flags & AV_DICT_IGNORE_SUFFIX))
+        if (s[j] && !(flags & AV_DICT_IGNORE_SUFFIX))
             continue;
         return &m->elems[i];
     }
     return NULL;
 }
 
-int av_dict_set(AVDictionary **pm, const char *key, const char *value, int flags)
+int av_dict_set(AVDictionary **pm, const char *key, const char *value,
+                int flags)
 {
-    AVDictionary      *m = *pm;
+    AVDictionary *m = *pm;
     AVDictionaryEntry *tag = av_dict_get(m, key, NULL, flags);
     char *oldval = NULL;
 
-    if(!m)
+    if (!m)
         m = *pm = av_mallocz(sizeof(*m));
 
-    if(tag) {
-        if (flags & AV_DICT_DONT_OVERWRITE)
+    if (tag) {
+        if (flags & AV_DICT_DONT_OVERWRITE) {
+            if (flags & AV_DICT_DONT_STRDUP_KEY) av_free(key);
+            if (flags & AV_DICT_DONT_STRDUP_VAL) av_free(value);
             return 0;
+        }
         if (flags & AV_DICT_APPEND)
             oldval = tag->value;
         else
@@ -78,16 +88,17 @@ int av_dict_set(AVDictionary **pm, const char *key, const char *value, int flags
         av_free(tag->key);
         *tag = m->elems[--m->count];
     } else {
-        AVDictionaryEntry *tmp = av_realloc(m->elems, (m->count+1) * sizeof(*m->elems));
-        if(tmp) {
+        AVDictionaryEntry *tmp = av_realloc(m->elems,
+                                            (m->count + 1) * sizeof(*m->elems));
+        if (tmp)
             m->elems = tmp;
-        } else
+        else
             return AVERROR(ENOMEM);
     }
     if (value) {
-        if (flags & AV_DICT_DONT_STRDUP_KEY) {
+        if (flags & AV_DICT_DONT_STRDUP_KEY)
             m->elems[m->count].key = (char*)(intptr_t)key;
-        } else
+        else
             m->elems[m->count].key = av_strdup(key);
         if (flags & AV_DICT_DONT_STRDUP_VAL) {
             m->elems[m->count].value = (char*)(intptr_t)value;
@@ -164,7 +175,7 @@ void av_dict_free(AVDictionary **pm)
     AVDictionary *m = *pm;
 
     if (m) {
-        while(m->count--) {
+        while (m->count--) {
             av_free(m->elems[m->count].key);
             av_free(m->elems[m->count].value);
         }
@@ -173,7 +184,7 @@ void av_dict_free(AVDictionary **pm)
     av_freep(pm);
 }
 
-void av_dict_copy(AVDictionary **dst, AVDictionary *src, int flags)
+void av_dict_copy(AVDictionary **dst, FF_CONST_AVUTIL53 AVDictionary *src, int flags)
 {
     AVDictionaryEntry *t = NULL;
 

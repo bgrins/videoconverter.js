@@ -273,6 +273,44 @@
 %endif
 %endmacro
 
+%macro HADDD 2 ; sum junk
+%if sizeof%1 == 32
+%define %2 xmm%2
+    vextracti128 %2, %1, 1
+%define %1 xmm%1
+    paddd   %1, %2
+%endif
+%if mmsize >= 16
+%if cpuflag(xop) && sizeof%1 == 16
+    vphadddq %1, %1
+%endif
+    movhlps %2, %1
+    paddd   %1, %2
+%endif
+%if notcpuflag(xop) || sizeof%1 != 16
+%if cpuflag(mmxext)
+    PSHUFLW %2, %1, q0032
+%else ; mmx
+    mova    %2, %1
+    psrlq   %2, 32
+%endif
+    paddd   %1, %2
+%endif
+%undef %1
+%undef %2
+%endmacro
+
+%macro HADDW 2 ; reg, tmp
+%if cpuflag(xop) && sizeof%1 == 16
+    vphaddwq  %1, %1
+    movhlps   %2, %1
+    paddd     %1, %2
+%else
+    pmaddwd %1, [pw_1]
+    HADDD   %1, %2
+%endif
+%endmacro
+
 %macro PALIGNR 4-5
 %if cpuflag(ssse3)
 %if %0==5
@@ -302,11 +340,19 @@
 %endif
 %endmacro
 
-%macro PAVGB 2
+%macro PAVGB 2-4
 %if cpuflag(mmxext)
     pavgb   %1, %2
 %elif cpuflag(3dnow)
     pavgusb %1, %2
+%elif cpuflag(mmx)
+    movu   %3, %2
+    por    %3, %1
+    pxor   %1, %2
+    pand   %1, %4
+    psrlq  %1, 1
+    psubb  %3, %1
+    SWAP   %1, %3
 %endif
 %endmacro
 
@@ -696,4 +742,20 @@ PMA_EMU PMADCSWD, pmadcswd, pmaddwd, paddd
         mulps   %1, %2, %3
         addps   %1, %4
     %endif
+%endmacro
+
+%macro LSHIFT 2
+%if mmsize > 8
+    pslldq  %1, %2
+%else
+    psllq   %1, 8*(%2)
+%endif
+%endmacro
+
+%macro RSHIFT 2
+%if mmsize > 8
+    psrldq  %1, %2
+%else
+    psrlq   %1, 8*(%2)
+%endif
 %endmacro

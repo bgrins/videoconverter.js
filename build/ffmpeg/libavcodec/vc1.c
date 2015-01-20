@@ -372,7 +372,11 @@ int ff_vc1_decode_sequence_header(AVCodecContext *avctx, VC1Context *v, GetBitCo
     if (v->res_sprite) {
         int w = get_bits(gb, 11);
         int h = get_bits(gb, 11);
-        avcodec_set_dimensions(v->s.avctx, w, h);
+        int ret = ff_set_dimensions(v->s.avctx, w, h);
+        if (ret < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Failed to set dimensions %d %d\n", w, h);
+            return ret;
+        }
         skip_bits(gb, 5); //frame rate
         v->res_x8 = get_bits1(gb);
         if (get_bits1(gb)) { // something to do with DC VLC selection
@@ -467,6 +471,7 @@ static int decode_sequence_header_adv(VC1Context *v, GetBitContext *gb)
                       v->s.avctx->width * h,
                       1 << 30);
         }
+        ff_set_sar(v->s.avctx, v->s.avctx->sample_aspect_ratio);
         av_log(v->s.avctx, AV_LOG_DEBUG, "Aspect: %i:%i\n",
                v->s.avctx->sample_aspect_ratio.num,
                v->s.avctx->sample_aspect_ratio.den);
@@ -516,6 +521,7 @@ int ff_vc1_decode_entry_point(AVCodecContext *avctx, VC1Context *v, GetBitContex
 {
     int i;
     int w,h;
+    int ret;
 
     av_log(avctx, AV_LOG_DEBUG, "Entry point: %08X\n", show_bits_long(gb, 32));
     v->broken_link    = get_bits1(gb);
@@ -545,7 +551,11 @@ int ff_vc1_decode_entry_point(AVCodecContext *avctx, VC1Context *v, GetBitContex
         w = v->max_coded_width;
         h = v->max_coded_height;
     }
-    avcodec_set_dimensions(avctx, w, h);
+    if ((ret = ff_set_dimensions(avctx, w, h)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to set dimensions %d %d\n", w, h);
+        return ret;
+    }
+
     if (v->extended_mv)
         v->extended_dmv = get_bits1(gb);
     if ((v->range_mapy_flag = get_bits1(gb))) {
@@ -859,7 +869,7 @@ int ff_vc1_parse_frame_header_adv(VC1Context *v, GetBitContext* gb)
         v->s.pict_type = (v->fptype & 1) ? AV_PICTURE_TYPE_P : AV_PICTURE_TYPE_I;
         if (v->fptype & 4)
             v->s.pict_type = (v->fptype & 1) ? AV_PICTURE_TYPE_BI : AV_PICTURE_TYPE_B;
-        v->s.current_picture_ptr->f.pict_type = v->s.pict_type;
+        v->s.current_picture_ptr->f->pict_type = v->s.pict_type;
         if (!v->pic_header_flag)
             goto parse_common_info;
     }
@@ -1705,6 +1715,8 @@ av_cold int ff_vc1_init_common(VC1Context *v)
     /* Other defaults */
     v->pq      = -1;
     v->mvrange = 0; /* 7.1.1.18, p80 */
+
+    ff_vc1dsp_init(&v->vc1dsp);
 
     return 0;
 }

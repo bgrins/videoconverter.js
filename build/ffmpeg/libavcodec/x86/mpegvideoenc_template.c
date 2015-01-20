@@ -20,6 +20,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <stdint.h>
+
+#include "libavutil/internal.h"
+#include "libavutil/x86/asm.h"
+#include "libavcodec/mpegvideo.h"
+
 #undef MMREG_WIDTH
 #undef MM
 #undef MOVQ
@@ -103,7 +109,7 @@ static int RENAME(dct_quantize)(MpegEncContext *s,
     av_assert2((7&(int)(&temp_block[0])) == 0); //did gcc align it correctly?
 
     //s->fdct (block);
-    RENAMEl(ff_fdct) (block); //cannot be anything else ...
+    RENAME_FDCT(ff_fdct)(block); // cannot be anything else ...
 
     if(s->dct_error_sum)
         s->denoise_dct(s, block);
@@ -168,7 +174,7 @@ static int RENAME(dct_quantize)(MpegEncContext *s,
             " js 1b                             \n\t"
             PMAX(MM"3", MM"0")
             "movd "MM"3, %%"REG_a"              \n\t"
-            "movzb %%al, %%"REG_a"              \n\t" // last_non_zero_p1
+            "movzbl %%al, %%eax                 \n\t" // last_non_zero_p1
             : "+a" (last_non_zero_p1)
             : "r" (block+64), "r" (qmat), "r" (bias),
               "r" (inv_zigzag_direct16 + 64), "r" (temp_block + 64)
@@ -202,7 +208,7 @@ static int RENAME(dct_quantize)(MpegEncContext *s,
             " js 1b                             \n\t"
             PMAX(MM"3", MM"0")
             "movd "MM"3, %%"REG_a"              \n\t"
-            "movzb %%al, %%"REG_a"              \n\t" // last_non_zero_p1
+            "movzbl %%al, %%eax                 \n\t" // last_non_zero_p1
             : "+a" (last_non_zero_p1)
             : "r" (block+64), "r" (qmat+64), "r" (bias+64),
               "r" (inv_zigzag_direct16 + 64), "r" (temp_block + 64)
@@ -226,7 +232,7 @@ static int RENAME(dct_quantize)(MpegEncContext *s,
     if(s->mb_intra) block[0]= level;
     else            block[0]= temp_block[0];
 
-    if(s->dsp.idct_permutation_type == FF_SIMPLE_IDCT_PERM){
+    if (s->idsp.idct_permutation_type == FF_SIMPLE_IDCT_PERM) {
         if(last_non_zero_p1 <= 1) goto end;
         block[0x08] = temp_block[0x01]; block[0x10] = temp_block[0x08];
         block[0x20] = temp_block[0x10];
@@ -270,7 +276,7 @@ static int RENAME(dct_quantize)(MpegEncContext *s,
         block[0x3E] = temp_block[0x3D]; block[0x27] = temp_block[0x36];
         block[0x3D] = temp_block[0x2F]; block[0x2F] = temp_block[0x37];
         block[0x37] = temp_block[0x3E]; block[0x3F] = temp_block[0x3F];
-    }else if(s->dsp.idct_permutation_type == FF_LIBMPEG2_IDCT_PERM){
+    }else if(s->idsp.idct_permutation_type == FF_LIBMPEG2_IDCT_PERM){
         if(last_non_zero_p1 <= 1) goto end;
         block[0x04] = temp_block[0x01];
         block[0x08] = temp_block[0x08]; block[0x10] = temp_block[0x10];

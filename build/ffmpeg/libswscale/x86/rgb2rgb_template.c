@@ -25,8 +25,10 @@
  */
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "libavutil/attributes.h"
+#include "libavutil/x86/asm.h"
 
 #undef PREFETCH
 #undef MOVNTQ
@@ -163,6 +165,7 @@ static inline void RENAME(rgb32tobgr24)(const uint8_t *src, uint8_t *dst, int sr
             "movq       %%mm5, %%mm7    \n\t"
             STORE_BGR24_MMX
             :: "r"(dest), "r"(s)
+              NAMED_CONSTRAINTS_ADD(mask24l,mask24h)
             :"memory");
         dest += 24;
         s += 32;
@@ -785,6 +788,7 @@ static inline void RENAME(rgb15tobgr24)(const uint8_t *src, uint8_t *dst, int sr
 
             :"=m"(*d)
             :"r"(s),"m"(mask15b),"m"(mask15g),"m"(mask15r), "m"(mmx_null)
+             NAMED_CONSTRAINTS_ADD(mul15_mid,mul15_hi)
             :"memory");
         /* borrowed 32 to 24 */
         __asm__ volatile(
@@ -801,6 +805,7 @@ static inline void RENAME(rgb15tobgr24)(const uint8_t *src, uint8_t *dst, int sr
             STORE_BGR24_MMX
 
             :: "r"(d), "m"(*s)
+              NAMED_CONSTRAINTS_ADD(mask24l,mask24h)
             :"memory");
         d += 24;
         s += 8;
@@ -890,6 +895,7 @@ static inline void RENAME(rgb16tobgr24)(const uint8_t *src, uint8_t *dst, int sr
             "por        %%mm5, %%mm3    \n\t"
             :"=m"(*d)
             :"r"(s),"m"(mask16b),"m"(mask16g),"m"(mask16r),"m"(mmx_null)
+             NAMED_CONSTRAINTS_ADD(mul15_mid,mul16_mid,mul15_hi)
             :"memory");
         /* borrowed 32 to 24 */
         __asm__ volatile(
@@ -906,6 +912,7 @@ static inline void RENAME(rgb16tobgr24)(const uint8_t *src, uint8_t *dst, int sr
             STORE_BGR24_MMX
 
             :: "r"(d), "m"(*s)
+              NAMED_CONSTRAINTS_ADD(mask24l,mask24h)
             :"memory");
         d += 24;
         s += 8;
@@ -966,6 +973,7 @@ static inline void RENAME(rgb15to32)(const uint8_t *src, uint8_t *dst, int src_s
             "pmulhw        "MANGLE(mul15_hi)", %%mm2    \n\t"
             PACK_RGB32
             ::"r"(d),"r"(s),"m"(mask15b),"m"(mask15g),"m"(mask15r) ,"m"(mul15_mid)
+              NAMED_CONSTRAINTS_ADD(mul15_hi)
             :"memory");
         d += 16;
         s += 4;
@@ -1009,6 +1017,7 @@ static inline void RENAME(rgb16to32)(const uint8_t *src, uint8_t *dst, int src_s
             "pmulhw        "MANGLE(mul15_hi)", %%mm2    \n\t"
             PACK_RGB32
             ::"r"(d),"r"(s),"m"(mask16b),"m"(mask16g),"m"(mask16r),"m"(mul15_mid)
+              NAMED_CONSTRAINTS_ADD(mul16_mid,mul15_hi)
             :"memory");
         d += 16;
         s += 4;
@@ -1133,6 +1142,7 @@ static inline void RENAME(rgb24tobgr24)(const uint8_t *src, uint8_t *dst, int sr
         "2:                                             \n\t"
         : "+a" (mmx_size)
         : "r" (src-mmx_size), "r"(dst-mmx_size)
+          NAMED_CONSTRAINTS_ADD(mask24r,mask24g,mask24b)
     );
 
     __asm__ volatile(SFENCE:::"memory");
@@ -1468,6 +1478,7 @@ static inline void RENAME(planar2x)(const uint8_t *src, uint8_t *dst, int srcWid
             :: "r" (src + mmxSize  ), "r" (src + srcStride + mmxSize  ),
                "r" (dst + mmxSize*2), "r" (dst + dstStride + mmxSize*2),
                "g" (-mmxSize)
+               NAMED_CONSTRAINTS_ADD(mmx_ff)
             : "%"REG_a
         );
 
@@ -1689,6 +1700,7 @@ static inline void RENAME(rgb24toyv12)(const uint8_t *src, uint8_t *ydst, uint8_
                 "add                        $8,      %%"REG_a"  \n\t"
                 " js                        1b                  \n\t"
                 : : "r" (src+width*3), "r" (ydst+width), "g" ((x86_reg)-width), "r"(rgb2yuv)
+                  NAMED_CONSTRAINTS_ADD(ff_w1111,ff_bgr2YOffset)
                 : "%"REG_a, "%"REG_d
             );
             ydst += lumStride;
@@ -1837,6 +1849,7 @@ static inline void RENAME(rgb24toyv12)(const uint8_t *src, uint8_t *ydst, uint8_
             "add                        $4, %%"REG_a"       \n\t"
             " js                        1b                  \n\t"
             : : "r" (src+chromWidth*6), "r" (src+srcStride+chromWidth*6), "r" (udst+chromWidth), "r" (vdst+chromWidth), "g" (-chromWidth), "r"(rgb2yuv)
+              NAMED_CONSTRAINTS_ADD(ff_w1111,ff_bgr2UVOffset)
             : "%"REG_a, "%"REG_d
         );
 
@@ -2173,6 +2186,44 @@ static void RENAME(extract_even)(const uint8_t *src, uint8_t *dst, x86_reg count
     }
 }
 
+static void RENAME(extract_odd)(const uint8_t *src, uint8_t *dst, x86_reg count)
+{
+    src ++;
+    dst +=   count;
+    src += 2*count;
+    count= - count;
+
+    if(count < -16) {
+        count += 16;
+        __asm__ volatile(
+            "pcmpeqw       %%mm7, %%mm7        \n\t"
+            "psrlw            $8, %%mm7        \n\t"
+            "1:                                \n\t"
+            "movq -32(%1, %0, 2), %%mm0        \n\t"
+            "movq -24(%1, %0, 2), %%mm1        \n\t"
+            "movq -16(%1, %0, 2), %%mm2        \n\t"
+            "movq  -8(%1, %0, 2), %%mm3        \n\t"
+            "pand          %%mm7, %%mm0        \n\t"
+            "pand          %%mm7, %%mm1        \n\t"
+            "pand          %%mm7, %%mm2        \n\t"
+            "pand          %%mm7, %%mm3        \n\t"
+            "packuswb      %%mm1, %%mm0        \n\t"
+            "packuswb      %%mm3, %%mm2        \n\t"
+            MOVNTQ"        %%mm0,-16(%2, %0)   \n\t"
+            MOVNTQ"        %%mm2,- 8(%2, %0)   \n\t"
+            "add             $16, %0           \n\t"
+            " js 1b                            \n\t"
+            : "+r"(count)
+            : "r"(src), "r"(dst)
+        );
+        count -= 16;
+    }
+    while(count<0) {
+        dst[count]= src[2*count];
+        count++;
+    }
+}
+
 #if !COMPILE_TEMPLATE_AMD3DNOW
 static void RENAME(extract_even2)(const uint8_t *src, uint8_t *dst0, uint8_t *dst1, x86_reg count)
 {
@@ -2436,7 +2487,7 @@ static void RENAME(uyvytoyuv420)(uint8_t *ydst, uint8_t *udst, uint8_t *vdst, co
     const int chromWidth = FF_CEIL_RSHIFT(width, 1);
 
     for (y=0; y<height; y++) {
-        RENAME(extract_even)(src+1, ydst, width);
+        RENAME(extract_odd)(src, ydst, width);
         if(y&1) {
             RENAME(extract_even2avg)(src-srcStride, src, udst, vdst, chromWidth);
             udst+= chromStride;
@@ -2462,7 +2513,7 @@ static void RENAME(uyvytoyuv422)(uint8_t *ydst, uint8_t *udst, uint8_t *vdst, co
     const int chromWidth = FF_CEIL_RSHIFT(width, 1);
 
     for (y=0; y<height; y++) {
-        RENAME(extract_even)(src+1, ydst, width);
+        RENAME(extract_odd)(src, ydst, width);
         RENAME(extract_even2)(src, udst, vdst, chromWidth);
 
         src += srcStride;
