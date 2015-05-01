@@ -43,5 +43,6 @@ emcc -s OUTLINING_LIMIT=100000 -s VERBOSE=1 -s TOTAL_MEMORY=33554432 -O3 -v ffmp
 
 cd ..
 
+cp ffmpeg.js ffmpeg.js.mem ../demo/
 
 echo "Finished Build"

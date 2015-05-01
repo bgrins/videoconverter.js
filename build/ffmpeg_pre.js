@@ -21,7 +21,7 @@ function ffmpeg_run(opts) {
     if (Module['arguments'].length > 2 && outputFilePath && outputFilePath.indexOf(".") > -1) {
       Module['arguments'][Module['arguments'].length - 1] = "output/" + outputFilePath;
     }
-    Module['preRun'] = function() {
+    Module['preRun'] = [ function() {
       FS.createFolder('/', Module['outputDirectory'], true, true);
       /* fileData / fileName is deprecated - please use file.name and file.data instead */
       if (Module['fileData']) {
@@ -32,11 +32,12 @@ function ffmpeg_run(opts) {
           FS.createDataFile('/', file.name, file.data, true, true);
         });
       }
-    };
-    Module['postRun'] = function() {
+    } ];
+    Module['postRun'] = [ function() {
       var handle = FS.analyzePath(Module['outputDirectory']);
-      Module['return'] = getAllBuffers(handle);
-    };
+      if (Module['return'])
+        Module['return'](getAllBuffers(handle));
+    } ];
     function getAllBuffers(result) {
       var buffers = [];
       if (result && result.object && result.object.contents) {

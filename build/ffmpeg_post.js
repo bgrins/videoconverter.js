@@ -1,5 +1,4 @@
 
-  return Module['return'];
 }
 
 if (typeof(exports) !== 'undefined') {
