@@ -130,10 +130,10 @@ function initWorker() {
     } else if (message.type == "done") {
       stopRunning();
       var buffers = message.data;
-      if (buffers.length) {
+      if (buffers && buffers.length) {
         outputElement.className = "closed";
       }
-      buffers.forEach(function(file) {
+      buffers && buffers.forEach(function(file) {
         filesElement.appendChild(getDownloadLink(file.data, file.name));
       });
     }
