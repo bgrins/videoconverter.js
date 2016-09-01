@@ -1,4 +1,4 @@
-prefix=/Users/bgrinstead/Sites/videoconverter.js/build/zlib/../dist
+prefix=/Users/pbergero/source/videoconverter.js/build/zlib/../dist
 exec_prefix=${prefix}
 libdir=${exec_prefix}/lib
 sharedlibdir=${libdir}
