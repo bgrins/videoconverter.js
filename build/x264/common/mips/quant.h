@@ -1,9 +1,9 @@
 /*****************************************************************************
- * pixel.h: sparc pixel metrics
+ * quant.h: msa quantization and level-run
  *****************************************************************************
- * Copyright (C) 2005-2014 x264 project
+ * Copyright (C) 2015-2016 x264 project
  *
- * Authors: Phil Jensen <philj@csufresno.edu>
+ * Authors: Rishikesh More <rishikesh.more@imgtec.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,12 +23,21 @@
  * For more information, contact us at licensing@x264.com.
  *****************************************************************************/
 
-#ifndef X264_SPARC_PIXEL_H
-#define X264_SPARC_PIXEL_H
+#ifndef X264_MIPS_QUANT_H
+#define X264_MIPS_QUANT_H
 
-int x264_pixel_sad_8x8_vis  ( uint8_t *, intptr_t, uint8_t *, intptr_t );
-int x264_pixel_sad_8x16_vis ( uint8_t *, intptr_t, uint8_t *, intptr_t );
-int x264_pixel_sad_16x8_vis ( uint8_t *, intptr_t, uint8_t *, intptr_t );
-int x264_pixel_sad_16x16_vis( uint8_t *, intptr_t, uint8_t *, intptr_t );
+void x264_dequant_4x4_msa( int16_t *p_dct, int32_t pi_dequant_mf[6][16],
+                           int32_t i_qp );
+void x264_dequant_8x8_msa( int16_t *p_dct, int32_t pi_dequant_mf[6][64],
+                           int32_t i_qp );
+void x264_dequant_4x4_dc_msa( int16_t *p_dct, int32_t pi_dequant_mf[6][16],
+                              int32_t i_qp );
+int32_t x264_quant_4x4_msa( int16_t *p_dct, uint16_t *p_mf, uint16_t *p_bias );
+int32_t x264_quant_4x4x4_msa( int16_t p_dct[4][16],
+                              uint16_t pu_mf[16], uint16_t pu_bias[16] );
+int32_t x264_quant_8x8_msa( int16_t *p_dct, uint16_t *p_mf, uint16_t *p_bias );
+int32_t x264_quant_4x4_dc_msa( int16_t *p_dct, int32_t i_mf, int32_t i_bias );
+int32_t x264_coeff_last64_msa( int16_t *p_src );
+int32_t x264_coeff_last16_msa( int16_t *p_src );
 
 #endif

@@ -1,7 +1,7 @@
 /*****************************************************************************
  * quant.c: ppc quantization
  *****************************************************************************
- * Copyright (C) 2007-2014 x264 project
+ * Copyright (C) 2007-2016 x264 project
  *
  * Authors: Guillaume Poirier <gpoirier@mplayerhq.hu>
  *
@@ -251,6 +251,14 @@ int x264_quant_8x8_altivec( int16_t dct[64], uint16_t mf[64], uint16_t bias[64] 
     vec_st(dctv, 8*y, dct);                                          \
 }
 
+#ifdef WORDS_BIGENDIAN
+#define VEC_MULE vec_mule
+#define VEC_MULO vec_mulo
+#else
+#define VEC_MULE vec_mulo
+#define VEC_MULO vec_mule
+#endif
+
 #define DEQUANT_SHR()                                          \
 {                                                              \
     dctv = vec_ld(8*y, dct);                                   \
@@ -259,14 +267,14 @@ int x264_quant_8x8_altivec( int16_t dct[64], uint16_t mf[64], uint16_t bias[64] 
     mf1v = vec_ld(16*y, dequant_mf[i_mf]);                     \
     mf2v = vec_ld(16+16*y, dequant_mf[i_mf]);                  \
                                                                \
-    multEvenvA = vec_mule(dct1v, (vec_s16_t)mf1v);             \
-    multOddvA = vec_mulo(dct1v, (vec_s16_t)mf1v);              \
+    multEvenvA = VEC_MULE(dct1v, (vec_s16_t)mf1v);             \
+    multOddvA = VEC_MULO(dct1v, (vec_s16_t)mf1v);              \
     temp1v = vec_add(vec_sl(multEvenvA, sixteenv), multOddvA); \
     temp1v = vec_add(temp1v, fv);                              \
     temp1v = vec_sra(temp1v, i_qbitsv);                        \
                                                                \
-    multEvenvA = vec_mule(dct2v, (vec_s16_t)mf2v);             \
-    multOddvA = vec_mulo(dct2v, (vec_s16_t)mf2v);              \
+    multEvenvA = VEC_MULE(dct2v, (vec_s16_t)mf2v);             \
+    multOddvA = VEC_MULO(dct2v, (vec_s16_t)mf2v);              \
     temp2v = vec_add(vec_sl(multEvenvA, sixteenv), multOddvA); \
     temp2v = vec_add(temp2v, fv);                              \
     temp2v = vec_sra(temp2v, i_qbitsv);                        \

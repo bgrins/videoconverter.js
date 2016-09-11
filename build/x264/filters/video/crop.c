@@ -1,7 +1,7 @@
 /*****************************************************************************
  * crop.c: crop video filter
  *****************************************************************************
- * Copyright (C) 2010-2014 x264 project
+ * Copyright (C) 2010-2016 x264 project
  *
  * Authors: Steven Walters <kemuri9@gmail.com>
  *          James Darnley <james.darnley@gmail.com>
@@ -47,19 +47,8 @@ static void help( int longhelp )
     printf( "            removes pixels from the edges of the frame\n" );
 }
 
-static int init( hnd_t *handle, cli_vid_filter_t *filter, video_info_t *info, x264_param_t *param, char *opt_string )
+static int handle_opts( crop_hnd_t *h, video_info_t *info, char **opts, const char * const *optlist )
 {
-    FAIL_IF_ERROR( x264_cli_csp_is_invalid( info->csp ), "invalid csp %d\n", info->csp )
-    crop_hnd_t *h = calloc( 1, sizeof(crop_hnd_t) );
-    if( !h )
-        return -1;
-
-    h->csp = x264_cli_get_csp( info->csp );
-    static const char *optlist[] = { "left", "top", "right", "bottom", NULL };
-    char **opts = x264_split_options( opt_string, optlist );
-    if( !opts )
-        return -1;
-
     for( int i = 0; i < 4; i++ )
     {
         char *opt = x264_get_option( optlist[i], opts );
@@ -69,7 +58,27 @@ static int init( hnd_t *handle, cli_vid_filter_t *filter, video_info_t *info, x2
         int dim_mod = i&1 ? (h->csp->mod_height << info->interlaced) : h->csp->mod_width;
         FAIL_IF_ERROR( h->dims[i] % dim_mod, "%s crop value `%s' is not a multiple of %d\n", optlist[i], opt, dim_mod )
     }
-    x264_free_string_array( opts );
+    return 0;
+}
+
+static int init( hnd_t *handle, cli_vid_filter_t *filter, video_info_t *info, x264_param_t *param, char *opt_string )
+{
+    FAIL_IF_ERROR( x264_cli_csp_is_invalid( info->csp ), "invalid csp %d\n", info->csp )
+    crop_hnd_t *h = calloc( 1, sizeof(crop_hnd_t) );
+    if( !h )
+        return -1;
+
+    h->csp = x264_cli_get_csp( info->csp );
+    static const char * const optlist[] = { "left", "top", "right", "bottom", NULL };
+    char **opts = x264_split_options( opt_string, optlist );
+    if( !opts )
+        return -1;
+
+    int err = handle_opts( h, info, opts, optlist );
+    free( opts );
+    if( err )
+        return -1;
+
     h->dims[2] = info->width  - h->dims[0] - h->dims[2];
     h->dims[3] = info->height - h->dims[1] - h->dims[3];
     FAIL_IF_ERROR( h->dims[2] <= 0 || h->dims[3] <= 0, "invalid output resolution %dx%d\n", h->dims[2], h->dims[3] )

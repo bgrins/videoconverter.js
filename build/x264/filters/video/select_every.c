@@ -1,7 +1,7 @@
 /*****************************************************************************
  * select_every.c: select-every video filter
  *****************************************************************************
- * Copyright (C) 2010-2014 x264 project
+ * Copyright (C) 2010-2016 x264 project
  *
  * Authors: Steven Walters <kemuri9@gmail.com>
  *
@@ -51,7 +51,7 @@ static void help( int longhelp )
     printf( "            apply a selection pattern to input frames\n"
             "            step: the number of frames in the pattern\n"
             "            offsets: the offset into the step to select a frame\n"
-            "            see: http://avisynth.org/mediawiki/Select#SelectEvery\n" );
+            "            see: http://avisynth.nl/index.php/Select#SelectEvery\n" );
 }
 
 static int init( hnd_t *handle, cli_vid_filter_t *filter, video_info_t *info, x264_param_t *param, char *opt_string )

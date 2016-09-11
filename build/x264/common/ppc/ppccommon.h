@@ -1,7 +1,7 @@
 /*****************************************************************************
  * ppccommon.h: ppc utility macros
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Eric Petit <eric.petit@lapsus.org>
  *
@@ -81,10 +81,17 @@ typedef union {
 /***********************************************************************
  * 8 <-> 16 bits conversions
  **********************************************************************/
+#ifdef WORDS_BIGENDIAN
 #define vec_u8_to_u16_h(v) (vec_u16_t) vec_mergeh( zero_u8v, (vec_u8_t) v )
 #define vec_u8_to_u16_l(v) (vec_u16_t) vec_mergel( zero_u8v, (vec_u8_t) v )
 #define vec_u8_to_s16_h(v) (vec_s16_t) vec_mergeh( zero_u8v, (vec_u8_t) v )
 #define vec_u8_to_s16_l(v) (vec_s16_t) vec_mergel( zero_u8v, (vec_u8_t) v )
+#else
+#define vec_u8_to_u16_h(v) (vec_u16_t) vec_mergeh( (vec_u8_t) v, zero_u8v )
+#define vec_u8_to_u16_l(v) (vec_u16_t) vec_mergel( (vec_u8_t) v, zero_u8v )
+#define vec_u8_to_s16_h(v) (vec_s16_t) vec_mergeh( (vec_u8_t) v, zero_u8v )
+#define vec_u8_to_s16_l(v) (vec_s16_t) vec_mergel( (vec_u8_t) v, zero_u8v )
+#endif
 
 #define vec_u8_to_u16(v) vec_u8_to_u16_h(v)
 #define vec_u8_to_s16(v) vec_u8_to_s16_h(v)
@@ -96,10 +103,17 @@ typedef union {
 /***********************************************************************
  * 16 <-> 32 bits conversions
  **********************************************************************/
+#ifdef WORDS_BIGENDIAN
 #define vec_u16_to_u32_h(v) (vec_u32_t) vec_mergeh( zero_u16v, (vec_u16_t) v )
 #define vec_u16_to_u32_l(v) (vec_u32_t) vec_mergel( zero_u16v, (vec_u16_t) v )
 #define vec_u16_to_s32_h(v) (vec_s32_t) vec_mergeh( zero_u16v, (vec_u16_t) v )
 #define vec_u16_to_s32_l(v) (vec_s32_t) vec_mergel( zero_u16v, (vec_u16_t) v )
+#else
+#define vec_u16_to_u32_h(v) (vec_u32_t) vec_mergeh( (vec_u16_t) v, zero_u16v )
+#define vec_u16_to_u32_l(v) (vec_u32_t) vec_mergel( (vec_u16_t) v, zero_u16v )
+#define vec_u16_to_s32_h(v) (vec_s32_t) vec_mergeh( (vec_u16_t) v, zero_u16v )
+#define vec_u16_to_s32_l(v) (vec_s32_t) vec_mergel( (vec_u16_t) v, zero_u16v )
+#endif
 
 #define vec_u16_to_u32(v) vec_u16_to_u32_h(v)
 #define vec_u16_to_s32(v) vec_u16_to_s32_h(v)

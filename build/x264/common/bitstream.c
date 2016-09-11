@@ -1,10 +1,10 @@
 /*****************************************************************************
  * bitstream.c: bitstream writing
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
- *          Jason Garrett-Glaser <darkshikari@gmail.com>
+ *          Fiona Glaser <fiona@x264.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -54,6 +54,8 @@ void x264_cabac_block_residual_internal_sse2       ( dctcoef *l, int b_interlace
 void x264_cabac_block_residual_internal_sse2_lzcnt ( dctcoef *l, int b_interlaced, intptr_t ctx_block_cat, x264_cabac_t *cb );
 void x264_cabac_block_residual_internal_avx2_bmi2 ( dctcoef *l, int b_interlaced, intptr_t ctx_block_cat, x264_cabac_t *cb );
 
+uint8_t *x264_nal_escape_neon( uint8_t *dst, uint8_t *src, uint8_t *end );
+
 /****************************************************************************
  * x264_nal_encode:
  ****************************************************************************/
@@ -78,19 +80,32 @@ void x264_nal_encode( x264_t *h, uint8_t *dst, x264_nal_t *nal )
     *dst++ = ( 0x00 << 7 ) | ( nal->i_ref_idc << 5 ) | nal->i_type;
 
     dst = h->bsf.nal_escape( dst, src, end );
-    int size = (dst - orig_dst) - 4;
+    int size = dst - orig_dst;
+
+    /* Apply AVC-Intra padding */
+    if( h->param.i_avcintra_class )
+    {
+        int padding = nal->i_payload + nal->i_padding + NALU_OVERHEAD - size;
+        if( padding > 0 )
+        {
+            memset( dst, 0, padding );
+            size += padding;
+        }
+        nal->i_padding = X264_MAX( padding, 0 );
+    }
 
     /* Write the size header for mp4/etc */
     if( !h->param.b_annexb )
     {
         /* Size doesn't include the size of the header we're writing now. */
-        orig_dst[0] = size>>24;
-        orig_dst[1] = size>>16;
-        orig_dst[2] = size>> 8;
-        orig_dst[3] = size>> 0;
+        int chunk_size = size - 4;
+        orig_dst[0] = chunk_size >> 24;
+        orig_dst[1] = chunk_size >> 16;
+        orig_dst[2] = chunk_size >> 8;
+        orig_dst[3] = chunk_size >> 0;
     }
 
-    nal->i_payload = size+4;
+    nal->i_payload = size;
     nal->p_payload = orig_dst;
     x264_emms();
 }
@@ -141,5 +156,13 @@ void x264_bitstream_init( int cpu, x264_bitstream_function_t *pf )
             pf->cabac_block_residual_internal = x264_cabac_block_residual_internal_avx2_bmi2;
     }
 #endif
+#endif
+#if HAVE_ARMV6
+    if( cpu&X264_CPU_NEON )
+        pf->nal_escape = x264_nal_escape_neon;
+#endif
+#if ARCH_AARCH64
+    if( cpu&X264_CPU_NEON )
+        pf->nal_escape = x264_nal_escape_neon;
 #endif
 }

@@ -1,0 +1,27 @@
+diff --git a/build/x264/configure b/build/x264/configure
+index 9d1586c..0d1570a 100755
+--- a/build/x264/configure
++++ b/build/x264/configure
+@@ -928,7 +928,7 @@ ASFLAGS="$ASFLAGS -DSTACK_ALIGNMENT=$stack_alignment"
+ 
+ # skip endianness check for Intel Compiler and MSVS, as all supported platforms are little. each have flags that will cause the check to fail as well
+ CPU_ENDIAN="little-endian"
+-if [ $compiler = GNU ]; then
++if [ $compiler = GNU -a `basename "$CC"` != emcc ]; then
+     echo "int i[2] = {0x42494745,0}; double f[2] = {0x1.0656e6469616ep+102,0};" > conftest.c
+     $CC $CFLAGS conftest.c -c -o conftest.o 2>/dev/null || die "endian test failed"
+     if (${cross_prefix}strings -a conftest.o | grep -q BIGE) && (${cross_prefix}strings -a conftest.o | grep -q FPendian) ; then
+@@ -1192,7 +1192,7 @@ if [ "$debug" = "yes" ]; then
+     CFLAGS="-O1 -g $CFLAGS"
+     RCFLAGS="$RCFLAGS -DDEBUG"
+ else
+-    CFLAGS="-O3 -ffast-math $CFLAGS"
++    CFLAGS="-O2 -ffast-math $CFLAGS"
+     if [ "$lto" = "auto" ] && [ $compiler = GNU ] && cc_check "" "-flto" ; then
+         lto="yes"
+         CFLAGS="$CFLAGS -flto"
+@@ -1502,4 +1502,3 @@ mkdir -p common/{aarch64,arm,ppc,x86} encoder extras filters/video input output
+ 
+ echo
+ echo "You can run 'make' or 'make fprofiled' now."
+-

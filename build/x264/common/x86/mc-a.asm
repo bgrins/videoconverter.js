@@ -1,10 +1,10 @@
 ;*****************************************************************************
 ;* mc-a.asm: x86 motion compensation
 ;*****************************************************************************
-;* Copyright (C) 2003-2014 x264 project
+;* Copyright (C) 2003-2016 x264 project
 ;*
 ;* Authors: Loren Merritt <lorenm@u.washington.edu>
-;*          Jason Garrett-Glaser <darkshikari@gmail.com>
+;*          Fiona Glaser <fiona@x264.com>
 ;*          Laurent Aimar <fenrir@via.ecp.fr>
 ;*          Dylan Yudaken <dyudaken@gmail.com>
 ;*          Holger Lubitz <holger@lubitz.org>
@@ -1912,11 +1912,7 @@ ALIGN 4
 
 %macro MC_CHROMA_SSSE3 0
 cglobal mc_chroma
-%if cpuflag(avx2)
-    MC_CHROMA_START 9
-%else
-    MC_CHROMA_START 10
-%endif
+    MC_CHROMA_START 10-cpuflag(avx2)
     and       r5d, 7
     and       t2d, 7
     mov       t0d, r5d
@@ -2020,7 +2016,7 @@ cglobal mc_chroma
     movhps [r1+r2], xm2
 %else
     movu       m0, [r3]
-    pshufb     m0, xm5
+    pshufb     m0, m5
 .loop4:
     movu       m1, [r3+r4]
     pshufb     m1, m5
@@ -2037,13 +2033,19 @@ cglobal mc_chroma
     pmulhrsw   m3, shiftround
     mova       m0, m4
     packuswb   m1, m3
+    movd     [r0], m1
+%if cpuflag(sse4)
+    pextrd    [r1], m1, 1
+    pextrd [r0+r2], m1, 2
+    pextrd [r1+r2], m1, 3
+%else
     movhlps    m3, m1
-    movd     [r0], xm1
     movd  [r0+r2], m3
     psrldq     m1, 4
     psrldq     m3, 4
     movd     [r1], m1
     movd  [r1+r2], m3
+%endif
     lea        r3, [r3+r4*2]
     lea        r0, [r0+r2*2]
     lea        r1, [r1+r2*2]

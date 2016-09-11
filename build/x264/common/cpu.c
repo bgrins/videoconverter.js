@@ -1,11 +1,11 @@
 /*****************************************************************************
  * cpu.c: cpu detection
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Loren Merritt <lorenm@u.washington.edu>
  *          Laurent Aimar <fenrir@via.ecp.fr>
- *          Jason Garrett-Glaser <darkshikari@gmail.com>
+ *          Fiona Glaser <fiona@x264.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,9 +25,7 @@
  * For more information, contact us at licensing@x264.com.
  *****************************************************************************/
 
-#define _GNU_SOURCE // for sched_getaffinity
 #include "common.h"
-#include "cpu.h"
 
 #if HAVE_POSIXTHREAD && SYS_LINUX
 #include <sched.h>
@@ -67,8 +65,8 @@ const x264_cpu_name_t x264_cpu_names[] =
     {"AVX",         AVX},
     {"XOP",         AVX|X264_CPU_XOP},
     {"FMA4",        AVX|X264_CPU_FMA4},
-    {"AVX2",        AVX|X264_CPU_AVX2},
     {"FMA3",        AVX|X264_CPU_FMA3},
+    {"AVX2",        AVX|X264_CPU_FMA3|X264_CPU_AVX2},
 #undef AVX
 #undef SSE2
 #undef MMX2
@@ -89,6 +87,11 @@ const x264_cpu_name_t x264_cpu_names[] =
     {"ARMv6",           X264_CPU_ARMV6},
     {"NEON",            X264_CPU_NEON},
     {"FastNeonMRC",     X264_CPU_FAST_NEON_MRC},
+#elif ARCH_AARCH64
+    {"ARMv8",           X264_CPU_ARMV8},
+    {"NEON",            X264_CPU_NEON},
+#elif ARCH_MIPS
+    {"MSA",             X264_CPU_MSA},
 #endif
     {"", 0},
 };
@@ -311,9 +314,9 @@ uint32_t x264_cpu_detect( void )
     return cpu;
 }
 
-#elif ARCH_PPC
+#elif ARCH_PPC && HAVE_ALTIVEC
 
-#if SYS_MACOSX || SYS_OPENBSD
+#if SYS_MACOSX || SYS_OPENBSD || SYS_FREEBSD
 #include <sys/sysctl.h>
 uint32_t x264_cpu_detect( void )
 {
@@ -321,12 +324,16 @@ uint32_t x264_cpu_detect( void )
     uint32_t cpu = 0;
 #if SYS_OPENBSD
     int      selectors[2] = { CTL_MACHDEP, CPU_ALTIVEC };
-#else
+#elif SYS_MACOSX
     int      selectors[2] = { CTL_HW, HW_VECTORUNIT };
 #endif
     int      has_altivec = 0;
     size_t   length = sizeof( has_altivec );
+#if SYS_MACOSX || SYS_OPENBSD
     int      error = sysctl( selectors, 2, &has_altivec, &length, NULL, 0 );
+#else
+    int      error = sysctlbyname( "hw.altivec", &has_altivec, &length, NULL, 0 );
+#endif
 
     if( error == 0 && has_altivec != 0 )
         cpu |= X264_CPU_ALTIVEC;
@@ -405,6 +412,24 @@ uint32_t x264_cpu_detect( void )
     flags |= x264_cpu_fast_neon_mrc_test() ? X264_CPU_FAST_NEON_MRC : 0;
 #endif
     // TODO: write dual issue test? currently it's A8 (dual issue) vs. A9 (fast mrc)
+#endif
+    return flags;
+}
+
+#elif ARCH_AARCH64
+
+uint32_t x264_cpu_detect( void )
+{
+    return X264_CPU_ARMV8 | X264_CPU_NEON;
+}
+
+#elif ARCH_MIPS
+
+uint32_t x264_cpu_detect( void )
+{
+    uint32_t flags = 0;
+#if HAVE_MSA
+    flags |= X264_CPU_MSA;
 #endif
     return flags;
 }

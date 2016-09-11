@@ -1,29 +1,28 @@
 #!/bin/sh
-[ -n "$1" ] && cd $1
 
-git_version() {
-trap 'rm -f config.git-hash' EXIT
-git rev-list HEAD | sort > config.git-hash
-LOCALVER=`wc -l config.git-hash | awk '{print $1}'`
-if [ $LOCALVER \> 1 ] ; then
-    VER=`git rev-list origin/master | sort | join config.git-hash - | wc -l | awk '{print $1}'`
-    VER_DIFF=$(($LOCALVER-$VER))
-    echo "#define X264_REV $VER"
-    echo "#define X264_REV_DIFF $VER_DIFF"
-    if [ $VER_DIFF != 0 ] ; then
-        VER="$VER+$VER_DIFF"
+cd "$(dirname "$0")" >/dev/null && [ -f x264.h ] || exit 1
+
+api="$(grep '#define X264_BUILD' < x264.h | sed 's/^.* \([1-9][0-9]*\).*$/\1/')"
+ver="x"
+version=""
+
+if [ -d .git ] && command -v git >/dev/null 2>&1 ; then
+    localver="$(($(git rev-list HEAD | wc -l)))"
+    if [ "$localver" -gt 1 ] ; then
+        ver_diff="$(($(git rev-list origin/master..HEAD | wc -l)))"
+        ver="$((localver-ver_diff))"
+        echo "#define X264_REV $ver"
+        echo "#define X264_REV_DIFF $ver_diff"
+        if [ "$ver_diff" -ne 0 ] ; then
+            ver="$ver+$ver_diff"
+        fi
+        if git status | grep -q "modified:" ; then
+            ver="${ver}M"
+        fi
+        ver="$ver $(git rev-list -n 1 HEAD | cut -c 1-7)"
+        version=" r$ver"
     fi
-    if git status | grep -q "modified:" ; then
-        VER="${VER}M"
-    fi
-    VER="$VER $(git rev-list HEAD -n 1 | cut -c 1-7)"
-    VERSION=" r$VER"
 fi
-}
 
-VER="x"
-VERSION=""
-[ -d .git ] && (type git >/dev/null 2>&1) && git_version
-echo "#define X264_VERSION \"$VERSION\""
-API=`grep '#define X264_BUILD' < x264.h | sed -e 's/.* \([1-9][0-9]*\).*/\1/'`
-echo "#define X264_POINTVER \"0.$API.$VER\""
+echo "#define X264_VERSION \"$version\""
+echo "#define X264_POINTVER \"0.$api.$ver\""

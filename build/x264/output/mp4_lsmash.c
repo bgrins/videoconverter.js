@@ -1,7 +1,7 @@
 /*****************************************************************************
  * mp4_lsmash.c: mp4 muxer using L-SMASH
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *          Loren Merritt <lorenm@u.washington.edu>
@@ -79,6 +79,7 @@ typedef struct
     int i_dts_compress_multiplier;
     int b_use_recovery;
     int b_fragments;
+    lsmash_file_parameters_t file_param;
 } mp4_hnd_t;
 
 /*******************/
@@ -88,16 +89,10 @@ static void remove_mp4_hnd( hnd_t handle )
     mp4_hnd_t *p_mp4 = handle;
     if( !p_mp4 )
         return;
-    if( p_mp4->p_sei_buffer )
-    {
-        free( p_mp4->p_sei_buffer );
-        p_mp4->p_sei_buffer = NULL;
-    }
-    if( p_mp4->p_root )
-    {
-        lsmash_destroy_root( p_mp4->p_root );
-        p_mp4->p_root = NULL;
-    }
+    lsmash_cleanup_summary( (lsmash_summary_t *)p_mp4->summary );
+    lsmash_close_file( &p_mp4->file_param );
+    lsmash_destroy_root( p_mp4->p_root );
+    free( p_mp4->p_sei_buffer );
     free( p_mp4 );
 }
 
@@ -181,8 +176,12 @@ static int open_file( char *psz_filename, hnd_t *p_handle, cli_output_opt_t *opt
     p_mp4->b_fragments    = !b_regular;
     p_mp4->b_stdout       = !strcmp( psz_filename, "-" );
 
-    p_mp4->p_root = lsmash_open_movie( psz_filename, p_mp4->b_fragments ? LSMASH_FILE_MODE_WRITE_FRAGMENTED : LSMASH_FILE_MODE_WRITE );
+    p_mp4->p_root = lsmash_create_root();
     MP4_FAIL_IF_ERR_EX( !p_mp4->p_root, "failed to create root.\n" );
+
+    MP4_FAIL_IF_ERR_EX( lsmash_open_file( psz_filename, 0, &p_mp4->file_param ) < 0, "failed to open an output file.\n" );
+    if( p_mp4->b_fragments )
+        p_mp4->file_param.mode |= LSMASH_FILE_MODE_FRAGMENTED;
 
     p_mp4->summary = (lsmash_video_summary_t *)lsmash_create_summary( LSMASH_SUMMARY_TYPE_VIDEO );
     MP4_FAIL_IF_ERR_EX( !p_mp4->summary,
@@ -219,12 +218,17 @@ static int set_param( hnd_t handle, x264_param_t *p_param )
             brands[brand_count++] = ISOM_BRAND_TYPE_ISO6;   /* cslg and visual random access grouping */
     }
 
+    /* Set file */
+    lsmash_file_parameters_t *file_param = &p_mp4->file_param;
+    file_param->major_brand   = brands[0];
+    file_param->brands        = brands;
+    file_param->brand_count   = brand_count;
+    file_param->minor_version = 0;
+    MP4_FAIL_IF_ERR( !lsmash_set_file( p_mp4->p_root, file_param ), "failed to add an output file into a ROOT.\n" );
+
     /* Set movie parameters. */
     lsmash_movie_parameters_t movie_param;
     lsmash_initialize_movie_parameters( &movie_param );
-    movie_param.major_brand = ISOM_BRAND_TYPE_MP42;
-    movie_param.brands = brands;
-    movie_param.number_of_brands = brand_count;
     MP4_FAIL_IF_ERR( lsmash_set_movie_parameters( p_mp4->p_root, &movie_param ),
                      "failed to set movie parameters.\n" );
     p_mp4->i_movie_timescale = lsmash_get_movie_timescale( p_mp4->p_root );

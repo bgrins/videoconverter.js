@@ -1,10 +1,10 @@
 ;*****************************************************************************
 ;* mc-a2.asm: x86 motion compensation
 ;*****************************************************************************
-;* Copyright (C) 2005-2014 x264 project
+;* Copyright (C) 2005-2016 x264 project
 ;*
 ;* Authors: Loren Merritt <lorenm@u.washington.edu>
-;*          Jason Garrett-Glaser <darkshikari@gmail.com>
+;*          Fiona Glaser <fiona@x264.com>
 ;*          Holger Lubitz <holger@lubitz.org>
 ;*          Mathieu Monnier <manao@melix.net>
 ;*          Oskar Arvidsson <oskar@irock.se>
@@ -40,6 +40,7 @@ hpel_shuf: times 2 db 0,8,1,9,2,10,3,11,4,12,5,13,6,14,7,15
 deinterleave_shuf: times 2 db 0,2,4,6,8,10,12,14,1,3,5,7,9,11,13,15
 
 %if HIGH_BIT_DEPTH
+copy_swap_shuf: times 2 db 2,3,0,1,6,7,4,5,10,11,8,9,14,15,12,13
 v210_mask: times 4 dq 0xc00ffc003ff003ff
 v210_luma_shuf: times 2 db 1,2,4,5,6,7,9,10,12,13,14,15,12,13,14,15
 v210_chroma_shuf: times 2 db 0,1,2,3,5,6,8,9,10,11,13,14,10,11,13,14
@@ -50,12 +51,20 @@ v210_mult: dw 0x2000,0x7fff,0x0801,0x2000,0x7ffa,0x0800,0x7ffc,0x0800
 deinterleave_shuf32a: SHUFFLE_MASK_W 0,2,4,6,8,10,12,14
 deinterleave_shuf32b: SHUFFLE_MASK_W 1,3,5,7,9,11,13,15
 %else
+copy_swap_shuf: times 2 db 1,0,3,2,5,4,7,6,9,8,11,10,13,12,15,14
 deinterleave_rgb_shuf: db 0,3,6,9,1,4,7,10,2,5,8,11,-1,-1,-1,-1
                        db 0,4,8,12,1,5,9,13,2,6,10,14,-1,-1,-1,-1
 
 deinterleave_shuf32a: db 0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30
 deinterleave_shuf32b: db 1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31
 %endif ; !HIGH_BIT_DEPTH
+
+mbtree_fix8_unpack_shuf: db -1,-1, 1, 0,-1,-1, 3, 2,-1,-1, 5, 4,-1,-1, 7, 6
+                         db -1,-1, 9, 8,-1,-1,11,10,-1,-1,13,12,-1,-1,15,14
+mbtree_fix8_pack_shuf:   db  1, 0, 3, 2, 5, 4, 7, 6, 9, 8,11,10,13,12,15,14
+
+pf_256:    times 4 dd 256.0
+pf_inv256: times 4 dd 0.00390625
 
 pd_16: times 4 dd 16
 pd_0f: times 4 dd 0xffff
@@ -913,64 +922,90 @@ HPEL
 %undef sfence
 %endif ; !HIGH_BIT_DEPTH
 
+%macro PREFETCHNT_ITER 2 ; src, bytes/iteration
+    %assign %%i 4*(%2) ; prefetch 4 iterations ahead. is this optimal?
+    %rep (%2+63) / 64  ; assume 64 byte cache lines
+        prefetchnta [%1+%%i]
+        %assign %%i %%i + 64
+    %endrep
+%endmacro
+
 ;-----------------------------------------------------------------------------
-; void plane_copy_core( pixel *dst, intptr_t i_dst,
-;                       pixel *src, intptr_t i_src, int w, int h )
+; void plane_copy(_swap)_core( pixel *dst, intptr_t i_dst,
+;                              pixel *src, intptr_t i_src, int w, int h )
 ;-----------------------------------------------------------------------------
-; assumes i_dst and w are multiples of 16, and i_dst>w
-INIT_MMX
-cglobal plane_copy_core_mmx2, 6,7
-    FIX_STRIDES r1, r3, r4d
-%if HIGH_BIT_DEPTH == 0
+; assumes i_dst and w are multiples of mmsize, and i_dst>w
+%macro PLANE_COPY_CORE 1 ; swap
+%if %1
+cglobal plane_copy_swap_core, 6,7
+    mova   m4, [copy_swap_shuf]
+%else
+cglobal plane_copy_core, 6,7
+%endif
+    FIX_STRIDES r1, r3
+%if %1 && HIGH_BIT_DEPTH
+    shl   r4d, 2
+%elif %1 || HIGH_BIT_DEPTH
+    add   r4d, r4d
+%else
     movsxdifnidn r4, r4d
 %endif
-    sub    r1,  r4
-    sub    r3,  r4
+    add    r0, r4
+    add    r2, r4
+    neg    r4
 .loopy:
-    lea   r6d, [r4-63]
+    lea    r6, [r4+4*mmsize]
+%if %1
+    test  r6d, r6d
+    jg .skip
+%endif
 .loopx:
-    prefetchnta [r2+256]
-    movq   m0, [r2   ]
-    movq   m1, [r2+ 8]
-    movntq [r0   ], m0
-    movntq [r0+ 8], m1
-    movq   m2, [r2+16]
-    movq   m3, [r2+24]
-    movntq [r0+16], m2
-    movntq [r0+24], m3
-    movq   m4, [r2+32]
-    movq   m5, [r2+40]
-    movntq [r0+32], m4
-    movntq [r0+40], m5
-    movq   m6, [r2+48]
-    movq   m7, [r2+56]
-    movntq [r0+48], m6
-    movntq [r0+56], m7
-    add    r2,  64
-    add    r0,  64
-    sub    r6d, 64
-    jg .loopx
-    prefetchnta [r2+256]
-    add    r6d, 63
-    jle .end16
-.loop16:
-    movq   m0, [r2  ]
-    movq   m1, [r2+8]
-    movntq [r0  ], m0
-    movntq [r0+8], m1
-    add    r2,  16
-    add    r0,  16
-    sub    r6d, 16
-    jg .loop16
-.end16:
+    PREFETCHNT_ITER r2+r6, 4*mmsize
+    movu   m0, [r2+r6-4*mmsize]
+    movu   m1, [r2+r6-3*mmsize]
+    movu   m2, [r2+r6-2*mmsize]
+    movu   m3, [r2+r6-1*mmsize]
+%if %1
+    pshufb m0, m4
+    pshufb m1, m4
+    pshufb m2, m4
+    pshufb m3, m4
+%endif
+    movnta [r0+r6-4*mmsize], m0
+    movnta [r0+r6-3*mmsize], m1
+    movnta [r0+r6-2*mmsize], m2
+    movnta [r0+r6-1*mmsize], m3
+    add    r6, 4*mmsize
+    jle .loopx
+.skip:
+    PREFETCHNT_ITER r2+r6, 4*mmsize
+    sub    r6, 4*mmsize
+    jz .end
+.loop_end:
+    movu   m0, [r2+r6]
+%if %1
+    pshufb m0, m4
+%endif
+    movnta [r0+r6], m0
+    add    r6, mmsize
+    jl .loop_end
+.end:
     add    r0, r1
     add    r2, r3
-    dec    r5d
+    dec   r5d
     jg .loopy
     sfence
-    emms
     RET
+%endmacro
 
+INIT_XMM sse
+PLANE_COPY_CORE 0
+INIT_XMM ssse3
+PLANE_COPY_CORE 1
+INIT_YMM avx
+PLANE_COPY_CORE 0
+INIT_YMM avx2
+PLANE_COPY_CORE 1
 
 %macro INTERLEAVE 4-5 ; dst, srcu, srcv, is_aligned, nt_hint
 %if HIGH_BIT_DEPTH
@@ -1483,11 +1518,12 @@ cglobal integral_init4h, 3,4
     neg     r2
     pxor    m4, m4
 .loop:
-    mova    m0, [r1+r2]
+    mova   xm0, [r1+r2]
+    mova   xm1, [r1+r2+16]
 %if mmsize==32
-    movu    m1, [r1+r2+8]
+    vinserti128 m0, m0, [r1+r2+ 8], 1
+    vinserti128 m1, m1, [r1+r2+24], 1
 %else
-    mova    m1, [r1+r2+16]
     palignr m1, m0, 8
 %endif
     mpsadbw m0, m4, 0
@@ -1513,13 +1549,14 @@ cglobal integral_init8h, 3,4
     neg     r2
     pxor    m4, m4
 .loop:
-    mova    m0, [r1+r2]
+    mova   xm0, [r1+r2]
+    mova   xm1, [r1+r2+16]
 %if mmsize==32
-    movu    m1, [r1+r2+8]
+    vinserti128 m0, m0, [r1+r2+ 8], 1
+    vinserti128 m1, m1, [r1+r2+24], 1
     mpsadbw m2, m0, m4, 100100b
     mpsadbw m3, m1, m4, 100100b
 %else
-    mova    m1, [r1+r2+16]
     palignr m1, m0, 8
     mpsadbw m2, m0, m4, 100b
     mpsadbw m3, m1, m4, 100b
@@ -2057,15 +2094,15 @@ INIT_XMM fma4
 MBTREE
 
 %macro INT16_UNPACK 1
-    punpckhwd   xm4, xm%1, xm7
+    punpckhwd   xm6, xm%1, xm7
     punpcklwd  xm%1, xm7
-    vinsertf128 m%1, m%1, xm4, 1
+    vinsertf128 m%1, m%1, xm6, 1
 %endmacro
 
 ; FIXME: align loads to 16 bytes
-%macro MBTREE_AVX 1
-cglobal mbtree_propagate_cost, 6,6,%1
-    vbroadcastss m6, [r5]
+%macro MBTREE_AVX 0
+cglobal mbtree_propagate_cost, 6,6,8-2*cpuflag(avx2)
+    vbroadcastss m5, [r5]
     mov         r5d, r6m
     lea          r0, [r0+r5*2]
     add         r5d, r5d
@@ -2074,7 +2111,7 @@ cglobal mbtree_propagate_cost, 6,6,%1
     add          r3, r5
     add          r4, r5
     neg          r5
-    mova        xm5, [pw_3fff]
+    mova        xm4, [pw_3fff]
 %if notcpuflag(avx2)
     pxor        xm7, xm7
 %endif
@@ -2083,27 +2120,27 @@ cglobal mbtree_propagate_cost, 6,6,%1
     pmovzxwd     m0, [r2+r5]      ; intra
     pmovzxwd     m1, [r4+r5]      ; invq
     pmovzxwd     m2, [r1+r5]      ; prop
-    pand        xm3, xm5, [r3+r5] ; inter
+    pand        xm3, xm4, [r3+r5] ; inter
     pmovzxwd     m3, xm3
     pminsd       m3, m0
     pmaddwd      m1, m0
-    psubd        m4, m0, m3
+    psubd        m3, m0, m3
     cvtdq2ps     m0, m0
     cvtdq2ps     m1, m1
     cvtdq2ps     m2, m2
-    cvtdq2ps     m4, m4
-    fmaddps      m1, m1, m6, m2
-    rcpps        m3, m0
-    mulps        m2, m0, m3
-    mulps        m1, m4
-    addps        m4, m3, m3
-    fnmaddps     m4, m2, m3, m4
-    mulps        m1, m4
+    cvtdq2ps     m3, m3
+    fmaddps      m1, m1, m5, m2
+    rcpps        m2, m0
+    mulps        m0, m2
+    mulps        m1, m3
+    addps        m3, m2, m2
+    fnmaddps     m2, m2, m0, m3
+    mulps        m1, m2
 %else
     movu        xm0, [r2+r5]
     movu        xm1, [r4+r5]
     movu        xm2, [r1+r5]
-    pand        xm3, xm5, [r3+r5]
+    pand        xm3, xm4, [r3+r5]
     pminsw      xm3, xm0
     INT16_UNPACK 0
     INT16_UNPACK 1
@@ -2114,16 +2151,16 @@ cglobal mbtree_propagate_cost, 6,6,%1
     cvtdq2ps     m2, m2
     cvtdq2ps     m3, m3
     mulps        m1, m0
-    subps        m4, m0, m3
-    mulps        m1, m6         ; intra*invq*fps_factor>>8
+    subps        m3, m0, m3
+    mulps        m1, m5         ; intra*invq*fps_factor>>8
     addps        m1, m2         ; prop + (intra*invq*fps_factor>>8)
-    rcpps        m3, m0         ; 1 / intra 1st approximation
-    mulps        m2, m0, m3     ; intra * (1/intra 1st approx)
-    mulps        m2, m3         ; intra * (1/intra 1st approx)^2
-    mulps        m1, m4         ; (prop + (intra*invq*fps_factor>>8)) * (intra - inter)
-    addps        m3, m3         ; 2 * (1/intra 1st approx)
-    subps        m3, m2         ; 2nd approximation for 1/intra
-    mulps        m1, m3         ; / intra
+    rcpps        m2, m0         ; 1 / intra 1st approximation
+    mulps        m0, m2         ; intra * (1/intra 1st approx)
+    mulps        m0, m2         ; intra * (1/intra 1st approx)^2
+    mulps        m1, m3         ; (prop + (intra*invq*fps_factor>>8)) * (intra - inter)
+    addps        m2, m2         ; 2 * (1/intra 1st approx)
+    subps        m2, m0         ; 2nd approximation for 1/intra
+    mulps        m1, m2         ; / intra
 %endif
     vcvtps2dq    m1, m1
     vextractf128 xm2, m1, 1
@@ -2135,9 +2172,9 @@ cglobal mbtree_propagate_cost, 6,6,%1
 %endmacro
 
 INIT_YMM avx
-MBTREE_AVX 8
-INIT_YMM avx2,fma3
-MBTREE_AVX 7
+MBTREE_AVX
+INIT_YMM avx2
+MBTREE_AVX
 
 %macro MBTREE_PROPAGATE_LIST 0
 ;-----------------------------------------------------------------------------
@@ -2230,3 +2267,109 @@ INIT_XMM ssse3
 MBTREE_PROPAGATE_LIST
 INIT_XMM avx
 MBTREE_PROPAGATE_LIST
+
+%macro MBTREE_FIX8 0
+;-----------------------------------------------------------------------------
+; void mbtree_fix8_pack( uint16_t *dst, float *src, int count )
+;-----------------------------------------------------------------------------
+cglobal mbtree_fix8_pack, 3,4
+%if mmsize == 32
+    vbroadcastf128 m2, [pf_256]
+    vbroadcasti128 m3, [mbtree_fix8_pack_shuf]
+%else
+    movaps       m2, [pf_256]
+    mova         m3, [mbtree_fix8_pack_shuf]
+%endif
+    sub         r2d, mmsize/2
+    movsxdifnidn r2, r2d
+    lea          r1, [r1+4*r2]
+    lea          r0, [r0+2*r2]
+    neg          r2
+    jg .skip_loop
+.loop:
+    mulps        m0, m2, [r1+4*r2]
+    mulps        m1, m2, [r1+4*r2+mmsize]
+    cvttps2dq    m0, m0
+    cvttps2dq    m1, m1
+    packssdw     m0, m1
+    pshufb       m0, m3
+%if mmsize == 32
+    vpermq       m0, m0, q3120
+%endif
+    mova  [r0+2*r2], m0
+    add          r2, mmsize/2
+    jle .loop
+.skip_loop:
+    sub          r2, mmsize/2
+    jz .end
+    ; Do the remaining values in scalar in order to avoid overreading src.
+.scalar:
+    mulss       xm0, xm2, [r1+4*r2+2*mmsize]
+    cvttss2si   r3d, xm0
+    rol         r3w, 8
+    mov [r0+2*r2+mmsize], r3w
+    inc          r2
+    jl .scalar
+.end:
+    RET
+
+;-----------------------------------------------------------------------------
+; void mbtree_fix8_unpack( float *dst, uint16_t *src, int count )
+;-----------------------------------------------------------------------------
+cglobal mbtree_fix8_unpack, 3,4
+%if mmsize == 32
+    vbroadcastf128 m2, [pf_inv256]
+%else
+    movaps       m2, [pf_inv256]
+    mova         m4, [mbtree_fix8_unpack_shuf+16]
+%endif
+    mova         m3, [mbtree_fix8_unpack_shuf]
+    sub         r2d, mmsize/2
+    movsxdifnidn r2, r2d
+    lea          r1, [r1+2*r2]
+    lea          r0, [r0+4*r2]
+    neg          r2
+    jg .skip_loop
+.loop:
+%if mmsize == 32
+    vbroadcasti128 m0, [r1+2*r2]
+    vbroadcasti128 m1, [r1+2*r2+16]
+    pshufb       m0, m3
+    pshufb       m1, m3
+%else
+    mova         m1, [r1+2*r2]
+    pshufb       m0, m1, m3
+    pshufb       m1, m4
+%endif
+    psrad        m0, 16 ; sign-extend
+    psrad        m1, 16
+    cvtdq2ps     m0, m0
+    cvtdq2ps     m1, m1
+    mulps        m0, m2
+    mulps        m1, m2
+    movaps [r0+4*r2], m0
+    movaps [r0+4*r2+mmsize], m1
+    add          r2, mmsize/2
+    jle .loop
+.skip_loop:
+    sub          r2, mmsize/2
+    jz .end
+.scalar:
+    movzx       r3d, word [r1+2*r2+mmsize]
+    rol         r3w, 8
+    movsx       r3d, r3w
+    ; Use 3-arg cvtsi2ss as a workaround for the fact that the instruction has a stupid dependency on
+    ; dst which causes terrible performance when used in a loop otherwise. Blame Intel for poor design.
+    cvtsi2ss    xm0, xm2, r3d
+    mulss       xm0, xm2
+    movss [r0+4*r2+2*mmsize], xm0
+    inc          r2
+    jl .scalar
+.end:
+    RET
+%endmacro
+
+INIT_XMM ssse3
+MBTREE_FIX8
+INIT_YMM avx2
+MBTREE_FIX8

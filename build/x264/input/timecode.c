@@ -1,7 +1,7 @@
 /*****************************************************************************
  * timecode.c: timecode file input
  *****************************************************************************
- * Copyright (C) 2010-2014 x264 project
+ * Copyright (C) 2010-2016 x264 project
  *
  * Authors: Yusuke Nakamura <muken.the.vfrmaniac@gmail.com>
  *
@@ -365,8 +365,6 @@ static int open_file( char *psz_filename, hnd_t *p_handle, video_info_t *info, c
         h->timebase_num = info->fps_den; /* can be changed later by auto timebase generation */
     if( h->auto_timebase_den )
         h->timebase_den = 0;             /* set later by auto timebase generation */
-    timecode_input.picture_alloc = h->input.picture_alloc;
-    timecode_input.picture_clean = h->input.picture_clean;
 
     tcfile_in = x264_fopen( psz_filename, "rb" );
     FAIL_IF_ERROR( !tcfile_in, "can't open `%s'\n", psz_filename )
@@ -434,6 +432,18 @@ static int release_frame( cli_pic_t *pic, hnd_t handle )
     return 0;
 }
 
+static int picture_alloc( cli_pic_t *pic, hnd_t handle, int csp, int width, int height )
+{
+    timecode_hnd_t *h = handle;
+    return h->input.picture_alloc( pic, h->p_handle, csp, width, height );
+}
+
+static void picture_clean( cli_pic_t *pic, hnd_t handle )
+{
+    timecode_hnd_t *h = handle;
+    h->input.picture_clean( pic, h->p_handle );
+}
+
 static int close_file( hnd_t handle )
 {
     timecode_hnd_t *h = handle;
@@ -444,4 +454,4 @@ static int close_file( hnd_t handle )
     return 0;
 }
 
-cli_input_t timecode_input = { open_file, NULL, read_frame, release_frame, NULL, close_file };
+const cli_input_t timecode_input = { open_file, picture_alloc, read_frame, release_frame, picture_clean, close_file };

@@ -1,9 +1,9 @@
 /*****************************************************************************
  * slicetype.c: lookahead analysis
  *****************************************************************************
- * Copyright (C) 2005-2014 x264 project
+ * Copyright (C) 2005-2016 x264 project
  *
- * Authors: Jason Garrett-Glaser <darkshikari@gmail.com>
+ * Authors: Fiona Glaser <fiona@x264.com>
  *          Loren Merritt <lorenm@u.washington.edu>
  *          Dylan Yudaken <dyudaken@gmail.com>
  *
@@ -33,8 +33,7 @@
 static const uint8_t delta_tfi_divisor[10] = { 0, 2, 1, 1, 2, 2, 3, 3, 4, 6 };
 
 static int x264_slicetype_frame_cost( x264_t *h, x264_mb_analysis_t *a,
-                                      x264_frame_t **frames, int p0, int p1, int b,
-                                      int b_intra_penalty );
+                                      x264_frame_t **frames, int p0, int p1, int b );
 
 void x264_weights_analyse( x264_t *h, x264_frame_t *fenc, x264_frame_t *ref, int b_lookahead );
 
@@ -362,7 +361,7 @@ void x264_weights_analyse( x264_t *h, x264_frame_t *fenc, x264_frame_t *ref, int
             {
                 x264_mb_analysis_t a;
                 x264_lowres_context_init( h, &a );
-                x264_slicetype_frame_cost( h, &a, &fenc, 0, 0, 0, 0 );
+                x264_slicetype_frame_cost( h, &a, &fenc, 0, 0, 0 );
             }
             mcbuf = x264_weight_cost_init_luma( h, fenc, ref, h->mb.p_weight_buf[0] );
             origscore = minscore = x264_weight_cost_luma( h, fenc, mcbuf, NULL );
@@ -612,7 +611,6 @@ static void x264_slicetype_mb_cost( x264_t *h, x264_mb_analysis_t *a,
 
     if( b_bidir )
     {
-        int16_t *mvr = fref1->lowres_mvs[0][p1-p0-1][i_mb_xy];
         ALIGNED_ARRAY_8( int16_t, dmv,[2],[2] );
 
         m[1].i_pixel = PIXEL_8x8;
@@ -624,14 +622,20 @@ static void x264_slicetype_mb_cost( x264_t *h, x264_mb_analysis_t *a,
         LOAD_HPELS_LUMA( m[1].p_fref, fref1->lowres );
         m[1].p_fref_w = m[1].p_fref[0];
 
-        dmv[0][0] = ( mvr[0] * dist_scale_factor + 128 ) >> 8;
-        dmv[0][1] = ( mvr[1] * dist_scale_factor + 128 ) >> 8;
-        dmv[1][0] = dmv[0][0] - mvr[0];
-        dmv[1][1] = dmv[0][1] - mvr[1];
-        CLIP_MV( dmv[0] );
-        CLIP_MV( dmv[1] );
-        if( h->param.analyse.i_subpel_refine <= 1 )
-            M64( dmv ) &= ~0x0001000100010001ULL; /* mv & ~1 */
+        if( fref1->lowres_mvs[0][p1-p0-1][0][0] != 0x7FFF )
+        {
+            int16_t *mvr = fref1->lowres_mvs[0][p1-p0-1][i_mb_xy];
+            dmv[0][0] = ( mvr[0] * dist_scale_factor + 128 ) >> 8;
+            dmv[0][1] = ( mvr[1] * dist_scale_factor + 128 ) >> 8;
+            dmv[1][0] = dmv[0][0] - mvr[0];
+            dmv[1][1] = dmv[0][1] - mvr[1];
+            CLIP_MV( dmv[0] );
+            CLIP_MV( dmv[1] );
+            if( h->param.analyse.i_subpel_refine <= 1 )
+                M64( dmv ) &= ~0x0001000100010001ULL; /* mv & ~1 */
+        }
+        else
+            M64( dmv ) = 0;
 
         TRY_BIDIR( dmv[0], dmv[1], 0 );
         if( M64( dmv ) )
@@ -735,7 +739,7 @@ lowres_intra_mb:
             }
         }
 
-        i_icost += intra_penalty + lowres_penalty;
+        i_icost = ((i_icost + intra_penalty) >> (BIT_DEPTH - 8)) + lowres_penalty;
         fenc->i_intra_cost[i_mb_xy] = i_icost;
         int i_icost_aq = i_icost;
         if( h->param.rc.i_aq_mode )
@@ -747,7 +751,7 @@ lowres_intra_mb:
             output_intra[COST_EST_AQ] += i_icost_aq;
         }
     }
-    i_bcost += lowres_penalty;
+    i_bcost = (i_bcost >> (BIT_DEPTH - 8)) + lowres_penalty;
 
     /* forbid intra-mbs in B-frames, because it's rare and not worth checking */
     /* FIXME: Should we still forbid them now that we cache intra scores? */
@@ -826,8 +830,7 @@ static void x264_slicetype_slice_cost( x264_slicetype_slice_t *s )
 }
 
 static int x264_slicetype_frame_cost( x264_t *h, x264_mb_analysis_t *a,
-                                      x264_frame_t **frames, int p0, int p1, int b,
-                                      int b_intra_penalty )
+                                      x264_frame_t **frames, int p0, int p1, int b )
 {
     int i_score = 0;
     int do_search[2];
@@ -984,12 +987,6 @@ static int x264_slicetype_frame_cost( x264_t *h, x264_mb_analysis_t *a,
         }
     }
 
-    if( b_intra_penalty )
-    {
-        // arbitrary penalty for I-blocks after B-frames
-        int nmb = NUM_MBS;
-        i_score += (uint64_t)i_score * fenc->i_intra_mbs[b-p0] / (nmb * 8);
-    }
     return i_score;
 }
 
@@ -1102,9 +1099,9 @@ static void x264_macroblock_tree( x264_t *h, x264_mb_analysis_t *a, x264_frame_t
     int i = num_frames;
 
     if( b_intra )
-        x264_slicetype_frame_cost( h, a, frames, 0, 0, 0, 0 );
+        x264_slicetype_frame_cost( h, a, frames, 0, 0, 0 );
 
-    while( i > 0 && frames[i]->i_type == X264_TYPE_B )
+    while( i > 0 && IS_X264_TYPE_B( frames[i]->i_type ) )
         i--;
     last_nonb = i;
 
@@ -1132,17 +1129,17 @@ static void x264_macroblock_tree( x264_t *h, x264_mb_analysis_t *a, x264_frame_t
     while( i-- > idx )
     {
         cur_nonb = i;
-        while( frames[cur_nonb]->i_type == X264_TYPE_B && cur_nonb > 0 )
+        while( IS_X264_TYPE_B( frames[cur_nonb]->i_type ) && cur_nonb > 0 )
             cur_nonb--;
         if( cur_nonb < idx )
             break;
-        x264_slicetype_frame_cost( h, a, frames, cur_nonb, last_nonb, last_nonb, 0 );
+        x264_slicetype_frame_cost( h, a, frames, cur_nonb, last_nonb, last_nonb );
         memset( frames[cur_nonb]->i_propagate_cost, 0, h->mb.i_mb_count * sizeof(uint16_t) );
         bframes = last_nonb - cur_nonb - 1;
         if( h->param.i_bframe_pyramid && bframes > 1 )
         {
             int middle = (bframes + 1)/2 + cur_nonb;
-            x264_slicetype_frame_cost( h, a, frames, cur_nonb, last_nonb, middle, 0 );
+            x264_slicetype_frame_cost( h, a, frames, cur_nonb, last_nonb, middle );
             memset( frames[middle]->i_propagate_cost, 0, h->mb.i_mb_count * sizeof(uint16_t) );
             while( i > cur_nonb )
             {
@@ -1150,7 +1147,7 @@ static void x264_macroblock_tree( x264_t *h, x264_mb_analysis_t *a, x264_frame_t
                 int p1 = i < middle ? middle : last_nonb;
                 if( i != middle )
                 {
-                    x264_slicetype_frame_cost( h, a, frames, p0, p1, i, 0 );
+                    x264_slicetype_frame_cost( h, a, frames, p0, p1, i );
                     x264_macroblock_tree_propagate( h, frames, average_duration, p0, p1, i, 0 );
                 }
                 i--;
@@ -1161,7 +1158,7 @@ static void x264_macroblock_tree( x264_t *h, x264_mb_analysis_t *a, x264_frame_t
         {
             while( i > cur_nonb )
             {
-                x264_slicetype_frame_cost( h, a, frames, cur_nonb, last_nonb, i, 0 );
+                x264_slicetype_frame_cost( h, a, frames, cur_nonb, last_nonb, i );
                 x264_macroblock_tree_propagate( h, frames, average_duration, cur_nonb, last_nonb, i, 0 );
                 i--;
             }
@@ -1172,7 +1169,7 @@ static void x264_macroblock_tree( x264_t *h, x264_mb_analysis_t *a, x264_frame_t
 
     if( !h->param.rc.i_lookahead )
     {
-        x264_slicetype_frame_cost( h, a, frames, 0, last_nonb, last_nonb, 0 );
+        x264_slicetype_frame_cost( h, a, frames, 0, last_nonb, last_nonb );
         x264_macroblock_tree_propagate( h, frames, average_duration, 0, last_nonb, last_nonb, 1 );
         XCHG( uint16_t*, frames[last_nonb]->i_propagate_cost, frames[0]->i_propagate_cost );
     }
@@ -1184,7 +1181,7 @@ static void x264_macroblock_tree( x264_t *h, x264_mb_analysis_t *a, x264_frame_t
 
 static int x264_vbv_frame_cost( x264_t *h, x264_mb_analysis_t *a, x264_frame_t **frames, int p0, int p1, int b )
 {
-    int cost = x264_slicetype_frame_cost( h, a, frames, p0, p1, b, 0 );
+    int cost = x264_slicetype_frame_cost( h, a, frames, p0, p1, b );
     if( h->param.rc.i_aq_mode )
     {
         if( h->param.rc.b_mb_tree )
@@ -1226,7 +1223,7 @@ static void x264_vbv_lookahead( x264_t *h, x264_mb_analysis_t *a, x264_frame_t *
     int last_nonb = 0, cur_nonb = 1, idx = 0;
     x264_frame_t *prev_frame = NULL;
     int prev_frame_idx = 0;
-    while( cur_nonb < num_frames && frames[cur_nonb]->i_type == X264_TYPE_B )
+    while( cur_nonb < num_frames && IS_X264_TYPE_B( frames[cur_nonb]->i_type ) )
         cur_nonb++;
     int next_nonb = keyframe ? last_nonb : cur_nonb;
 
@@ -1278,7 +1275,7 @@ static void x264_vbv_lookahead( x264_t *h, x264_mb_analysis_t *a, x264_frame_t *
         }
         last_nonb = cur_nonb;
         cur_nonb++;
-        while( cur_nonb <= num_frames && frames[cur_nonb]->i_type == X264_TYPE_B )
+        while( cur_nonb <= num_frames && IS_X264_TYPE_B( frames[cur_nonb]->i_type ) )
             cur_nonb++;
     }
     frames[next_nonb]->i_planned_type[idx] = X264_TYPE_AUTO;
@@ -1288,36 +1285,39 @@ static int x264_slicetype_path_cost( x264_t *h, x264_mb_analysis_t *a, x264_fram
 {
     int loc = 1;
     int cost = 0;
-    int cur_p = 0;
+    int cur_nonb = 0;
     path--; /* Since the 1st path element is really the second frame */
     while( path[loc] )
     {
-        int next_p = loc;
-        /* Find the location of the next P-frame. */
-        while( path[next_p] != 'P' )
-            next_p++;
+        int next_nonb = loc;
+        /* Find the location of the next non-B-frame. */
+        while( path[next_nonb] == 'B' )
+            next_nonb++;
 
-        /* Add the cost of the P-frame found above */
-        cost += x264_slicetype_frame_cost( h, a, frames, cur_p, next_p, next_p, 0 );
+        /* Add the cost of the non-B-frame found above */
+        if( path[next_nonb] == 'P' )
+            cost += x264_slicetype_frame_cost( h, a, frames, cur_nonb, next_nonb, next_nonb );
+        else /* I-frame */
+            cost += x264_slicetype_frame_cost( h, a, frames, next_nonb, next_nonb, next_nonb );
         /* Early terminate if the cost we have found is larger than the best path cost so far */
         if( cost > threshold )
             break;
 
-        if( h->param.i_bframe_pyramid && next_p - cur_p > 2 )
+        if( h->param.i_bframe_pyramid && next_nonb - cur_nonb > 2 )
         {
-            int middle = cur_p + (next_p - cur_p)/2;
-            cost += x264_slicetype_frame_cost( h, a, frames, cur_p, next_p, middle, 0 );
+            int middle = cur_nonb + (next_nonb - cur_nonb)/2;
+            cost += x264_slicetype_frame_cost( h, a, frames, cur_nonb, next_nonb, middle );
             for( int next_b = loc; next_b < middle && cost < threshold; next_b++ )
-                cost += x264_slicetype_frame_cost( h, a, frames, cur_p, middle, next_b, 0 );
-            for( int next_b = middle+1; next_b < next_p && cost < threshold; next_b++ )
-                cost += x264_slicetype_frame_cost( h, a, frames, middle, next_p, next_b, 0 );
+                cost += x264_slicetype_frame_cost( h, a, frames, cur_nonb, middle, next_b );
+            for( int next_b = middle+1; next_b < next_nonb && cost < threshold; next_b++ )
+                cost += x264_slicetype_frame_cost( h, a, frames, middle, next_nonb, next_b );
         }
         else
-            for( int next_b = loc; next_b < next_p && cost < threshold; next_b++ )
-                cost += x264_slicetype_frame_cost( h, a, frames, cur_p, next_p, next_b, 0 );
+            for( int next_b = loc; next_b < next_nonb && cost < threshold; next_b++ )
+                cost += x264_slicetype_frame_cost( h, a, frames, cur_nonb, next_nonb, next_b );
 
-        loc = next_p + 1;
-        cur_p = next_p;
+        loc = next_nonb + 1;
+        cur_nonb = next_nonb;
     }
     return cost;
 }
@@ -1331,6 +1331,7 @@ static void x264_slicetype_path( x264_t *h, x264_mb_analysis_t *a, x264_frame_t 
     char paths[2][X264_LOOKAHEAD_MAX+1];
     int num_paths = X264_MIN( h->param.i_bframe+1, length );
     int best_cost = COST_MAX;
+    int best_possible = 0;
     int idx = 0;
 
     /* Iterate over all currently possible paths */
@@ -1342,12 +1343,33 @@ static void x264_slicetype_path( x264_t *h, x264_mb_analysis_t *a, x264_frame_t 
         memset( paths[idx]+len, 'B', path );
         strcpy( paths[idx]+len+path, "P" );
 
-        /* Calculate the actual cost of the current path */
-        int cost = x264_slicetype_path_cost( h, a, frames, paths[idx], best_cost );
-        if( cost < best_cost )
+        int possible = 1;
+        for( int i = 1; i <= length; i++ )
         {
-            best_cost = cost;
-            idx ^= 1;
+            int i_type = frames[i]->i_type;
+            if( i_type == X264_TYPE_AUTO )
+                continue;
+            if( IS_X264_TYPE_B( i_type ) )
+                possible = possible && (i < len || i == length || paths[idx][i-1] == 'B');
+            else
+            {
+                possible = possible && (i < len || paths[idx][i-1] != 'B');
+                paths[idx][i-1] = IS_X264_TYPE_I( i_type ) ? 'I' : 'P';
+            }
+        }
+
+        if( possible || !best_possible )
+        {
+            if( possible && !best_possible )
+                best_cost = COST_MAX;
+            /* Calculate the actual cost of the current path */
+            int cost = x264_slicetype_path_cost( h, a, frames, paths[idx], best_cost );
+            if( cost < best_cost )
+            {
+                best_cost = cost;
+                best_possible = possible;
+                idx ^= 1;
+            }
         }
     }
 
@@ -1363,7 +1385,7 @@ static int scenecut_internal( x264_t *h, x264_mb_analysis_t *a, x264_frame_t **f
     if( real_scenecut && h->param.i_frame_packing == 5 && (frame->i_frame&1) )
         return 0;
 
-    x264_slicetype_frame_cost( h, a, frames, p0, p1, p1, 0 );
+    x264_slicetype_frame_cost( h, a, frames, p0, p1, p1 );
 
     int icost = frame->i_cost_est[0][0];
     int pcost = frame->i_cost_est[p1-p0][0];
@@ -1441,13 +1463,14 @@ static int scenecut( x264_t *h, x264_mb_analysis_t *a, x264_frame_t **frames, in
     return scenecut_internal( h, a, frames, p0, p1, real_scenecut );
 }
 
+#define IS_X264_TYPE_AUTO_OR_I(x) ((x)==X264_TYPE_AUTO || IS_X264_TYPE_I(x))
+#define IS_X264_TYPE_AUTO_OR_B(x) ((x)==X264_TYPE_AUTO || IS_X264_TYPE_B(x))
+
 void x264_slicetype_analyse( x264_t *h, int intra_minigop )
 {
     x264_mb_analysis_t a;
     x264_frame_t *frames[X264_LOOKAHEAD_MAX+3] = { NULL, };
     int num_frames, orig_num_frames, keyint_limit, framecnt;
-    int i_mb_count = NUM_MBS;
-    int cost1p0, cost2p0, cost1b1, cost2p1;
     int i_max_search = X264_MIN( h->lookahead->next.i_size, X264_LOOKAHEAD_MAX );
     int vbv_lookahead = h->param.rc.i_vbv_buffer_size && h->param.rc.i_lookahead;
     /* For determinism we should limit the search to the number of frames lookahead has for sure
@@ -1463,7 +1486,7 @@ void x264_slicetype_analyse( x264_t *h, int intra_minigop )
     if( !h->lookahead->last_nonb )
         return;
     frames[0] = h->lookahead->last_nonb;
-    for( framecnt = 0; framecnt < i_max_search && h->lookahead->next.list[framecnt]->i_type == X264_TYPE_AUTO; framecnt++ )
+    for( framecnt = 0; framecnt < i_max_search; framecnt++ )
         frames[framecnt+1] = h->lookahead->next.list[framecnt];
 
     x264_lowres_context_init( h, &a );
@@ -1492,18 +1515,34 @@ void x264_slicetype_analyse( x264_t *h, int intra_minigop )
         return;
     }
 
-    int num_bframes = 0;
-    int num_analysed_frames = num_frames;
-    int reset_start;
-    if( h->param.i_scenecut_threshold && scenecut( h, &a, frames, 0, 1, 1, orig_num_frames, i_max_search ) )
+    if( IS_X264_TYPE_AUTO_OR_I( frames[1]->i_type ) &&
+        h->param.i_scenecut_threshold && scenecut( h, &a, frames, 0, 1, 1, orig_num_frames, i_max_search ) )
     {
-        frames[1]->i_type = X264_TYPE_I;
+        if( frames[1]->i_type == X264_TYPE_AUTO )
+            frames[1]->i_type = X264_TYPE_I;
         return;
     }
 
 #if HAVE_OPENCL
     x264_opencl_slicetype_prep( h, frames, num_frames, a.i_lambda );
 #endif
+
+    /* Replace forced keyframes with I/IDR-frames */
+    for( int j = 1; j <= num_frames; j++ )
+    {
+        if( frames[j]->i_type == X264_TYPE_KEYFRAME )
+            frames[j]->i_type = h->param.b_open_gop ? X264_TYPE_I : X264_TYPE_IDR;
+    }
+
+    /* Close GOP at IDR-frames */
+    for( int j = 2; j <= num_frames; j++ )
+    {
+        if( frames[j]->i_type == X264_TYPE_IDR && IS_X264_TYPE_AUTO_OR_B( frames[j-1]->i_type ) )
+            frames[j-1]->i_type = X264_TYPE_P;
+    }
+
+    int num_analysed_frames = num_frames;
+    int reset_start;
 
     if( h->param.i_bframe )
     {
@@ -1518,96 +1557,115 @@ void x264_slicetype_analyse( x264_t *h, int intra_minigop )
                 for( int j = 2; j <= num_frames; j++ )
                     x264_slicetype_path( h, &a, frames, j, best_paths );
 
-                num_bframes = strspn( best_paths[best_path_index], "B" );
                 /* Load the results of the analysis into the frame types. */
                 for( int j = 1; j < num_frames; j++ )
-                    frames[j]->i_type = best_paths[best_path_index][j-1] == 'B' ? X264_TYPE_B : X264_TYPE_P;
+                {
+                    if( best_paths[best_path_index][j-1] != 'B' )
+                    {
+                        if( IS_X264_TYPE_AUTO_OR_B( frames[j]->i_type ) )
+                            frames[j]->i_type = X264_TYPE_P;
+                    }
+                    else
+                    {
+                        if( frames[j]->i_type == X264_TYPE_AUTO )
+                            frames[j]->i_type = X264_TYPE_B;
+                    }
+                }
             }
-            frames[num_frames]->i_type = X264_TYPE_P;
         }
         else if( h->param.i_bframe_adaptive == X264_B_ADAPT_FAST )
         {
-            for( int i = 0; i <= num_frames-2; )
+            int last_nonb = 0;
+            int num_bframes = h->param.i_bframe;
+            char path[X264_LOOKAHEAD_MAX+1];
+            for( int j = 1; j < num_frames; j++ )
             {
-                cost2p1 = x264_slicetype_frame_cost( h, &a, frames, i+0, i+2, i+2, 1 );
-                if( frames[i+2]->i_intra_mbs[2] > i_mb_count / 2 )
+                if( j-1 > 0 && IS_X264_TYPE_B( frames[j-1]->i_type ) )
+                    num_bframes--;
+                else
                 {
-                    frames[i+1]->i_type = X264_TYPE_P;
-                    frames[i+2]->i_type = X264_TYPE_P;
-                    i += 2;
+                    last_nonb = j-1;
+                    num_bframes = h->param.i_bframe;
+                }
+                if( !num_bframes )
+                {
+                    if( IS_X264_TYPE_AUTO_OR_B( frames[j]->i_type ) )
+                        frames[j]->i_type = X264_TYPE_P;
                     continue;
                 }
 
-#if HAVE_OPENCL
-                if( h->param.b_opencl )
-                {
-                    int b_work_done = 0;
-                    b_work_done |= x264_opencl_precalculate_frame_cost(h, frames, a.i_lambda, i+0, i+2, i+1 );
-                    b_work_done |= x264_opencl_precalculate_frame_cost(h, frames, a.i_lambda, i+0, i+1, i+1 );
-                    b_work_done |= x264_opencl_precalculate_frame_cost(h, frames, a.i_lambda, i+1, i+2, i+2 );
-                    if( b_work_done )
-                        x264_opencl_flush( h );
-                }
-#endif
+                if( frames[j]->i_type != X264_TYPE_AUTO )
+                    continue;
 
-                cost1b1 = x264_slicetype_frame_cost( h, &a, frames, i+0, i+2, i+1, 0 );
-                cost1p0 = x264_slicetype_frame_cost( h, &a, frames, i+0, i+1, i+1, 0 );
-                cost2p0 = x264_slicetype_frame_cost( h, &a, frames, i+1, i+2, i+2, 0 );
-
-                if( cost1p0 + cost2p0 < cost1b1 + cost2p1 )
+                if( IS_X264_TYPE_B( frames[j+1]->i_type ) )
                 {
-                    frames[i+1]->i_type = X264_TYPE_P;
-                    i += 1;
+                    frames[j]->i_type = X264_TYPE_P;
                     continue;
                 }
 
-                // arbitrary and untuned
-                #define INTER_THRESH 300
-                #define P_SENS_BIAS (50 - h->param.i_bframe_bias)
-                frames[i+1]->i_type = X264_TYPE_B;
+                int bframes = j - last_nonb - 1;
+                memset( path, 'B', bframes );
+                strcpy( path+bframes, "PP" );
+                int cost_p = x264_slicetype_path_cost( h, &a, frames+last_nonb, path, COST_MAX );
+                strcpy( path+bframes, "BP" );
+                int cost_b = x264_slicetype_path_cost( h, &a, frames+last_nonb, path, cost_p );
 
-                int j;
-                for( j = i+2; j <= X264_MIN( i+h->param.i_bframe, num_frames-1 ); j++ )
-                {
-                    int pthresh = X264_MAX(INTER_THRESH - P_SENS_BIAS * (j-i-1), INTER_THRESH/10);
-                    int pcost = x264_slicetype_frame_cost( h, &a, frames, i+0, j+1, j+1, 1 );
-                    if( pcost > pthresh*i_mb_count || frames[j+1]->i_intra_mbs[j-i+1] > i_mb_count/3 )
-                        break;
+                if( cost_b < cost_p )
                     frames[j]->i_type = X264_TYPE_B;
-                }
-                frames[j]->i_type = X264_TYPE_P;
-                i = j;
+                else
+                    frames[j]->i_type = X264_TYPE_P;
             }
-            frames[num_frames]->i_type = X264_TYPE_P;
-            num_bframes = 0;
-            while( num_bframes < num_frames && frames[num_bframes+1]->i_type == X264_TYPE_B )
-                num_bframes++;
         }
         else
         {
-            num_bframes = X264_MIN(num_frames-1, h->param.i_bframe);
+            int num_bframes = h->param.i_bframe;
             for( int j = 1; j < num_frames; j++ )
-                frames[j]->i_type = (j%(num_bframes+1)) ? X264_TYPE_B : X264_TYPE_P;
-            frames[num_frames]->i_type = X264_TYPE_P;
+            {
+                if( !num_bframes )
+                {
+                    if( IS_X264_TYPE_AUTO_OR_B( frames[j]->i_type ) )
+                        frames[j]->i_type = X264_TYPE_P;
+                }
+                else if( frames[j]->i_type == X264_TYPE_AUTO )
+                {
+                    if( IS_X264_TYPE_B( frames[j+1]->i_type ) )
+                        frames[j]->i_type = X264_TYPE_P;
+                    else
+                        frames[j]->i_type = X264_TYPE_B;
+                }
+                if( IS_X264_TYPE_B( frames[j]->i_type ) )
+                    num_bframes--;
+                else
+                    num_bframes = h->param.i_bframe;
+            }
         }
+        if( IS_X264_TYPE_AUTO_OR_B( frames[num_frames]->i_type ) )
+            frames[num_frames]->i_type = X264_TYPE_P;
+
+        int num_bframes = 0;
+        while( num_bframes < num_frames && IS_X264_TYPE_B( frames[num_bframes+1]->i_type ) )
+            num_bframes++;
 
         /* Check scenecut on the first minigop. */
         for( int j = 1; j < num_bframes+1; j++ )
-            if( h->param.i_scenecut_threshold && scenecut( h, &a, frames, j, j+1, 0, orig_num_frames, i_max_search ) )
+        {
+            if( frames[j]->i_forced_type == X264_TYPE_AUTO && IS_X264_TYPE_AUTO_OR_I( frames[j+1]->i_forced_type ) &&
+                h->param.i_scenecut_threshold && scenecut( h, &a, frames, j, j+1, 0, orig_num_frames, i_max_search ) )
             {
                 frames[j]->i_type = X264_TYPE_P;
                 num_analysed_frames = j;
                 break;
             }
+        }
 
         reset_start = keyframe ? 1 : X264_MIN( num_bframes+2, num_analysed_frames+1 );
     }
     else
     {
         for( int j = 1; j <= num_frames; j++ )
-            frames[j]->i_type = X264_TYPE_P;
+            if( IS_X264_TYPE_AUTO_OR_B( frames[j]->i_type ) )
+                frames[j]->i_type = X264_TYPE_P;
         reset_start = !keyframe + 1;
-        num_bframes = 0;
     }
 
     /* Perform the actual macroblock tree analysis.
@@ -1617,21 +1675,63 @@ void x264_slicetype_analyse( x264_t *h, int intra_minigop )
 
     /* Enforce keyframe limit. */
     if( !h->param.b_intra_refresh )
-        for( int i = keyint_limit+1; i <= num_frames; i += h->param.i_keyint_max )
+    {
+        int last_keyframe = h->lookahead->i_last_keyframe;
+        int last_possible = 0;
+        for( int j = 1; j <= num_frames; j++ )
         {
-            frames[i]->i_type = X264_TYPE_I;
-            reset_start = X264_MIN( reset_start, i+1 );
-            if( h->param.b_open_gop && h->param.b_bluray_compat )
-                while( IS_X264_TYPE_B( frames[i-1]->i_type ) )
-                    i--;
+            x264_frame_t *frm = frames[j];
+            int keyframe_dist = frm->i_frame - last_keyframe;
+
+            if( IS_X264_TYPE_AUTO_OR_I( frm->i_forced_type ) )
+            {
+                if( h->param.b_open_gop || !IS_X264_TYPE_B( frames[j-1]->i_forced_type ) )
+                    last_possible = j;
+            }
+            if( keyframe_dist >= h->param.i_keyint_max )
+            {
+                if( last_possible != 0 && last_possible != j )
+                {
+                    j = last_possible;
+                    frm = frames[j];
+                    keyframe_dist = frm->i_frame - last_keyframe;
+                }
+                last_possible = 0;
+                if( frm->i_type != X264_TYPE_IDR )
+                    frm->i_type = h->param.b_open_gop ? X264_TYPE_I : X264_TYPE_IDR;
+            }
+            if( frm->i_type == X264_TYPE_I && keyframe_dist >= h->param.i_keyint_min )
+            {
+                if( h->param.b_open_gop )
+                {
+                    last_keyframe = frm->i_frame;
+                    if( h->param.b_bluray_compat )
+                    {
+                        // Use bluray order
+                        int bframes = 0;
+                        while( bframes < j-1 && IS_X264_TYPE_B( frames[j-1-bframes]->i_type ) )
+                            bframes++;
+                        last_keyframe -= bframes;
+                    }
+                }
+                else if( frm->i_forced_type != X264_TYPE_I )
+                    frm->i_type = X264_TYPE_IDR;
+            }
+            if( frm->i_type == X264_TYPE_IDR )
+            {
+                last_keyframe = frm->i_frame;
+                if( j > 1 && IS_X264_TYPE_B( frames[j-1]->i_type ) )
+                    frames[j-1]->i_type = X264_TYPE_P;
+            }
         }
+    }
 
     if( vbv_lookahead )
         x264_vbv_lookahead( h, &a, frames, num_frames, keyframe );
 
     /* Restore frametypes for all frames that haven't actually been decided yet. */
     for( int j = reset_start; j <= num_frames; j++ )
-        frames[j]->i_type = X264_TYPE_AUTO;
+        frames[j]->i_type = frames[j]->i_forced_type;
 
 #if HAVE_OPENCL
     x264_opencl_slicetype_end( h );
@@ -1695,6 +1795,14 @@ void x264_slicetype_decide( x264_t *h )
     for( bframes = 0, brefs = 0;; bframes++ )
     {
         frm = h->lookahead->next.list[bframes];
+
+        if( frm->i_forced_type != X264_TYPE_AUTO && frm->i_type != frm->i_forced_type &&
+            !(frm->i_forced_type == X264_TYPE_KEYFRAME && IS_X264_TYPE_I( frm->i_type )) )
+        {
+            x264_log( h, X264_LOG_WARNING, "forced frame type (%d) at %d was changed to frame type (%d)\n",
+                      frm->i_forced_type, frm->i_frame, frm->i_type );
+        }
+
         if( frm->i_type == X264_TYPE_BREF && h->param.i_bframe_pyramid < X264_B_PYRAMID_NORMAL &&
             brefs == h->param.i_bframe_pyramid )
         {
@@ -1779,7 +1887,7 @@ void x264_slicetype_decide( x264_t *h )
     /* insert a bref into the sequence */
     if( h->param.i_bframe_pyramid && bframes > 1 && !brefs )
     {
-        h->lookahead->next.list[bframes/2]->i_type = X264_TYPE_BREF;
+        h->lookahead->next.list[(bframes-1)/2]->i_type = X264_TYPE_BREF;
         brefs++;
     }
 
@@ -1799,12 +1907,12 @@ void x264_slicetype_decide( x264_t *h )
         else // P
             p0 = 0;
 
-        x264_slicetype_frame_cost( h, &a, frames, p0, p1, b, 0 );
+        x264_slicetype_frame_cost( h, &a, frames, p0, p1, b );
 
         if( (p0 != p1 || bframes) && h->param.rc.i_vbv_buffer_size )
         {
             /* We need the intra costs for row SATDs. */
-            x264_slicetype_frame_cost( h, &a, frames, b, b, b, 0 );
+            x264_slicetype_frame_cost( h, &a, frames, b, b, b );
 
             /* We need B-frame costs for row SATDs. */
             p0 = 0;
@@ -1815,7 +1923,7 @@ void x264_slicetype_decide( x264_t *h )
                         p1++;
                 else
                     p1 = bframes + 1;
-                x264_slicetype_frame_cost( h, &a, frames, p0, p1, b, 0 );
+                x264_slicetype_frame_cost( h, &a, frames, p0, p1, b );
                 if( frames[b]->i_type == X264_TYPE_BREF )
                     p0 = b;
             }
@@ -1853,14 +1961,11 @@ void x264_slicetype_decide( x264_t *h )
         if( i )
         {
             x264_calculate_durations( h, h->lookahead->next.list[i], h->lookahead->next.list[i-1], &h->i_cpb_delay, &h->i_coded_fields );
-            h->lookahead->next.list[0]->f_planned_cpb_duration[i-1] = (double)h->lookahead->next.list[i-1]->i_cpb_duration *
+            h->lookahead->next.list[0]->f_planned_cpb_duration[i-1] = (double)h->lookahead->next.list[i]->i_cpb_duration *
                                                                       h->sps->vui.i_num_units_in_tick / h->sps->vui.i_time_scale;
         }
         else
             x264_calculate_durations( h, h->lookahead->next.list[i], NULL, &h->i_cpb_delay, &h->i_coded_fields );
-
-        h->lookahead->next.list[0]->f_planned_cpb_duration[i] = (double)h->lookahead->next.list[i]->i_cpb_duration *
-                                                                h->sps->vui.i_num_units_in_tick / h->sps->vui.i_time_scale;
     }
 }
 
@@ -1923,9 +2028,5 @@ int x264_rc_analyse_slice( x264_t *h )
         }
     }
 
-    if( BIT_DEPTH > 8 )
-        for( int y = 0; y < h->mb.i_mb_height; y++ )
-            h->fdec->i_row_satd[y] >>= (BIT_DEPTH - 8);
-
-    return cost >> (BIT_DEPTH - 8);
+    return cost;
 }

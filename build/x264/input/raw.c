@@ -1,7 +1,7 @@
 /*****************************************************************************
  * raw.c: raw input
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *          Loren Merritt <lorenm@u.washington.edu>
@@ -35,6 +35,8 @@ typedef struct
     uint64_t plane_size[4];
     uint64_t frame_size;
     int bit_depth;
+    cli_mmap_t mmap;
+    int use_mmap;
 } raw_hnd_t;
 
 static int open_file( char *psz_filename, hnd_t *p_handle, video_info_t *info, cli_input_opt_t *opt )
@@ -96,6 +98,10 @@ static int open_file( char *psz_filename, hnd_t *p_handle, video_info_t *info, c
         uint64_t size = ftell( h->fh );
         fseek( h->fh, 0, SEEK_SET );
         info->num_frames = size / h->frame_size;
+
+        /* Attempt to use memory-mapped input frames if possible */
+        if( !(h->bit_depth & 7) )
+            h->use_mmap = !x264_cli_mmap_init( &h->mmap, h->fh );
     }
 
     *p_handle = h;
@@ -104,11 +110,18 @@ static int open_file( char *psz_filename, hnd_t *p_handle, video_info_t *info, c
 
 static int read_frame_internal( cli_pic_t *pic, raw_hnd_t *h, int bit_depth_uc )
 {
-    int error = 0;
     int pixel_depth = x264_cli_csp_depth_factor( pic->img.csp );
-    for( int i = 0; i < pic->img.planes && !error; i++ )
+
+    for( int i = 0; i < pic->img.planes; i++ )
     {
-        error |= fread( pic->img.plane[i], pixel_depth, h->plane_size[i], h->fh ) != h->plane_size[i];
+        if( h->use_mmap )
+        {
+            if( i )
+                pic->img.plane[i] = pic->img.plane[i-1] + pixel_depth * h->plane_size[i-1];
+        }
+        else if( fread( pic->img.plane[i], pixel_depth, h->plane_size[i], h->fh ) != h->plane_size[i] )
+            return -1;
+
         if( bit_depth_uc )
         {
             /* upconvert non 16bit high depth planes to 16bit using the same
@@ -120,14 +133,20 @@ static int read_frame_internal( cli_pic_t *pic, raw_hnd_t *h, int bit_depth_uc )
                 plane[j] = plane[j] << lshift;
         }
     }
-    return error;
+    return 0;
 }
 
 static int read_frame( cli_pic_t *pic, hnd_t handle, int i_frame )
 {
     raw_hnd_t *h = handle;
 
-    if( i_frame > h->next_frame )
+    if( h->use_mmap )
+    {
+        pic->img.plane[0] = x264_cli_mmap( &h->mmap, i_frame * h->frame_size, h->frame_size );
+        if( !pic->img.plane[0] )
+            return -1;
+    }
+    else if( i_frame > h->next_frame )
     {
         if( x264_is_regular_file( h->fh ) )
             fseek( h->fh, i_frame * h->frame_size, SEEK_SET );
@@ -147,14 +166,39 @@ static int read_frame( cli_pic_t *pic, hnd_t handle, int i_frame )
     return 0;
 }
 
+static int release_frame( cli_pic_t *pic, hnd_t handle )
+{
+    raw_hnd_t *h = handle;
+    if( h->use_mmap )
+        return x264_cli_munmap( &h->mmap, pic->img.plane[0], h->frame_size );
+    return 0;
+}
+
+static int picture_alloc( cli_pic_t *pic, hnd_t handle, int csp, int width, int height )
+{
+    raw_hnd_t *h = handle;
+    return (h->use_mmap ? x264_cli_pic_init_noalloc : x264_cli_pic_alloc)( pic, csp, width, height );
+}
+
+static void picture_clean( cli_pic_t *pic, hnd_t handle )
+{
+    raw_hnd_t *h = handle;
+    if( h->use_mmap )
+        memset( pic, 0, sizeof(cli_pic_t) );
+    else
+        x264_cli_pic_clean( pic );
+}
+
 static int close_file( hnd_t handle )
 {
     raw_hnd_t *h = handle;
     if( !h || !h->fh )
         return 0;
+    if( h->use_mmap )
+        x264_cli_mmap_close( &h->mmap );
     fclose( h->fh );
     free( h );
     return 0;
 }
 
-const cli_input_t raw_input = { open_file, x264_cli_pic_alloc, read_frame, NULL, x264_cli_pic_clean, close_file };
+const cli_input_t raw_input = { open_file, picture_alloc, read_frame, release_frame, picture_clean, close_file };

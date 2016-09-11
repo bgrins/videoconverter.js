@@ -36,12 +36,13 @@ emmake make
 emmake make install
 cd ..
 
-# x264-snapshot-20140501-2245
+# x264-snapshot-20160910-2245
 cd x264
 make clean
+patch --forward ./configure ../fix_x264_configure.patch
 emconfigure ./configure --disable-thread --disable-asm \
-  --host=i686-pc-linux-gnu \
-  --disable-cli --enable-static --disable-gpl --prefix=$(pwd)/../dist
+            --host=i686-pc-linux-gnu \
+            --disable-cli --enable-static --disable-gpl --prefix=$(pwd)/../dist
 emmake make
 emmake make install
 cd ..

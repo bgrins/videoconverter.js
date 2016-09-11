@@ -1,7 +1,7 @@
 ;*****************************************************************************
 ;* checkasm-a.asm: assembly check tool
 ;*****************************************************************************
-;* Copyright (C) 2008-2014 x264 project
+;* Copyright (C) 2008-2016 x264 project
 ;*
 ;* Authors: Loren Merritt <lorenm@u.washington.edu>
 ;*          Henrik Gramner <henrik@gramner.com>
@@ -33,24 +33,24 @@ error_message: db "failed to preserve register", 0
 %if ARCH_X86_64
 ; just random numbers to reduce the chance of incidental match
 ALIGN 16
-x6:  ddq 0x79445c159ce790641a1b2550a612b48c
-x7:  ddq 0x86b2536fcd8cf6362eed899d5a28ddcd
-x8:  ddq 0x3f2bf84fc0fcca4eb0856806085e7943
-x9:  ddq 0xd229e1f5b281303facbd382dcf5b8de2
-x10: ddq 0xab63e2e11fa38ed971aeaff20b095fd9
-x11: ddq 0x77d410d5c42c882d89b0c0765892729a
-x12: ddq 0x24b3c1d2a024048bc45ea11a955d8dd5
-x13: ddq 0xdd7b8919edd427862e8ec680de14b47c
-x14: ddq 0x11e53e2b2ac655ef135ce6888fa02cbf
-x15: ddq 0x6de8f4c914c334d5011ff554472a7a10
-n7:   dq 0x21f86d66c8ca00ce
-n8:   dq 0x75b6ba21077c48ad
-n9:   dq 0xed56bb2dcb3c7736
-n10:  dq 0x8bda43d3fd1a7e06
-n11:  dq 0xb64a9c9e5d318408
-n12:  dq 0xdf9a54b303f1d3a3
-n13:  dq 0x4a75479abd64e097
-n14:  dq 0x249214109d5d1c88
+x6:  dq 0x1a1b2550a612b48c,0x79445c159ce79064
+x7:  dq 0x2eed899d5a28ddcd,0x86b2536fcd8cf636
+x8:  dq 0xb0856806085e7943,0x3f2bf84fc0fcca4e
+x9:  dq 0xacbd382dcf5b8de2,0xd229e1f5b281303f
+x10: dq 0x71aeaff20b095fd9,0xab63e2e11fa38ed9
+x11: dq 0x89b0c0765892729a,0x77d410d5c42c882d
+x12: dq 0xc45ea11a955d8dd5,0x24b3c1d2a024048b
+x13: dq 0x2e8ec680de14b47c,0xdd7b8919edd42786
+x14: dq 0x135ce6888fa02cbf,0x11e53e2b2ac655ef
+x15: dq 0x011ff554472a7a10,0x6de8f4c914c334d5
+n7:  dq 0x21f86d66c8ca00ce
+n8:  dq 0x75b6ba21077c48ad
+n9:  dq 0xed56bb2dcb3c7736
+n10: dq 0x8bda43d3fd1a7e06
+n11: dq 0xb64a9c9e5d318408
+n12: dq 0xdf9a54b303f1d3a3
+n13: dq 0x4a75479abd64e097
+n14: dq 0x249214109d5d1c88
 %endif
 
 SECTION .text
@@ -68,14 +68,14 @@ cextern_naked puts
 ;-----------------------------------------------------------------------------
 cglobal checkasm_stack_clobber, 1,2
     ; Clobber the stack with junk below the stack pointer
-    %define size (max_args+6)*8
-    SUB  rsp, size
-    mov   r1, size-8
+    %define argsize (max_args+6)*8
+    SUB  rsp, argsize
+    mov   r1, argsize-8
 .loop:
     mov [rsp+r1], r0
     sub   r1, 8
     jge .loop
-    ADD  rsp, size
+    ADD  rsp, argsize
     RET
 
 %if WIN64
@@ -151,10 +151,12 @@ cglobal checkasm_call, 2,15,16,max_args*8+8
 
     jz .ok
     mov  r9, rax
+    mov r10, rdx
     lea  r0, [error_message]
     call puts
     mov  r1, [rsp+max_args*8]
     mov  dword [r1], 0
+    mov  rdx, r10
     mov  rax, r9
 .ok:
     RET
@@ -189,12 +191,14 @@ cglobal checkasm_call, 1,7
     or   r3, r5
     jz .ok
     mov  r3, eax
+    mov  r4, edx
     lea  r1, [error_message]
     push r1
     call puts
     add  esp, 4
     mov  r1, r1m
     mov  dword [r1], 0
+    mov  edx, r4
     mov  eax, r3
 .ok:
     REP_RET
