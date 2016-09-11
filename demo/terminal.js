@@ -76,20 +76,38 @@ function runCommand(text) {
     startRunning();
     var args = parseArguments(text);
     console.log(args);
-    worker.postMessage({
-      type: "command",
-      arguments: args,
-      files: [
-        {
-          "name": "input.jpeg",
-          "data": sampleImageData
-        },
-        {
-          "name": "input.webm",
-          "data": sampleVideoData
-        }
-      ]
-    });
+    if (typeof(args[0]) == "string" && args[0] == "benchmark") {
+      args.shift();
+      worker.postMessage({
+        type: "benchmark",
+        arguments: args,
+        files: [
+          {
+            "name": "input.jpeg",
+            "data": sampleImageData
+          },
+          {
+            "name": "input.webm",
+            "data": sampleVideoData
+          }
+        ]
+      });
+    } else {
+      worker.postMessage({
+        type: "command",
+        arguments: args,
+        files: [
+          {
+            "name": "input.jpeg",
+            "data": sampleImageData
+          },
+          {
+            "name": "input.webm",
+            "data": sampleVideoData
+          }
+        ]
+      });
+    }
   }
 }
 

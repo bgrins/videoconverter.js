@@ -1,6 +1,6 @@
 /*
  * Microsoft RLE video decoder
- * Copyright (C) 2003 the ffmpeg project
+ * Copyright (C) 2003 The FFmpeg project
  *
  * This file is part of FFmpeg.
  *
@@ -135,7 +135,7 @@ static int msrle_decode_frame(AVCodecContext *avctx,
         }
     } else {
         bytestream2_init(&s->gb, buf, buf_size);
-        ff_msrle_decode(avctx, (AVPicture*)s->frame, avctx->bits_per_coded_sample, &s->gb);
+        ff_msrle_decode(avctx, s->frame, avctx->bits_per_coded_sample, &s->gb);
     }
 
     if ((ret = av_frame_ref(data, s->frame)) < 0)
@@ -166,5 +166,5 @@ AVCodec ff_msrle_decoder = {
     .init           = msrle_decode_init,
     .close          = msrle_decode_end,
     .decode         = msrle_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

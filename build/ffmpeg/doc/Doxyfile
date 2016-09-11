@@ -31,7 +31,7 @@ PROJECT_NAME           = FFmpeg
 # This could be handy for archiving the generated documentation or
 # if some version control system is used.
 
-PROJECT_NUMBER         = 2.3
+PROJECT_NUMBER         = 3.1.3
 
 # With the PROJECT_LOGO tag one can specify a logo or icon that is included
 # in the documentation. The maximum height of the logo should not exceed 55
@@ -1360,6 +1360,7 @@ PREDEFINED             = "__attribute__(x)=" \
                          "offsetof(x,y)=0x42" \
                          av_alloc_size \
                          AV_GCC_VERSION_AT_LEAST(x,y)=1 \
+                         AV_GCC_VERSION_AT_MOST(x,y)=0 \
                          __GNUC__=1 \
 
 # If the MACRO_EXPANSION and EXPAND_ONLY_PREDEF tags are set to YES then
@@ -1428,7 +1429,7 @@ PERL_PATH              = /usr/bin/perl
 #---------------------------------------------------------------------------
 
 # If the CLASS_DIAGRAMS tag is set to YES (the default) Doxygen will
-# generate a inheritance diagram (in HTML, RTF and LaTeX) for classes with base
+# generate an inheritance diagram (in HTML, RTF and LaTeX) for classes with base
 # or super classes. Setting the tag to NO turns the diagrams off. Note that
 # this option is superseded by the HAVE_DOT option below. This is only a
 # fallback. It is recommended to install and use dot, since it yields more

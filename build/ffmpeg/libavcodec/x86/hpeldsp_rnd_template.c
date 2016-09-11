@@ -28,7 +28,7 @@
 #include <stdint.h>
 
 // put_pixels
-static void DEF(put, pixels8_x2)(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
+av_unused static void DEF(put, pixels8_x2)(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
 {
     MOVQ_BFE(mm6);
     __asm__ volatile(
@@ -60,7 +60,7 @@ static void DEF(put, pixels8_x2)(uint8_t *block, const uint8_t *pixels, ptrdiff_
         :REG_a, "memory");
 }
 
-static void DEF(put, pixels16_x2)(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
+av_unused static void DEF(put, pixels16_x2)(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
 {
     MOVQ_BFE(mm6);
     __asm__ volatile(
@@ -106,7 +106,7 @@ static void DEF(put, pixels16_x2)(uint8_t *block, const uint8_t *pixels, ptrdiff
         :REG_a, "memory");
 }
 
-static void DEF(put, pixels8_y2)(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
+av_unused static void DEF(put, pixels8_y2)(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
 {
     MOVQ_BFE(mm6);
     __asm__ volatile(
@@ -135,33 +135,34 @@ static void DEF(put, pixels8_y2)(uint8_t *block, const uint8_t *pixels, ptrdiff_
         :REG_a, "memory");
 }
 
-static void DEF(avg, pixels16_x2)(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
+av_unused static void DEF(avg, pixels16_x2)(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
 {
     MOVQ_BFE(mm6);
-    JUMPALIGN();
-    do {
         __asm__ volatile(
-            "movq  %1, %%mm0            \n\t"
-            "movq  1%1, %%mm1           \n\t"
-            "movq  %0, %%mm3            \n\t"
+            ".p2align 3                 \n\t"
+            "1:                         \n\t"
+            "movq  (%1), %%mm0          \n\t"
+            "movq  1(%1), %%mm1         \n\t"
+            "movq  (%2), %%mm3          \n\t"
             PAVGB(%%mm0, %%mm1, %%mm2, %%mm6)
             PAVGB_MMX(%%mm3, %%mm2, %%mm0, %%mm6)
-            "movq  %%mm0, %0            \n\t"
-            "movq  8%1, %%mm0           \n\t"
-            "movq  9%1, %%mm1           \n\t"
-            "movq  8%0, %%mm3           \n\t"
+            "movq  %%mm0, (%2)          \n\t"
+            "movq  8(%1), %%mm0         \n\t"
+            "movq  9(%1), %%mm1         \n\t"
+            "movq  8(%2), %%mm3         \n\t"
             PAVGB(%%mm0, %%mm1, %%mm2, %%mm6)
             PAVGB_MMX(%%mm3, %%mm2, %%mm0, %%mm6)
-            "movq  %%mm0, 8%0           \n\t"
-            :"+m"(*block)
-            :"m"(*pixels)
+            "movq  %%mm0, 8(%2)         \n\t"
+            "add    %3, %1              \n\t"
+            "add    %3, %2              \n\t"
+            "subl   $1, %0              \n\t"
+            "jnz    1b                  \n\t"
+            :"+g"(h), "+S"(pixels), "+D"(block)
+            :"r"((x86_reg)line_size)
             :"memory");
-        pixels += line_size;
-        block += line_size;
-    } while (--h);
 }
 
-static void DEF(avg, pixels8_y2)(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
+av_unused static void DEF(avg, pixels8_y2)(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
 {
     MOVQ_BFE(mm6);
     __asm__ volatile(

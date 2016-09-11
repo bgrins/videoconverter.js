@@ -44,19 +44,19 @@ typedef struct FlipContext {
 static int query_formats(AVFilterContext *ctx)
 {
     AVFilterFormats *pix_fmts = NULL;
-    int fmt;
+    int fmt, ret;
 
     for (fmt = 0; av_pix_fmt_desc_get(fmt); fmt++) {
         const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(fmt);
         if (!(desc->flags & AV_PIX_FMT_FLAG_HWACCEL ||
               desc->flags & AV_PIX_FMT_FLAG_BITSTREAM ||
               (desc->log2_chroma_w != desc->log2_chroma_h &&
-               desc->comp[0].plane == desc->comp[1].plane)))
-            ff_add_format(&pix_fmts, fmt);
+               desc->comp[0].plane == desc->comp[1].plane)) &&
+            (ret = ff_add_format(&pix_fmts, fmt)) < 0)
+            return ret;
     }
 
-    ff_set_common_formats(ctx, pix_fmts);
-    return 0;
+    return ff_set_common_formats(ctx, pix_fmts);
 }
 
 static int config_props(AVFilterLink *inlink)
@@ -68,9 +68,9 @@ static int config_props(AVFilterLink *inlink)
 
     av_image_fill_max_pixsteps(s->max_step, NULL, pix_desc);
     s->planewidth[0]  = s->planewidth[3]  = inlink->w;
-    s->planewidth[1]  = s->planewidth[2]  = FF_CEIL_RSHIFT(inlink->w, hsub);
+    s->planewidth[1]  = s->planewidth[2]  = AV_CEIL_RSHIFT(inlink->w, hsub);
     s->planeheight[0] = s->planeheight[3] = inlink->h;
-    s->planeheight[1] = s->planeheight[2] = FF_CEIL_RSHIFT(inlink->h, vsub);
+    s->planeheight[1] = s->planeheight[2] = AV_CEIL_RSHIFT(inlink->h, vsub);
 
     return 0;
 }

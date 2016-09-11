@@ -30,7 +30,7 @@
 #endif
 #include <sched.h>
 #endif
-#if HAVE_GETPROCESSAFFINITYMASK
+#if HAVE_GETPROCESSAFFINITYMASK || HAVE_WINRT
 #include <windows.h>
 #endif
 #if HAVE_SYSCTL
@@ -49,6 +49,7 @@ static int flags, checked;
 void av_force_cpu_flags(int arg){
     if (   (arg & ( AV_CPU_FLAG_3DNOW    |
                     AV_CPU_FLAG_3DNOWEXT |
+                    AV_CPU_FLAG_MMXEXT   |
                     AV_CPU_FLAG_SSE      |
                     AV_CPU_FLAG_SSE2     |
                     AV_CPU_FLAG_SSE2SLOW |
@@ -58,6 +59,7 @@ void av_force_cpu_flags(int arg){
                     AV_CPU_FLAG_SSE4     |
                     AV_CPU_FLAG_SSE42    |
                     AV_CPU_FLAG_AVX      |
+                    AV_CPU_FLAG_AVXSLOW  |
                     AV_CPU_FLAG_XOP      |
                     AV_CPU_FLAG_FMA3     |
                     AV_CPU_FLAG_FMA4     |
@@ -110,12 +112,13 @@ int av_parse_cpu_flags(const char *s)
 #define CPUFLAG_SSE4     (AV_CPU_FLAG_SSE4     | CPUFLAG_SSSE3)
 #define CPUFLAG_SSE42    (AV_CPU_FLAG_SSE42    | CPUFLAG_SSE4)
 #define CPUFLAG_AVX      (AV_CPU_FLAG_AVX      | CPUFLAG_SSE42)
+#define CPUFLAG_AVXSLOW  (AV_CPU_FLAG_AVXSLOW  | CPUFLAG_AVX)
 #define CPUFLAG_XOP      (AV_CPU_FLAG_XOP      | CPUFLAG_AVX)
 #define CPUFLAG_FMA3     (AV_CPU_FLAG_FMA3     | CPUFLAG_AVX)
 #define CPUFLAG_FMA4     (AV_CPU_FLAG_FMA4     | CPUFLAG_AVX)
 #define CPUFLAG_AVX2     (AV_CPU_FLAG_AVX2     | CPUFLAG_AVX)
-#define CPUFLAG_BMI1     (AV_CPU_FLAG_BMI1)
-#define CPUFLAG_BMI2     (AV_CPU_FLAG_BMI2     | CPUFLAG_BMI1)
+#define CPUFLAG_BMI2     (AV_CPU_FLAG_BMI2     | AV_CPU_FLAG_BMI1)
+#define CPUFLAG_AESNI    (AV_CPU_FLAG_AESNI    | CPUFLAG_SSE42)
     static const AVOption cpuflags_opts[] = {
         { "flags"   , NULL, 0, AV_OPT_TYPE_FLAGS, { .i64 = 0 }, INT64_MIN, INT64_MAX, .unit = "flags" },
 #if   ARCH_PPC
@@ -133,20 +136,23 @@ int av_parse_cpu_flags(const char *s)
         { "sse4.1"  , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_SSE4         },    .unit = "flags" },
         { "sse4.2"  , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_SSE42        },    .unit = "flags" },
         { "avx"     , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_AVX          },    .unit = "flags" },
+        { "avxslow" , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_AVXSLOW      },    .unit = "flags" },
         { "xop"     , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_XOP          },    .unit = "flags" },
         { "fma3"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_FMA3         },    .unit = "flags" },
         { "fma4"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_FMA4         },    .unit = "flags" },
         { "avx2"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_AVX2         },    .unit = "flags" },
-        { "bmi1"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_BMI1         },    .unit = "flags" },
+        { "bmi1"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_BMI1     },    .unit = "flags" },
         { "bmi2"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_BMI2         },    .unit = "flags" },
         { "3dnow"   , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_3DNOW        },    .unit = "flags" },
         { "3dnowext", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_3DNOWEXT     },    .unit = "flags" },
         { "cmov",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_CMOV     },    .unit = "flags" },
+        { "aesni"   , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = CPUFLAG_AESNI        },    .unit = "flags" },
 #elif ARCH_ARM
         { "armv5te",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_ARMV5TE  },    .unit = "flags" },
         { "armv6",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_ARMV6    },    .unit = "flags" },
         { "armv6t2",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_ARMV6T2  },    .unit = "flags" },
         { "vfp",      NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_VFP      },    .unit = "flags" },
+        { "vfp_vm",   NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_VFP_VM   },    .unit = "flags" },
         { "vfpv3",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_VFPV3    },    .unit = "flags" },
         { "neon",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_NEON     },    .unit = "flags" },
 #elif ARCH_AARCH64
@@ -192,6 +198,7 @@ int av_parse_cpu_caps(unsigned *flags, const char *s)
         { "sse4.1"  , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_SSE4     },    .unit = "flags" },
         { "sse4.2"  , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_SSE42    },    .unit = "flags" },
         { "avx"     , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_AVX      },    .unit = "flags" },
+        { "avxslow" , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_AVXSLOW  },    .unit = "flags" },
         { "xop"     , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_XOP      },    .unit = "flags" },
         { "fma3"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_FMA3     },    .unit = "flags" },
         { "fma4"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_FMA4     },    .unit = "flags" },
@@ -201,6 +208,7 @@ int av_parse_cpu_caps(unsigned *flags, const char *s)
         { "3dnow"   , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_3DNOW    },    .unit = "flags" },
         { "3dnowext", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_3DNOWEXT },    .unit = "flags" },
         { "cmov",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_CMOV     },    .unit = "flags" },
+        { "aesni",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_AESNI    },    .unit = "flags" },
 
 #define CPU_FLAG_P2 AV_CPU_FLAG_CMOV | AV_CPU_FLAG_MMX
 #define CPU_FLAG_P3 CPU_FLAG_P2 | AV_CPU_FLAG_MMX2 | AV_CPU_FLAG_SSE
@@ -223,8 +231,14 @@ int av_parse_cpu_caps(unsigned *flags, const char *s)
         { "armv6",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_ARMV6    },    .unit = "flags" },
         { "armv6t2",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_ARMV6T2  },    .unit = "flags" },
         { "vfp",      NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_VFP      },    .unit = "flags" },
+        { "vfp_vm",   NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_VFP_VM   },    .unit = "flags" },
         { "vfpv3",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_VFPV3    },    .unit = "flags" },
         { "neon",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_NEON     },    .unit = "flags" },
+        { "setend",   NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_SETEND   },    .unit = "flags" },
+#elif ARCH_AARCH64
+        { "armv8",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_ARMV8    },    .unit = "flags" },
+        { "neon",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_NEON     },    .unit = "flags" },
+        { "vfp",      NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_CPU_FLAG_VFP      },    .unit = "flags" },
 #endif
         { NULL },
     };
@@ -244,6 +258,9 @@ int av_cpu_count(void)
     static volatile int printed;
 
     int nb_cpus = 1;
+#if HAVE_WINRT
+    SYSTEM_INFO sysinfo;
+#endif
 #if HAVE_SCHED_GETAFFINITY && defined(CPU_COUNT)
     cpu_set_t cpuset;
 
@@ -265,6 +282,9 @@ int av_cpu_count(void)
     nb_cpus = sysconf(_SC_NPROC_ONLN);
 #elif HAVE_SYSCONF && defined(_SC_NPROCESSORS_ONLN)
     nb_cpus = sysconf(_SC_NPROCESSORS_ONLN);
+#elif HAVE_WINRT
+    GetNativeSystemInfo(&sysinfo);
+    nb_cpus = sysinfo.dwNumberOfProcessors;
 #endif
 
     if (!printed) {
@@ -274,67 +294,3 @@ int av_cpu_count(void)
 
     return nb_cpus;
 }
-
-#ifdef TEST
-
-#include <stdio.h>
-
-static const struct {
-    int flag;
-    const char *name;
-} cpu_flag_tab[] = {
-#if   ARCH_AARCH64
-    { AV_CPU_FLAG_ARMV8,     "armv8"      },
-    { AV_CPU_FLAG_NEON,      "neon"       },
-    { AV_CPU_FLAG_VFP,       "vfp"        },
-#elif ARCH_ARM
-    { AV_CPU_FLAG_ARMV5TE,   "armv5te"    },
-    { AV_CPU_FLAG_ARMV6,     "armv6"      },
-    { AV_CPU_FLAG_ARMV6T2,   "armv6t2"    },
-    { AV_CPU_FLAG_VFP,       "vfp"        },
-    { AV_CPU_FLAG_VFPV3,     "vfpv3"      },
-    { AV_CPU_FLAG_NEON,      "neon"       },
-#elif ARCH_PPC
-    { AV_CPU_FLAG_ALTIVEC,   "altivec"    },
-#elif ARCH_X86
-    { AV_CPU_FLAG_MMX,       "mmx"        },
-    { AV_CPU_FLAG_MMXEXT,    "mmxext"     },
-    { AV_CPU_FLAG_SSE,       "sse"        },
-    { AV_CPU_FLAG_SSE2,      "sse2"       },
-    { AV_CPU_FLAG_SSE2SLOW,  "sse2(slow)" },
-    { AV_CPU_FLAG_SSE3,      "sse3"       },
-    { AV_CPU_FLAG_SSE3SLOW,  "sse3(slow)" },
-    { AV_CPU_FLAG_SSSE3,     "ssse3"      },
-    { AV_CPU_FLAG_ATOM,      "atom"       },
-    { AV_CPU_FLAG_SSE4,      "sse4.1"     },
-    { AV_CPU_FLAG_SSE42,     "sse4.2"     },
-    { AV_CPU_FLAG_AVX,       "avx"        },
-    { AV_CPU_FLAG_XOP,       "xop"        },
-    { AV_CPU_FLAG_FMA3,      "fma3"       },
-    { AV_CPU_FLAG_FMA4,      "fma4"       },
-    { AV_CPU_FLAG_3DNOW,     "3dnow"      },
-    { AV_CPU_FLAG_3DNOWEXT,  "3dnowext"   },
-    { AV_CPU_FLAG_CMOV,      "cmov"       },
-    { AV_CPU_FLAG_AVX2,      "avx2"       },
-    { AV_CPU_FLAG_BMI1,      "bmi1"       },
-    { AV_CPU_FLAG_BMI2,      "bmi2"       },
-#endif
-    { 0 }
-};
-
-int main(void)
-{
-    int cpu_flags = av_get_cpu_flags();
-    int i;
-
-    printf("cpu_flags = 0x%08X\n", cpu_flags);
-    printf("cpu_flags =");
-    for (i = 0; cpu_flag_tab[i].flag; i++)
-        if (cpu_flags & cpu_flag_tab[i].flag)
-            printf(" %s", cpu_flag_tab[i].name);
-    printf("\n");
-
-    return 0;
-}
-
-#endif

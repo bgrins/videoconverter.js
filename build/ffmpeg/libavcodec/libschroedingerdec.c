@@ -195,8 +195,8 @@ static void libschroedinger_handle_first_access_unit(AVCodecContext *avctx)
         return;
     }
 
-    avctx->time_base.den = p_schro_params->format->frame_rate_numerator;
-    avctx->time_base.num = p_schro_params->format->frame_rate_denominator;
+    avctx->framerate.num = p_schro_params->format->frame_rate_numerator;
+    avctx->framerate.den = p_schro_params->format->frame_rate_denominator;
 }
 
 static int libschroedinger_decode_frame(AVCodecContext *avctx,
@@ -267,6 +267,8 @@ static int libschroedinger_decode_frame(AVCodecContext *avctx,
                 /* Decoder needs a frame - create one and push it in. */
                 frame = ff_create_schro_frame(avctx,
                                               p_schro_params->frame_format);
+                if (!frame)
+                    return AVERROR(ENOMEM);
                 schro_decoder_add_output_picture(decoder, frame);
                 break;
 
@@ -381,6 +383,6 @@ AVCodec ff_libschroedinger_decoder = {
     .init           = libschroedinger_decode_init,
     .close          = libschroedinger_decode_close,
     .decode         = libschroedinger_decode_frame,
-    .capabilities   = CODEC_CAP_DELAY,
+    .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1,
     .flush          = libschroedinger_flush,
 };

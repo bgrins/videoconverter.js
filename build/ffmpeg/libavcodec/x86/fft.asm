@@ -36,8 +36,6 @@
 %define pointer resd
 %endif
 
-SECTION_RODATA 32
-
 struc FFTContext
     .nbits:    resd 1
     .reverse:  resd 1
@@ -52,6 +50,8 @@ struc FFTContext
     .imdctcalc:pointer 1
     .imdcthalf:pointer 1
 endstruc
+
+SECTION_RODATA 32
 
 %define M_SQRT1_2 0.70710678118654752440
 %define M_COS_PI_1_8 0.923879532511287
@@ -68,11 +68,12 @@ perm1: dd 0x00, 0x02, 0x03, 0x01, 0x03, 0x00, 0x02, 0x01
 perm2: dd 0x00, 0x01, 0x02, 0x03, 0x01, 0x00, 0x02, 0x03
 ps_p1p1m1p1root2: dd 1.0, 1.0, -1.0, 1.0, M_SQRT1_2, M_SQRT1_2, M_SQRT1_2, M_SQRT1_2
 ps_m1m1p1m1p1m1m1m1: dd 1<<31, 1<<31, 0, 1<<31, 0, 1<<31, 1<<31, 1<<31
-ps_m1m1m1m1: times 4 dd 1<<31
 ps_m1p1: dd 1<<31, 0
 
+cextern ps_neg
+
 %assign i 16
-%rep 13
+%rep 14
 cextern cos_ %+ i
 %assign i i<<1
 %endrep
@@ -89,7 +90,7 @@ cextern cos_ %+ i
     %1
 %endmacro
 
-SECTION_TEXT
+SECTION .text
 
 %macro T2_3DNOW 4 ; z0, z1, mem0, mem1
     mova     %1, %3
@@ -685,7 +686,7 @@ cglobal imdct_calc, 3,5,3
     mov     r2, r3
     sub     r3, mmsize
     neg     r2
-    mova    m2, [ps_m1m1m1m1]
+    mova    m2, [ps_neg]
 .loop:
 %if mmsize == 8
     PSWAPD  m0, [r1 + r3]
@@ -755,7 +756,7 @@ DECL_PASS pass_interleave_3dnow, PASS_BIG 0
 %endif
 
 %assign n 1<<%1
-%rep 17-%1
+%rep 18-%1
 %assign n2 n/2
 %assign n4 n/4
 %xdefine list_of_fft list_of_fft, fft %+ n %+ fullsuffix SECTION_REL
@@ -998,7 +999,7 @@ cglobal imdct_half, 3,12,8; FFTContext *s, FFTSample *output, const FFTSample *i
     sub   r4, r3
 %endif
 %if notcpuflag(3dnowext) && mmsize == 8
-    movd  m7, [ps_m1m1m1m1]
+    movd  m7, [ps_neg]
 %endif
 .pre:
 %if ARCH_X86_64 == 0

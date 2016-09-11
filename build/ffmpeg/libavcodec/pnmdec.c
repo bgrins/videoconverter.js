@@ -108,6 +108,13 @@ static int pnm_decode_frame(AVCodecContext *avctx, void *data,
         if (s->maxval < 65535)
             upgrade = 2;
         goto do_read;
+    case AV_PIX_FMT_YA16:
+        n =  avctx->width * 4;
+        components=2;
+        sample_len=16;
+        if (s->maxval < 65535)
+            upgrade = 2;
+        goto do_read;
     case AV_PIX_FMT_MONOWHITE:
     case AV_PIX_FMT_MONOBLACK:
         n = (avctx->width + 7) >> 3;
@@ -258,7 +265,7 @@ AVCodec ff_pgm_decoder = {
     .id             = AV_CODEC_ID_PGM,
     .priv_data_size = sizeof(PNMContext),
     .decode         = pnm_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
 #endif
 
@@ -270,7 +277,7 @@ AVCodec ff_pgmyuv_decoder = {
     .id             = AV_CODEC_ID_PGMYUV,
     .priv_data_size = sizeof(PNMContext),
     .decode         = pnm_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
 #endif
 
@@ -282,7 +289,7 @@ AVCodec ff_ppm_decoder = {
     .id             = AV_CODEC_ID_PPM,
     .priv_data_size = sizeof(PNMContext),
     .decode         = pnm_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
 #endif
 
@@ -294,7 +301,7 @@ AVCodec ff_pbm_decoder = {
     .id             = AV_CODEC_ID_PBM,
     .priv_data_size = sizeof(PNMContext),
     .decode         = pnm_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
 #endif
 
@@ -306,6 +313,6 @@ AVCodec ff_pam_decoder = {
     .id             = AV_CODEC_ID_PAM,
     .priv_data_size = sizeof(PNMContext),
     .decode         = pnm_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
 #endif
