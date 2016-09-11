@@ -31,6 +31,7 @@ make clean
 emconfigure ./configure --prefix=$(pwd)/../dist --disable-examples --disable-docs \
   --disable-runtime-cpu-detect --disable-multithread --disable-optimizations \
   --target=generic-gnu
+sed -i.bak -e 's/ARFLAGS = -crs$(if $(quiet),,v)/ARFLAGS = crs$(if $(quiet),,v)/' ./libs-generic-gnu.mk
 emmake make
 emmake make install
 cd ..

@@ -12,16 +12,19 @@
 #ifndef VP9_DECODER_VP9_DETOKENIZE_H_
 #define VP9_DECODER_VP9_DETOKENIZE_H_
 
+#include "vpx_dsp/bitreader.h"
 #include "vp9/decoder/vp9_decoder.h"
-#include "vp9/decoder/vp9_reader.h"
+#include "vp9/common/vp9_scan.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-int vp9_decode_block_tokens(VP9_COMMON *cm, MACROBLOCKD *xd,
-                            int plane, int block, BLOCK_SIZE plane_bsize,
-                            int x, int y, TX_SIZE tx_size, vp9_reader *r);
+int vp9_decode_block_tokens(MACROBLOCKD *xd,
+                            int plane, const scan_order *sc,
+                            int x, int y,
+                            TX_SIZE tx_size, vpx_reader *r,
+                            int seg_id);
 
 #ifdef __cplusplus
 }  // extern "C"

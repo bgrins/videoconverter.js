@@ -23,12 +23,6 @@ CODEC_DOX :=    mainpage.dox \
 # Other doxy files sourced in Markdown
 TXT_DOX = $(call enabled,TXT_DOX)
 
-%.dox: %.txt
-	@echo "    [DOXY] $@"
-	@$(SRC_PATH_BARE)/examples/gen_example_doxy.php \
-             $(@:.dox=)  "$($@.DESC)" > $@ < $<
-
-
 EXAMPLE_PATH += $(SRC_PATH_BARE) #for CHANGELOG, README, etc
 EXAMPLE_PATH += $(SRC_PATH_BARE)/examples
 

@@ -83,11 +83,12 @@ int read_yuv_frame(struct VpxInputContext *input_ctx, vpx_image_t *yuv_frame) {
   struct FileTypeDetectionBuffer *detect = &input_ctx->detect;
   int plane = 0;
   int shortread = 0;
+  const int bytespp = (yuv_frame->fmt & VPX_IMG_FMT_HIGHBITDEPTH) ? 2 : 1;
 
   for (plane = 0; plane < 3; ++plane) {
     uint8_t *ptr;
-    const int w = (plane ? (1 + yuv_frame->d_w) / 2 : yuv_frame->d_w);
-    const int h = (plane ? (1 + yuv_frame->d_h) / 2 : yuv_frame->d_h);
+    const int w = vpx_img_plane_width(yuv_frame, plane);
+    const int h = vpx_img_plane_height(yuv_frame, plane);
     int r;
 
     /* Determine the correct plane based on the image format. The for-loop
@@ -108,7 +109,7 @@ int read_yuv_frame(struct VpxInputContext *input_ctx, vpx_image_t *yuv_frame) {
     }
 
     for (r = 0; r < h; ++r) {
-      size_t needed = w;
+      size_t needed = w * bytespp;
       size_t buf_position = 0;
       const size_t left = detect->buf_read - detect->position;
       if (left > 0) {
@@ -129,6 +130,8 @@ int read_yuv_frame(struct VpxInputContext *input_ctx, vpx_image_t *yuv_frame) {
   return shortread;
 }
 
+#if CONFIG_ENCODERS
+
 static const VpxInterface vpx_encoders[] = {
 #if CONFIG_VP8_ENCODER
   {"vp8", VP8_FOURCC, &vpx_codec_vp8_cx},
@@ -139,7 +142,7 @@ static const VpxInterface vpx_encoders[] = {
 #endif
 };
 
-int get_vpx_encoder_count() {
+int get_vpx_encoder_count(void) {
   return sizeof(vpx_encoders) / sizeof(vpx_encoders[0]);
 }
 
@@ -159,6 +162,10 @@ const VpxInterface *get_vpx_encoder_by_name(const char *name) {
   return NULL;
 }
 
+#endif  // CONFIG_ENCODERS
+
+#if CONFIG_DECODERS
+
 static const VpxInterface vpx_decoders[] = {
 #if CONFIG_VP8_DECODER
   {"vp8", VP8_FOURCC, &vpx_codec_vp8_dx},
@@ -169,7 +176,7 @@ static const VpxInterface vpx_decoders[] = {
 #endif
 };
 
-int get_vpx_decoder_count() {
+int get_vpx_decoder_count(void) {
   return sizeof(vpx_decoders) / sizeof(vpx_decoders[0]);
 }
 
@@ -201,6 +208,8 @@ const VpxInterface *get_vpx_decoder_by_fourcc(uint32_t fourcc) {
   return NULL;
 }
 
+#endif  // CONFIG_DECODERS
+
 // TODO(dkovalev): move this function to vpx_image.{c, h}, so it will be part
 // of vpx_image_t support
 int vpx_img_plane_width(const vpx_image_t *img, int plane) {
@@ -223,7 +232,8 @@ void vpx_img_write(const vpx_image_t *img, FILE *file) {
   for (plane = 0; plane < 3; ++plane) {
     const unsigned char *buf = img->planes[plane];
     const int stride = img->stride[plane];
-    const int w = vpx_img_plane_width(img, plane);
+    const int w = vpx_img_plane_width(img, plane) *
+        ((img->fmt & VPX_IMG_FMT_HIGHBITDEPTH) ? 2 : 1);
     const int h = vpx_img_plane_height(img, plane);
     int y;
 
@@ -240,12 +250,13 @@ int vpx_img_read(vpx_image_t *img, FILE *file) {
   for (plane = 0; plane < 3; ++plane) {
     unsigned char *buf = img->planes[plane];
     const int stride = img->stride[plane];
-    const int w = vpx_img_plane_width(img, plane);
+    const int w = vpx_img_plane_width(img, plane) *
+        ((img->fmt & VPX_IMG_FMT_HIGHBITDEPTH) ? 2 : 1);
     const int h = vpx_img_plane_height(img, plane);
     int y;
 
     for (y = 0; y < h; ++y) {
-      if (fread(buf, 1, w, file) != w)
+      if (fread(buf, 1, w, file) != (size_t)w)
         return 0;
       buf += stride;
     }
@@ -265,3 +276,219 @@ double sse_to_psnr(double samples, double peak, double sse) {
     return kMaxPSNR;
   }
 }
+
+// TODO(debargha): Consolidate the functions below into a separate file.
+#if CONFIG_VP9_HIGHBITDEPTH
+static void highbd_img_upshift(vpx_image_t *dst, vpx_image_t *src,
+                               int input_shift) {
+  // Note the offset is 1 less than half.
+  const int offset = input_shift > 0 ? (1 << (input_shift - 1)) - 1 : 0;
+  int plane;
+  if (dst->d_w != src->d_w || dst->d_h != src->d_h ||
+      dst->x_chroma_shift != src->x_chroma_shift ||
+      dst->y_chroma_shift != src->y_chroma_shift ||
+      dst->fmt != src->fmt || input_shift < 0) {
+    fatal("Unsupported image conversion");
+  }
+  switch (src->fmt) {
+    case VPX_IMG_FMT_I42016:
+    case VPX_IMG_FMT_I42216:
+    case VPX_IMG_FMT_I44416:
+    case VPX_IMG_FMT_I44016:
+      break;
+    default:
+      fatal("Unsupported image conversion");
+      break;
+  }
+  for (plane = 0; plane < 3; plane++) {
+    int w = src->d_w;
+    int h = src->d_h;
+    int x, y;
+    if (plane) {
+      w = (w + src->x_chroma_shift) >> src->x_chroma_shift;
+      h = (h + src->y_chroma_shift) >> src->y_chroma_shift;
+    }
+    for (y = 0; y < h; y++) {
+      uint16_t *p_src =
+          (uint16_t *)(src->planes[plane] + y * src->stride[plane]);
+      uint16_t *p_dst =
+          (uint16_t *)(dst->planes[plane] + y * dst->stride[plane]);
+      for (x = 0; x < w; x++)
+        *p_dst++ = (*p_src++ << input_shift) + offset;
+    }
+  }
+}
+
+static void lowbd_img_upshift(vpx_image_t *dst, vpx_image_t *src,
+                              int input_shift) {
+  // Note the offset is 1 less than half.
+  const int offset = input_shift > 0 ? (1 << (input_shift - 1)) - 1 : 0;
+  int plane;
+  if (dst->d_w != src->d_w || dst->d_h != src->d_h ||
+      dst->x_chroma_shift != src->x_chroma_shift ||
+      dst->y_chroma_shift != src->y_chroma_shift ||
+      dst->fmt != src->fmt + VPX_IMG_FMT_HIGHBITDEPTH ||
+      input_shift < 0) {
+    fatal("Unsupported image conversion");
+  }
+  switch (src->fmt) {
+    case VPX_IMG_FMT_I420:
+    case VPX_IMG_FMT_I422:
+    case VPX_IMG_FMT_I444:
+    case VPX_IMG_FMT_I440:
+      break;
+    default:
+      fatal("Unsupported image conversion");
+      break;
+  }
+  for (plane = 0; plane < 3; plane++) {
+    int w = src->d_w;
+    int h = src->d_h;
+    int x, y;
+    if (plane) {
+      w = (w + src->x_chroma_shift) >> src->x_chroma_shift;
+      h = (h + src->y_chroma_shift) >> src->y_chroma_shift;
+    }
+    for (y = 0; y < h; y++) {
+      uint8_t *p_src = src->planes[plane] + y * src->stride[plane];
+      uint16_t *p_dst =
+          (uint16_t *)(dst->planes[plane] + y * dst->stride[plane]);
+      for (x = 0; x < w; x++) {
+        *p_dst++ = (*p_src++ << input_shift) + offset;
+      }
+    }
+  }
+}
+
+void vpx_img_upshift(vpx_image_t *dst, vpx_image_t *src,
+                     int input_shift) {
+  if (src->fmt & VPX_IMG_FMT_HIGHBITDEPTH) {
+    highbd_img_upshift(dst, src, input_shift);
+  } else {
+    lowbd_img_upshift(dst, src, input_shift);
+  }
+}
+
+void vpx_img_truncate_16_to_8(vpx_image_t *dst, vpx_image_t *src) {
+  int plane;
+  if (dst->fmt + VPX_IMG_FMT_HIGHBITDEPTH != src->fmt ||
+      dst->d_w != src->d_w || dst->d_h != src->d_h ||
+      dst->x_chroma_shift != src->x_chroma_shift ||
+      dst->y_chroma_shift != src->y_chroma_shift) {
+    fatal("Unsupported image conversion");
+  }
+  switch (dst->fmt) {
+    case VPX_IMG_FMT_I420:
+    case VPX_IMG_FMT_I422:
+    case VPX_IMG_FMT_I444:
+    case VPX_IMG_FMT_I440:
+      break;
+    default:
+      fatal("Unsupported image conversion");
+      break;
+  }
+  for (plane = 0; plane < 3; plane++) {
+    int w = src->d_w;
+    int h = src->d_h;
+    int x, y;
+    if (plane) {
+      w = (w + src->x_chroma_shift) >> src->x_chroma_shift;
+      h = (h + src->y_chroma_shift) >> src->y_chroma_shift;
+    }
+    for (y = 0; y < h; y++) {
+      uint16_t *p_src =
+          (uint16_t *)(src->planes[plane] + y * src->stride[plane]);
+      uint8_t *p_dst = dst->planes[plane] + y * dst->stride[plane];
+      for (x = 0; x < w; x++) {
+        *p_dst++ = (uint8_t)(*p_src++);
+      }
+    }
+  }
+}
+
+static void highbd_img_downshift(vpx_image_t *dst, vpx_image_t *src,
+                                 int down_shift) {
+  int plane;
+  if (dst->d_w != src->d_w || dst->d_h != src->d_h ||
+      dst->x_chroma_shift != src->x_chroma_shift ||
+      dst->y_chroma_shift != src->y_chroma_shift ||
+      dst->fmt != src->fmt || down_shift < 0) {
+    fatal("Unsupported image conversion");
+  }
+  switch (src->fmt) {
+    case VPX_IMG_FMT_I42016:
+    case VPX_IMG_FMT_I42216:
+    case VPX_IMG_FMT_I44416:
+    case VPX_IMG_FMT_I44016:
+      break;
+    default:
+      fatal("Unsupported image conversion");
+      break;
+  }
+  for (plane = 0; plane < 3; plane++) {
+    int w = src->d_w;
+    int h = src->d_h;
+    int x, y;
+    if (plane) {
+      w = (w + src->x_chroma_shift) >> src->x_chroma_shift;
+      h = (h + src->y_chroma_shift) >> src->y_chroma_shift;
+    }
+    for (y = 0; y < h; y++) {
+      uint16_t *p_src =
+          (uint16_t *)(src->planes[plane] + y * src->stride[plane]);
+      uint16_t *p_dst =
+          (uint16_t *)(dst->planes[plane] + y * dst->stride[plane]);
+      for (x = 0; x < w; x++)
+        *p_dst++ = *p_src++ >> down_shift;
+    }
+  }
+}
+
+static void lowbd_img_downshift(vpx_image_t *dst, vpx_image_t *src,
+                                int down_shift) {
+  int plane;
+  if (dst->d_w != src->d_w || dst->d_h != src->d_h ||
+      dst->x_chroma_shift != src->x_chroma_shift ||
+      dst->y_chroma_shift != src->y_chroma_shift ||
+      src->fmt != dst->fmt + VPX_IMG_FMT_HIGHBITDEPTH ||
+      down_shift < 0) {
+    fatal("Unsupported image conversion");
+  }
+  switch (dst->fmt) {
+    case VPX_IMG_FMT_I420:
+    case VPX_IMG_FMT_I422:
+    case VPX_IMG_FMT_I444:
+    case VPX_IMG_FMT_I440:
+      break;
+    default:
+      fatal("Unsupported image conversion");
+      break;
+  }
+  for (plane = 0; plane < 3; plane++) {
+    int w = src->d_w;
+    int h = src->d_h;
+    int x, y;
+    if (plane) {
+      w = (w + src->x_chroma_shift) >> src->x_chroma_shift;
+      h = (h + src->y_chroma_shift) >> src->y_chroma_shift;
+    }
+    for (y = 0; y < h; y++) {
+      uint16_t *p_src =
+          (uint16_t *)(src->planes[plane] + y * src->stride[plane]);
+      uint8_t *p_dst = dst->planes[plane] + y * dst->stride[plane];
+      for (x = 0; x < w; x++) {
+        *p_dst++ = *p_src++ >> down_shift;
+      }
+    }
+  }
+}
+
+void vpx_img_downshift(vpx_image_t *dst, vpx_image_t *src,
+                       int down_shift) {
+  if (dst->fmt & VPX_IMG_FMT_HIGHBITDEPTH) {
+    highbd_img_downshift(dst, src, down_shift);
+  } else {
+    lowbd_img_downshift(dst, src, down_shift);
+  }
+}
+#endif  // CONFIG_VP9_HIGHBITDEPTH

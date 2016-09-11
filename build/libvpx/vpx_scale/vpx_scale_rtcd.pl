@@ -17,18 +17,16 @@ if (vpx_config("CONFIG_SPATIAL_RESAMPLING") eq "yes") {
 }
 
 add_proto qw/void vp8_yv12_extend_frame_borders/, "struct yv12_buffer_config *ybf";
-specialize qw/vp8_yv12_extend_frame_borders neon/;
 
 add_proto qw/void vp8_yv12_copy_frame/, "const struct yv12_buffer_config *src_ybc, struct yv12_buffer_config *dst_ybc";
-specialize qw/vp8_yv12_copy_frame neon/;
 
 add_proto qw/void vpx_yv12_copy_y/, "const struct yv12_buffer_config *src_ybc, struct yv12_buffer_config *dst_ybc";
 
 if (vpx_config("CONFIG_VP9") eq "yes") {
-    add_proto qw/void vp9_extend_frame_borders/, "struct yv12_buffer_config *ybf";
-    specialize qw/vp9_extend_frame_borders dspr2/;
+    add_proto qw/void vpx_extend_frame_borders/, "struct yv12_buffer_config *ybf";
+    specialize qw/vpx_extend_frame_borders dspr2/;
 
-    add_proto qw/void vp9_extend_frame_inner_borders/, "struct yv12_buffer_config *ybf";
-    specialize qw/vp9_extend_frame_inner_borders dspr2/;
+    add_proto qw/void vpx_extend_frame_inner_borders/, "struct yv12_buffer_config *ybf";
+    specialize qw/vpx_extend_frame_inner_borders dspr2/;
 }
 1;

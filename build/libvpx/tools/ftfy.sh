@@ -123,7 +123,6 @@ git show > "${ORIG_DIFF}"
 for f in $(git diff HEAD^ --name-only -M90 --diff-filter=AM); do
   case "$f" in
     third_party/*) continue;;
-    nestegg/*) continue;;
   esac
   vpx_style "$f"
 done
