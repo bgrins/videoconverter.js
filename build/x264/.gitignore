@@ -39,6 +39,8 @@ checkasm
 *.mbtree
 *.temp
 *.pyc
+*.pgd
+*.pgc
 
 .digress_x264
 dataDec.txt

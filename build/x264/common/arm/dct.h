@@ -1,7 +1,7 @@
 /*****************************************************************************
  * dct.h: arm transform and zigzag
  *****************************************************************************
- * Copyright (C) 2009-2014 x264 project
+ * Copyright (C) 2009-2016 x264 project
  *
  * Authors: David Conrad <lessen42@gmail.com>
  *
@@ -40,6 +40,7 @@ void x264_add16x16_idct_neon( uint8_t *p_dst, int16_t dct[16][16] );
 void x264_add8x8_idct_dc_neon( uint8_t *p_dst, int16_t dct[4] );
 void x264_add16x16_idct_dc_neon( uint8_t *p_dst, int16_t dct[16] );
 void x264_sub8x8_dct_dc_neon( int16_t dct[4], uint8_t *pix1, uint8_t *pix2 );
+void x264_sub8x16_dct_dc_neon( int16_t dct[8], uint8_t *pix1, uint8_t *pix2 );
 
 void x264_sub8x8_dct8_neon( int16_t dct[64], uint8_t *pix1, uint8_t *pix2 );
 void x264_sub16x16_dct8_neon( int16_t dct[4][64], uint8_t *pix1, uint8_t *pix2 );

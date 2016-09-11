@@ -1,4 +1,4 @@
-/*!\mainpage WebM VP8 Codec SDK
+/*!\mainpage WebM Codec SDK
 
   \section main_contents Page Contents
   - \ref main_intro
@@ -6,11 +6,11 @@
   - \ref main_support
 
   \section main_intro Introduction
-  Welcome to the WebM VP8 Codec SDK. This SDK allows you to integrate your
-  applications with the VP8 video codec, a high quality, royalty free, open
-  source codec deployed on millions of computers and devices worldwide.
+  Welcome to the WebM Codec SDK. This SDK allows you to integrate your
+  applications with the VP8 and VP9 video codecs, high quality, royalty free,
+  open source codecs deployed on billions of computers and devices worldwide.
 
-  This distribution of the WebM VP8 Codec SDK includes the following support:
+  This distribution of the WebM Codec SDK includes the following support:
 
   \if vp8_encoder
   - \ref vp8_encoder
@@ -28,12 +28,12 @@
   - Read the \ref samples "sample code" for examples of how to interact with the
     codec.
   - \ref codec reference
-    \if encoder
-    - \ref encoder reference
-    \endif
-    \if decoder
-    - \ref decoder reference
-    \endif
+  \if encoder
+  - \ref encoder reference
+  \endif
+  \if decoder
+  - \ref decoder reference
+  \endif
 
   \section main_support Support Options & FAQ
   The WebM project is an open source project supported by its community. For

@@ -1,11 +1,11 @@
 ;*****************************************************************************
 ;* predict-a.asm: x86 intra prediction
 ;*****************************************************************************
-;* Copyright (C) 2005-2014 x264 project
+;* Copyright (C) 2005-2016 x264 project
 ;*
 ;* Authors: Loren Merritt <lorenm@u.washington.edu>
 ;*          Holger Lubitz <holger@lubitz.org>
-;*          Jason Garrett-Glaser <darkshikari@gmail.com>
+;*          Fiona Glaser <fiona@x264.com>
 ;*          Henrik Gramner <henrik@gramner.com>
 ;*
 ;* This program is free software; you can redistribute it and/or modify
@@ -1457,7 +1457,7 @@ cglobal predict_8x8_vr, 2,2
     movhps      [r0-4*FDEC_STRIDE], m3
     movhps      [r0-3*FDEC_STRIDE], m0
 %if cpuflag(ssse3)
-    movhlps     m3, m3
+    punpckhqdq  m3, m3
     pshufb      m0, [shuf_vr]
     palignr     m3, m0, 13
 %else
@@ -2166,7 +2166,7 @@ cglobal predict_16x16_dc_left_core, 1,1
 %else ; !HIGH_BIT_DEPTH
     pxor        m0, m0
     psadbw      m0, [r0 - FDEC_STRIDE]
-    movhlps     m1, m0
+    MOVHL       m1, m0
     paddw       m0, m1
     paddusw     m0, %1
     psrlw       m0, %2              ; dc

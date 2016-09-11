@@ -37,7 +37,7 @@
 #include "formats.h"
 #include "internal.h"
 
-#define MAX_CHANNELS 63
+#define MAX_CHANNELS 64
 
 typedef struct PanContext {
     const AVClass *class;
@@ -50,7 +50,7 @@ typedef struct PanContext {
 
     int pure_gains;
     /* channel mapping specific */
-    int channel_map[SWR_CH_MAX];
+    int channel_map[MAX_CHANNELS];
     struct SwrContext *swr;
 } PanContext;
 
@@ -227,27 +227,29 @@ static int query_formats(AVFilterContext *ctx)
     AVFilterLink *outlink = ctx->outputs[0];
     AVFilterFormats *formats = NULL;
     AVFilterChannelLayouts *layouts;
+    int ret;
 
     pan->pure_gains = are_gains_pure(pan);
     /* libswr supports any sample and packing formats */
-    ff_set_common_formats(ctx, ff_all_formats(AVMEDIA_TYPE_AUDIO));
+    if ((ret = ff_set_common_formats(ctx, ff_all_formats(AVMEDIA_TYPE_AUDIO))) < 0)
+        return ret;
 
     formats = ff_all_samplerates();
-    if (!formats)
-        return AVERROR(ENOMEM);
-    ff_set_common_samplerates(ctx, formats);
+    if ((ret = ff_set_common_samplerates(ctx, formats)) < 0)
+        return ret;
 
     // inlink supports any channel layout
     layouts = ff_all_channel_counts();
-    ff_channel_layouts_ref(layouts, &inlink->out_channel_layouts);
+    if ((ret = ff_channel_layouts_ref(layouts, &inlink->out_channel_layouts)) < 0)
+        return ret;
 
     // outlink supports only requested output channel layout
     layouts = NULL;
-    ff_add_channel_layout(&layouts,
+    if ((ret = ff_add_channel_layout(&layouts,
                           pan->out_channel_layout ? pan->out_channel_layout :
-                          FF_COUNT2LAYOUT(pan->nb_output_channels));
-    ff_channel_layouts_ref(layouts, &outlink->in_channel_layouts);
-    return 0;
+                          FF_COUNT2LAYOUT(pan->nb_output_channels))) < 0)
+        return ret;
+    return ff_channel_layouts_ref(layouts, &outlink->in_channel_layouts);
 }
 
 static int config_props(AVFilterLink *link)
@@ -271,11 +273,11 @@ static int config_props(AVFilterLink *link)
 
     // sanity check; can't be done in query_formats since the inlink
     // channel layout is unknown at that time
-    if (link->channels > SWR_CH_MAX ||
-        pan->nb_output_channels > SWR_CH_MAX) {
+    if (link->channels > MAX_CHANNELS ||
+        pan->nb_output_channels > MAX_CHANNELS) {
         av_log(ctx, AV_LOG_ERROR,
-               "libswresample support a maximum of %d channels. "
-               "Feel free to ask for a higher limit.\n", SWR_CH_MAX);
+               "af_pan support a maximum of %d channels. "
+               "Feel free to ask for a higher limit.\n", MAX_CHANNELS);
         return AVERROR_PATCHWELCOME;
     }
 
@@ -286,10 +288,14 @@ static int config_props(AVFilterLink *link)
                                   0, ctx);
     if (!pan->swr)
         return AVERROR(ENOMEM);
-    if (!link->channel_layout)
-        av_opt_set_int(pan->swr, "ich", link->channels, 0);
-    if (!pan->out_channel_layout)
-        av_opt_set_int(pan->swr, "och", pan->nb_output_channels, 0);
+    if (!link->channel_layout) {
+        if (av_opt_set_int(pan->swr, "ich", link->channels, 0) < 0)
+            return AVERROR(EINVAL);
+    }
+    if (!pan->out_channel_layout) {
+        if (av_opt_set_int(pan->swr, "och", pan->nb_output_channels, 0) < 0)
+            return AVERROR(EINVAL);
+    }
 
     // gains are pure, init the channel mapping
     if (pan->pure_gains) {

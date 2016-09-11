@@ -1,7 +1,7 @@
 /*****************************************************************************
  * dct.c: ppc transform and zigzag
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Guillaume Poirier <gpoirier@mplayerhq.hu>
  *          Eric Petit <eric.petit@lapsus.org>
@@ -264,7 +264,7 @@ void x264_sub16x16_dct8_altivec( int16_t dct[4][64], uint8_t *pix1, uint8_t *pix
     vec_u8_t lv = vec_ld(0, dest);                              \
     vec_u8_t dstv = vec_perm(lv, zero_u8v, (vec_u8_t)perm_ldv); \
     vec_s16_t idct_sh6 = vec_sra(idctv, sixv);                  \
-    vec_u16_t dst16 = (vec_u16_t)vec_mergeh(zero_u8v, dstv);    \
+    vec_u16_t dst16 = vec_u8_to_u16_h(dstv);                    \
     vec_s16_t idstsum = vec_adds(idct_sh6, (vec_s16_t)dst16);   \
     vec_u8_t idstsum8 = vec_s16_to_u8(idstsum);                 \
     /* unaligned store */                                       \
@@ -384,7 +384,7 @@ void x264_add16x16_idct_altivec( uint8_t *p_dst, int16_t dct[16][16] )
     vec_u8_t lv = vec_ld( 7, dest );                           \
     vec_u8_t dstv   = vec_perm( hv, lv, (vec_u8_t)perm_ldv );  \
     vec_s16_t idct_sh6 = vec_sra(idctv, sixv);                 \
-    vec_u16_t dst16 = (vec_u16_t)vec_mergeh(zero_u8v, dstv);   \
+    vec_u16_t dst16 = vec_u8_to_u16_h(dstv);                   \
     vec_s16_t idstsum = vec_adds(idct_sh6, (vec_s16_t)dst16);  \
     vec_u8_t idstsum8 = vec_packsu(zero_s16v, idstsum);        \
     /* unaligned store */                                      \

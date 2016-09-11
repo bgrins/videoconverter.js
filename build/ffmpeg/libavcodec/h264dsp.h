@@ -70,7 +70,7 @@ typedef struct H264DSPContext {
                                             int stride, int alpha, int beta);
     void (*h264_h_loop_filter_chroma_mbaff_intra)(uint8_t *pix /*align 8*/,
                                                   int stride, int alpha, int beta);
-    // h264_loop_filter_strength: simd only. the C version is inlined in h264.c
+    // h264_loop_filter_strength: simd only. the C version is inlined in h264_loopfilter.c
     void (*h264_loop_filter_strength)(int16_t bS[2][4][4], uint8_t nnz[40],
                                       int8_t ref[2][40], int16_t mv[2][40][2],
                                       int bidir, int edges, int step,
@@ -113,7 +113,7 @@ typedef struct H264DSPContext {
      * one or more further zero bytes and a one byte. Better still, filter
      * out any bytes that form the trailing_zero_8bits syntax element too.
      */
-    int (*h264_find_start_code_candidate)(const uint8_t *buf, int size);
+    int (*startcode_find_candidate)(const uint8_t *buf, int size);
 } H264DSPContext;
 
 void ff_h264dsp_init(H264DSPContext *c, const int bit_depth,
@@ -126,5 +126,7 @@ void ff_h264dsp_init_ppc(H264DSPContext *c, const int bit_depth,
                          const int chroma_format_idc);
 void ff_h264dsp_init_x86(H264DSPContext *c, const int bit_depth,
                          const int chroma_format_idc);
+void ff_h264dsp_init_mips(H264DSPContext *c, const int bit_depth,
+                          const int chroma_format_idc);
 
 #endif /* AVCODEC_H264DSP_H */

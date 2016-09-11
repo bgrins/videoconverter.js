@@ -23,11 +23,8 @@
 #include "libavutil/attributes.h"
 #include "libavcodec/avcodec.h"
 #include "libavcodec/idctdsp.h"
+#include "idct.h"
 #include "idctdsp_arm.h"
-
-void ff_simple_idct_armv5te(int16_t *data);
-void ff_simple_idct_put_armv5te(uint8_t *dest, int line_size, int16_t *data);
-void ff_simple_idct_add_armv5te(uint8_t *dest, int line_size, int16_t *data);
 
 av_cold void ff_idctdsp_init_armv5te(IDCTDSPContext *c, AVCodecContext *avctx,
                                      unsigned high_bit_depth)
@@ -36,9 +33,9 @@ av_cold void ff_idctdsp_init_armv5te(IDCTDSPContext *c, AVCodecContext *avctx,
         (avctx->idct_algo == FF_IDCT_AUTO ||
          avctx->idct_algo == FF_IDCT_SIMPLEAUTO ||
          avctx->idct_algo == FF_IDCT_SIMPLEARMV5TE)) {
-        c->idct_put              = ff_simple_idct_put_armv5te;
-        c->idct_add              = ff_simple_idct_add_armv5te;
-        c->idct                  = ff_simple_idct_armv5te;
-        c->idct_permutation_type = FF_NO_IDCT_PERM;
+        c->idct_put  = ff_simple_idct_put_armv5te;
+        c->idct_add  = ff_simple_idct_add_armv5te;
+        c->idct      = ff_simple_idct_armv5te;
+        c->perm_type = FF_IDCT_PERM_NONE;
     }
 }

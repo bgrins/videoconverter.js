@@ -1,11 +1,11 @@
 /*****************************************************************************
  * analyse.c: macroblock analysis
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *          Loren Merritt <lorenm@u.washington.edu>
- *          Jason Garrett-Glaser <darkshikari@gmail.com>
+ *          Fiona Glaser <fiona@x264.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,8 +24,6 @@
  * This program is also available under a commercial proprietary license.
  * For more information, contact us at licensing@x264.com.
  *****************************************************************************/
-
-#define _ISOC99_SOURCE
 
 #include "common/common.h"
 #include "macroblock.h"
@@ -278,18 +276,7 @@ static uint16_t x264_cost_ref[QP_MAX+1][3][33];
 static UNUSED x264_pthread_mutex_t cost_ref_mutex = X264_PTHREAD_MUTEX_INITIALIZER;
 static uint16_t x264_cost_i4x4_mode[(QP_MAX+2)*32];
 
-float *x264_analyse_prepare_costs( x264_t *h )
-{
-    float *logs = x264_malloc( (2*4*2048+1)*sizeof(float) );
-    if( !logs )
-        return NULL;
-    logs[0] = 0.718f;
-    for( int i = 1; i <= 2*4*2048; i++ )
-        logs[i] = log2f(i+1)*2 + 1.718f;
-    return logs;
-}
-
-int x264_analyse_init_costs( x264_t *h, float *logs, int qp )
+static int init_costs( x264_t *h, float *logs, int qp )
 {
     int lambda = x264_lambda_tab[qp];
     if( h->cost_mv[qp] )
@@ -322,6 +309,30 @@ int x264_analyse_init_costs( x264_t *h, float *logs, int qp )
         cost_i4x4_mode[i] = 3*lambda*(i!=8);
     return 0;
 fail:
+    return -1;
+}
+
+int x264_analyse_init_costs( x264_t *h )
+{
+    float *logs = x264_malloc( (2*4*2048+1) * sizeof(float) );
+    if( !logs )
+        return -1;
+
+    logs[0] = 0.718f;
+    for( int i = 1; i <= 2*4*2048; i++ )
+        logs[i] = log2f( i+1 ) * 2.0f + 1.718f;
+
+    for( int qp = X264_MIN( h->param.rc.i_qp_min, QP_MAX_SPEC ); qp <= h->param.rc.i_qp_max; qp++ )
+        if( init_costs( h, logs, qp ) )
+            goto fail;
+
+    if( init_costs( h, logs, X264_LOOKAHEAD_QP ) )
+        goto fail;
+
+    x264_free( logs );
+    return 0;
+fail:
+    x264_free( logs );
     return -1;
 }
 
@@ -1532,8 +1543,7 @@ static void x264_mb_analyse_inter_p8x8_mixed_ref( x264_t *h, x264_mb_analysis_t 
     if( !h->param.b_cabac && !(a->l0.me8x8[0].i_ref | a->l0.me8x8[1].i_ref |
                                a->l0.me8x8[2].i_ref | a->l0.me8x8[3].i_ref) )
         a->l0.i_cost8x8 -= REF_COST( 0, 0 ) * 4;
-    h->mb.i_sub_partition[0] = h->mb.i_sub_partition[1] =
-    h->mb.i_sub_partition[2] = h->mb.i_sub_partition[3] = D_L0_8x8;
+    M32( h->mb.i_sub_partition ) = D_L0_8x8 * 0x01010101;
 }
 
 static void x264_mb_analyse_inter_p8x8( x264_t *h, x264_mb_analysis_t *a )
@@ -1588,8 +1598,7 @@ static void x264_mb_analyse_inter_p8x8( x264_t *h, x264_mb_analysis_t *a )
      * but 3 seems a better approximation of cabac. */
     if( h->param.b_cabac )
         a->l0.i_cost8x8 -= i_ref_cost;
-    h->mb.i_sub_partition[0] = h->mb.i_sub_partition[1] =
-    h->mb.i_sub_partition[2] = h->mb.i_sub_partition[3] = D_L0_8x8;
+    M32( h->mb.i_sub_partition ) = D_L0_8x8 * 0x01010101;
 }
 
 static void x264_mb_analyse_inter_p16x8( x264_t *h, x264_mb_analysis_t *a, int i_best_satd )
@@ -1832,7 +1841,7 @@ static void x264_mb_analyse_inter_p4x4( x264_t *h, x264_mb_analysis_t *a, int i8
                             a->l0.me4x4[i8x8][3].cost +
                             REF_COST( 0, i_ref ) +
                             a->i_lambda * i_sub_mb_p_cost_table[D_L0_4x4];
-    if( h->mb.b_chroma_me )
+    if( h->mb.b_chroma_me && !CHROMA444 )
         a->l0.i_cost4x4[i8x8] += x264_mb_analyse_inter_p4x4_chroma( h, a, p_fref, i8x8, PIXEL_4x4 );
 }
 
@@ -1868,7 +1877,7 @@ static void x264_mb_analyse_inter_p8x4( x264_t *h, x264_mb_analysis_t *a, int i8
     a->l0.i_cost8x4[i8x8] = a->l0.me8x4[i8x8][0].cost + a->l0.me8x4[i8x8][1].cost +
                             REF_COST( 0, i_ref ) +
                             a->i_lambda * i_sub_mb_p_cost_table[D_L0_8x4];
-    if( h->mb.b_chroma_me )
+    if( h->mb.b_chroma_me && !CHROMA444 )
         a->l0.i_cost8x4[i8x8] += x264_mb_analyse_inter_p4x4_chroma( h, a, p_fref, i8x8, PIXEL_8x4 );
 }
 
@@ -1904,7 +1913,7 @@ static void x264_mb_analyse_inter_p4x8( x264_t *h, x264_mb_analysis_t *a, int i8
     a->l0.i_cost4x8[i8x8] = a->l0.me4x8[i8x8][0].cost + a->l0.me4x8[i8x8][1].cost +
                             REF_COST( 0, i_ref ) +
                             a->i_lambda * i_sub_mb_p_cost_table[D_L0_4x8];
-    if( h->mb.b_chroma_me )
+    if( h->mb.b_chroma_me && !CHROMA444 )
         a->l0.i_cost4x8[i8x8] += x264_mb_analyse_inter_p4x4_chroma( h, a, p_fref, i8x8, PIXEL_4x8 );
 }
 
@@ -3372,8 +3381,7 @@ skip_analysis:
                 }
                 else if( i_partition == D_16x8 )
                 {
-                    h->mb.i_sub_partition[0] = h->mb.i_sub_partition[1] =
-                    h->mb.i_sub_partition[2] = h->mb.i_sub_partition[3] = D_L0_8x8;
+                    M32( h->mb.i_sub_partition ) = D_L0_8x8 * 0x01010101;
                     x264_macroblock_cache_ref( h, 0, 0, 4, 2, 0, analysis.l0.me16x8[0].i_ref );
                     x264_macroblock_cache_ref( h, 0, 2, 4, 2, 0, analysis.l0.me16x8[1].i_ref );
                     x264_me_refine_qpel_rd( h, &analysis.l0.me16x8[0], analysis.i_lambda2, 0, 0 );
@@ -3381,8 +3389,7 @@ skip_analysis:
                 }
                 else if( i_partition == D_8x16 )
                 {
-                    h->mb.i_sub_partition[0] = h->mb.i_sub_partition[1] =
-                    h->mb.i_sub_partition[2] = h->mb.i_sub_partition[3] = D_L0_8x8;
+                    M32( h->mb.i_sub_partition ) = D_L0_8x8 * 0x01010101;
                     x264_macroblock_cache_ref( h, 0, 0, 2, 4, 0, analysis.l0.me8x16[0].i_ref );
                     x264_macroblock_cache_ref( h, 2, 0, 2, 4, 0, analysis.l0.me8x16[1].i_ref );
                     x264_me_refine_qpel_rd( h, &analysis.l0.me8x16[0], analysis.i_lambda2, 0, 0 );

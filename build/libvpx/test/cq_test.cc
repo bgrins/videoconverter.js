@@ -8,6 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 #include <cmath>
+#include <map>
 #include "third_party/googletest/src/include/gtest/gtest.h"
 #include "test/codec_factory.h"
 #include "test/encode_test_driver.h"
@@ -24,6 +25,28 @@ const unsigned int kCQTargetBitrate = 2000;
 
 class CQTest : public ::libvpx_test::EncoderTest,
     public ::libvpx_test::CodecTestWithParam<int> {
+ public:
+  // maps the cqlevel to the bitrate produced.
+  typedef std::map<int, uint32_t> BitrateMap;
+
+  static void SetUpTestCase() {
+    bitrates_.clear();
+  }
+
+  static void TearDownTestCase() {
+    ASSERT_TRUE(!HasFailure())
+        << "skipping bitrate validation due to earlier failure.";
+    uint32_t prev_actual_bitrate = kCQTargetBitrate;
+    for (BitrateMap::const_iterator iter = bitrates_.begin();
+         iter != bitrates_.end(); ++iter) {
+      const uint32_t cq_actual_bitrate = iter->second;
+      EXPECT_LE(cq_actual_bitrate, prev_actual_bitrate)
+          << "cq_level: " << iter->first
+          << ", bitrate should decrease with increase in CQ level.";
+      prev_actual_bitrate = cq_actual_bitrate;
+    }
+  }
+
  protected:
   CQTest() : EncoderTest(GET_PARAM(0)), cq_level_(GET_PARAM(1)) {
     init_flags_ = VPX_CODEC_USE_PSNR;
@@ -66,8 +89,11 @@ class CQTest : public ::libvpx_test::EncoderTest,
     return pow(10.0, avg_psnr / 10.0) / file_size_;
   }
 
+  int cq_level() const { return cq_level_; }
   size_t file_size() const { return file_size_; }
   int n_frames() const { return n_frames_; }
+
+  static BitrateMap bitrates_;
 
  private:
   int cq_level_;
@@ -76,7 +102,8 @@ class CQTest : public ::libvpx_test::EncoderTest,
   int n_frames_;
 };
 
-unsigned int prev_actual_bitrate = kCQTargetBitrate;
+CQTest::BitrateMap CQTest::bitrates_;
+
 TEST_P(CQTest, LinearPSNRIsHigherForCQLevel) {
   const vpx_rational timebase = { 33333333, 1000000000 };
   cfg_.g_timebase = timebase;
@@ -91,8 +118,7 @@ TEST_P(CQTest, LinearPSNRIsHigherForCQLevel) {
   const unsigned int cq_actual_bitrate =
       static_cast<unsigned int>(file_size()) * 8 * 30 / (n_frames() * 1000);
   EXPECT_LE(cq_actual_bitrate, kCQTargetBitrate);
-  EXPECT_LE(cq_actual_bitrate, prev_actual_bitrate);
-  prev_actual_bitrate = cq_actual_bitrate;
+  bitrates_[cq_level()] = cq_actual_bitrate;
 
   // try targeting the approximate same bitrate with VBR mode
   cfg_.rc_end_usage = VPX_VBR;

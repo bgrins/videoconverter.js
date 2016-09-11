@@ -9,16 +9,21 @@
  */
 
 
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
-#include "vp8_rtcd.h"
+#include "./vp8_rtcd.h"
+#include "./vpx_dsp_rtcd.h"
+#include "./vpx_scale_rtcd.h"
 #include "vpx/vpx_decoder.h"
 #include "vpx/vp8dx.h"
 #include "vpx/internal/vpx_codec_internal.h"
 #include "vpx_version.h"
+#include "common/alloccommon.h"
+#include "common/common.h"
 #include "common/onyxd.h"
 #include "decoder/onyxd_int.h"
-#include "common/alloccommon.h"
+#include "vpx_dsp/vpx_dsp_common.h"
 #include "vpx_mem/vpx_mem.h"
 #if CONFIG_ERROR_CONCEALMENT
 #include "decoder/error_concealment.h"
@@ -39,8 +44,6 @@ typedef enum
 } mem_seg_id_t;
 #define NELEMENTS(x) ((int)(sizeof(x)/sizeof(x[0])))
 
-static unsigned long vp8_priv_sz(const vpx_codec_dec_cfg_t *si, vpx_codec_flags_t);
-
 struct vpx_codec_alg_priv
 {
     vpx_codec_priv_t        base;
@@ -56,7 +59,7 @@ struct vpx_codec_alg_priv
     int                     dbg_color_b_modes_flag;
     int                     dbg_display_mv_flag;
 #endif
-    vp8_decrypt_cb          *decrypt_cb;
+    vpx_decrypt_cb          decrypt_cb;
     void                    *decrypt_state;
     vpx_image_t             img;
     int                     img_setup;
@@ -65,80 +68,71 @@ struct vpx_codec_alg_priv
     FRAGMENT_DATA           fragments;
 };
 
-static unsigned long vp8_priv_sz(const vpx_codec_dec_cfg_t *si, vpx_codec_flags_t flags)
+static int vp8_init_ctx(vpx_codec_ctx_t *ctx)
 {
-    /* Although this declaration is constant, we can't use it in the requested
-     * segments list because we want to define the requested segments list
-     * before defining the private type (so that the number of memory maps is
-     * known)
-     */
-    (void)si;
-    return sizeof(vpx_codec_alg_priv_t);
-}
+    vpx_codec_alg_priv_t *priv =
+        (vpx_codec_alg_priv_t *)vpx_calloc(1, sizeof(*priv));
+    if (!priv) return 1;
 
-static void vp8_init_ctx(vpx_codec_ctx_t *ctx)
-{
-    ctx->priv =
-        (vpx_codec_priv_t *)vpx_memalign(8, sizeof(vpx_codec_alg_priv_t));
-    vpx_memset(ctx->priv, 0, sizeof(vpx_codec_alg_priv_t));
-    ctx->priv->sz = sizeof(*ctx->priv);
-    ctx->priv->iface = ctx->iface;
-    ctx->priv->alg_priv = (vpx_codec_alg_priv_t *)ctx->priv;
-    ctx->priv->alg_priv->si.sz = sizeof(ctx->priv->alg_priv->si);
-    ctx->priv->alg_priv->decrypt_cb = NULL;
-    ctx->priv->alg_priv->decrypt_state = NULL;
+    ctx->priv = (vpx_codec_priv_t *)priv;
     ctx->priv->init_flags = ctx->init_flags;
+
+    priv->si.sz = sizeof(priv->si);
+    priv->decrypt_cb = NULL;
+    priv->decrypt_state = NULL;
 
     if (ctx->config.dec)
     {
         /* Update the reference to the config structure to an internal copy. */
-        ctx->priv->alg_priv->cfg = *ctx->config.dec;
-        ctx->config.dec = &ctx->priv->alg_priv->cfg;
+        priv->cfg = *ctx->config.dec;
+        ctx->config.dec = &priv->cfg;
     }
+
+    return 0;
 }
 
 static vpx_codec_err_t vp8_init(vpx_codec_ctx_t *ctx,
                                 vpx_codec_priv_enc_mr_cfg_t *data)
 {
-    vpx_codec_err_t        res = VPX_CODEC_OK;
+    vpx_codec_err_t res = VPX_CODEC_OK;
+    vpx_codec_alg_priv_t *priv = NULL;
     (void) data;
 
     vp8_rtcd();
+    vpx_dsp_rtcd();
+    vpx_scale_rtcd();
 
     /* This function only allocates space for the vpx_codec_alg_priv_t
      * structure. More memory may be required at the time the stream
      * information becomes known.
      */
-    if (!ctx->priv)
-    {
-        vp8_init_ctx(ctx);
+    if (!ctx->priv) {
+      if (vp8_init_ctx(ctx)) return VPX_CODEC_MEM_ERROR;
+      priv = (vpx_codec_alg_priv_t *)ctx->priv;
 
-        /* initialize number of fragments to zero */
-        ctx->priv->alg_priv->fragments.count = 0;
-        /* is input fragments enabled? */
-        ctx->priv->alg_priv->fragments.enabled =
-                (ctx->priv->alg_priv->base.init_flags &
-                    VPX_CODEC_USE_INPUT_FRAGMENTS);
+      /* initialize number of fragments to zero */
+      priv->fragments.count = 0;
+      /* is input fragments enabled? */
+      priv->fragments.enabled =
+          (priv->base.init_flags & VPX_CODEC_USE_INPUT_FRAGMENTS);
 
-        /*post processing level initialized to do nothing */
+      /*post processing level initialized to do nothing */
+    } else {
+      priv = (vpx_codec_alg_priv_t *)ctx->priv;
     }
 
-    ctx->priv->alg_priv->yv12_frame_buffers.use_frame_threads =
-            (ctx->priv->alg_priv->base.init_flags &
-                    VPX_CODEC_USE_FRAME_THREADING);
+    priv->yv12_frame_buffers.use_frame_threads =
+        (ctx->priv->init_flags & VPX_CODEC_USE_FRAME_THREADING);
 
     /* for now, disable frame threading */
-    ctx->priv->alg_priv->yv12_frame_buffers.use_frame_threads = 0;
+    priv->yv12_frame_buffers.use_frame_threads = 0;
 
-    if(ctx->priv->alg_priv->yv12_frame_buffers.use_frame_threads &&
-            (( ctx->priv->alg_priv->base.init_flags &
-                            VPX_CODEC_USE_ERROR_CONCEALMENT)
-                    || ( ctx->priv->alg_priv->base.init_flags &
-                            VPX_CODEC_USE_INPUT_FRAGMENTS) ) )
-    {
-        /* row-based threading, error concealment, and input fragments will
-         * not be supported when using frame-based threading */
-        res = VPX_CODEC_INVALID_PARAM;
+    if (priv->yv12_frame_buffers.use_frame_threads &&
+        ((ctx->priv->init_flags & VPX_CODEC_USE_ERROR_CONCEALMENT) ||
+         (ctx->priv->init_flags & VPX_CODEC_USE_INPUT_FRAGMENTS))) {
+      /* row-based threading, error concealment, and input fragments will
+       * not be supported when using frame-based threading */
+      res = VPX_CODEC_INVALID_PARAM;
     }
 
     return res;
@@ -156,10 +150,12 @@ static vpx_codec_err_t vp8_destroy(vpx_codec_alg_priv_t *ctx)
 static vpx_codec_err_t vp8_peek_si_internal(const uint8_t *data,
                                             unsigned int data_sz,
                                             vpx_codec_stream_info_t *si,
-                                            vp8_decrypt_cb *decrypt_cb,
+                                            vpx_decrypt_cb decrypt_cb,
                                             void *decrypt_state)
 {
     vpx_codec_err_t res = VPX_CODEC_OK;
+
+    assert(data != NULL);
 
     if(data + data_sz <= data)
     {
@@ -177,7 +173,7 @@ static vpx_codec_err_t vp8_peek_si_internal(const uint8_t *data,
         const uint8_t *clear = data;
         if (decrypt_cb)
         {
-            int n = data_sz > 10 ? 10 : data_sz;
+            int n = VPXMIN(sizeof(clear_buffer), data_sz);
             decrypt_cb(decrypt_state, data, clear_buffer, n);
             clear = clear_buffer;
         }
@@ -189,7 +185,7 @@ static vpx_codec_err_t vp8_peek_si_internal(const uint8_t *data,
 
             /* vet via sync code */
             if (clear[3] != 0x9d || clear[4] != 0x01 || clear[5] != 0x2a)
-                res = VPX_CODEC_UNSUP_BITSTREAM;
+                return VPX_CODEC_UNSUP_BITSTREAM;
 
             si->w = (clear[6] | (clear[7] << 8)) & 0x3fff;
             si->h = (clear[8] | (clear[9] << 8)) & 0x3fff;
@@ -256,8 +252,8 @@ static void yuvconfig2image(vpx_image_t               *img,
     img->fmt = VPX_IMG_FMT_I420;
     img->w = yv12->y_stride;
     img->h = (yv12->y_height + 2 * VP8BORDERINPIXELS + 15) & ~15;
-    img->d_w = yv12->y_width;
-    img->d_h = yv12->y_height;
+    img->d_w = img->r_w = yv12->y_width;
+    img->d_h = img->r_h = yv12->y_height;
     img->x_chroma_shift = 1;
     img->y_chroma_shift = 1;
     img->planes[VPX_PLANE_Y] = yv12->y_buffer;
@@ -268,6 +264,7 @@ static void yuvconfig2image(vpx_image_t               *img,
     img->stride[VPX_PLANE_U] = yv12->uv_stride;
     img->stride[VPX_PLANE_V] = yv12->uv_stride;
     img->stride[VPX_PLANE_ALPHA] = yv12->y_stride;
+    img->bit_depth = 8;
     img->bps = 12;
     img->user_priv = user_priv;
     img->img_data = yv12->buffer_alloc;
@@ -286,8 +283,8 @@ update_fragments(vpx_codec_alg_priv_t  *ctx,
     if (ctx->fragments.count == 0)
     {
         /* New frame, reset fragment pointers and sizes */
-        vpx_memset((void*)ctx->fragments.ptrs, 0, sizeof(ctx->fragments.ptrs));
-        vpx_memset(ctx->fragments.sizes, 0, sizeof(ctx->fragments.sizes));
+        memset((void*)ctx->fragments.ptrs, 0, sizeof(ctx->fragments.ptrs));
+        memset(ctx->fragments.sizes, 0, sizeof(ctx->fragments.sizes));
     }
     if (ctx->fragments.enabled && !(data == NULL && data_sz == 0))
     {
@@ -303,6 +300,11 @@ update_fragments(vpx_codec_alg_priv_t  *ctx,
             *res = VPX_CODEC_INVALID_PARAM;
             return -1;
         }
+        return 0;
+    }
+
+    if (!ctx->fragments.enabled && (data == NULL && data_sz == 0))
+    {
         return 0;
     }
 
@@ -326,6 +328,10 @@ static vpx_codec_err_t vp8_decode(vpx_codec_alg_priv_t  *ctx,
     unsigned int resolution_change = 0;
     unsigned int w, h;
 
+    if (!ctx->fragments.enabled && (data == NULL && data_sz == 0))
+    {
+        return 0;
+    }
 
     /* Update the input fragment data */
     if(update_fragments(ctx, data, data_sz, &res) <= 0)
@@ -379,16 +385,21 @@ static vpx_codec_err_t vp8_decode(vpx_codec_alg_priv_t  *ctx,
        }
 
        res = vp8_create_decoder_instances(&ctx->yv12_frame_buffers, &oxcf);
-       ctx->yv12_frame_buffers.pbi[0]->decrypt_cb = ctx->decrypt_cb;
-       ctx->yv12_frame_buffers.pbi[0]->decrypt_state = ctx->decrypt_state;
-
        ctx->decoder_init = 1;
+    }
+
+    /* Set these even if already initialized.  The caller may have changed the
+     * decrypt config between frames.
+     */
+    if (ctx->decoder_init) {
+      ctx->yv12_frame_buffers.pbi[0]->decrypt_cb = ctx->decrypt_cb;
+      ctx->yv12_frame_buffers.pbi[0]->decrypt_state = ctx->decrypt_state;
     }
 
     if (!res)
     {
         VP8D_COMP *pbi = ctx->yv12_frame_buffers.pbi[0];
-        if(resolution_change)
+        if (resolution_change)
         {
             VP8_COMMON *const pc = & pbi->common;
             MACROBLOCKD *const xd  = & pbi->mb;
@@ -403,6 +414,7 @@ static vpx_codec_err_t vp8_decode(vpx_codec_alg_priv_t  *ctx,
                 if (setjmp(pbi->common.error.jmp))
                 {
                     pbi->common.error.setjmp = 0;
+                    vp8_clear_system_state();
                     /* same return value as used in vp8dx_receive_compressed_data */
                     return -1;
                 }
@@ -510,7 +522,8 @@ static vpx_image_t *vp8_get_frame(vpx_codec_alg_priv_t  *ctx,
     {
         YV12_BUFFER_CONFIG sd;
         int64_t time_stamp = 0, time_end_stamp = 0;
-        vp8_ppflags_t flags = {0};
+        vp8_ppflags_t flags;
+        vp8_zero(flags);
 
         if (ctx->base.init_flags & VPX_CODEC_USE_POSTPROC)
         {
@@ -549,17 +562,23 @@ static vpx_image_t *vp8_get_frame(vpx_codec_alg_priv_t  *ctx,
 static vpx_codec_err_t image2yuvconfig(const vpx_image_t   *img,
                                        YV12_BUFFER_CONFIG  *yv12)
 {
+    const int y_w = img->d_w;
+    const int y_h = img->d_h;
+    const int uv_w = (img->d_w + 1) / 2;
+    const int uv_h = (img->d_h + 1) / 2;
     vpx_codec_err_t        res = VPX_CODEC_OK;
     yv12->y_buffer = img->planes[VPX_PLANE_Y];
     yv12->u_buffer = img->planes[VPX_PLANE_U];
     yv12->v_buffer = img->planes[VPX_PLANE_V];
 
-    yv12->y_crop_width  = img->d_w;
-    yv12->y_crop_height = img->d_h;
-    yv12->y_width  = img->d_w;
-    yv12->y_height = img->d_h;
-    yv12->uv_width = yv12->y_width / 2;
-    yv12->uv_height = yv12->y_height / 2;
+    yv12->y_crop_width  = y_w;
+    yv12->y_crop_height = y_h;
+    yv12->y_width  = y_w;
+    yv12->y_height = y_h;
+    yv12->uv_crop_width = uv_w;
+    yv12->uv_crop_height = uv_h;
+    yv12->uv_width = uv_w;
+    yv12->uv_height = uv_h;
 
     yv12->y_stride = img->stride[VPX_PLANE_Y];
     yv12->uv_stride = img->stride[VPX_PLANE_U];
@@ -570,8 +589,7 @@ static vpx_codec_err_t image2yuvconfig(const vpx_image_t   *img,
 
 
 static vpx_codec_err_t vp8_set_reference(vpx_codec_alg_priv_t *ctx,
-        int ctr_id,
-        va_list args)
+                                         va_list args)
 {
 
     vpx_ref_frame_t *data = va_arg(args, vpx_ref_frame_t *);
@@ -592,8 +610,7 @@ static vpx_codec_err_t vp8_set_reference(vpx_codec_alg_priv_t *ctx,
 }
 
 static vpx_codec_err_t vp8_get_reference(vpx_codec_alg_priv_t *ctx,
-        int ctr_id,
-        va_list args)
+                                         va_list args)
 {
 
     vpx_ref_frame_t *data = va_arg(args, vpx_ref_frame_t *);
@@ -614,7 +631,6 @@ static vpx_codec_err_t vp8_get_reference(vpx_codec_alg_priv_t *ctx,
 }
 
 static vpx_codec_err_t vp8_set_postproc(vpx_codec_alg_priv_t *ctx,
-                                        int ctr_id,
                                         va_list args)
 {
 #if CONFIG_POSTPROC
@@ -630,35 +646,62 @@ static vpx_codec_err_t vp8_set_postproc(vpx_codec_alg_priv_t *ctx,
         return VPX_CODEC_INVALID_PARAM;
 
 #else
+    (void)ctx;
+    (void)args;
     return VPX_CODEC_INCAPABLE;
 #endif
 }
 
-static vpx_codec_err_t vp8_set_dbg_options(vpx_codec_alg_priv_t *ctx,
-                                        int ctrl_id,
-                                        va_list args)
-{
+
+static vpx_codec_err_t vp8_set_dbg_color_ref_frame(vpx_codec_alg_priv_t *ctx,
+                                                   va_list args) {
 #if CONFIG_POSTPROC_VISUALIZER && CONFIG_POSTPROC
-    int data = va_arg(args, int);
-
-#define MAP(id, var) case id: var = data; break;
-
-    switch (ctrl_id)
-    {
-        MAP (VP8_SET_DBG_COLOR_REF_FRAME,   ctx->dbg_color_ref_frame_flag);
-        MAP (VP8_SET_DBG_COLOR_MB_MODES,    ctx->dbg_color_mb_modes_flag);
-        MAP (VP8_SET_DBG_COLOR_B_MODES,     ctx->dbg_color_b_modes_flag);
-        MAP (VP8_SET_DBG_DISPLAY_MV,        ctx->dbg_display_mv_flag);
-    }
-
-    return VPX_CODEC_OK;
+  ctx->dbg_color_ref_frame_flag = va_arg(args, int);
+  return VPX_CODEC_OK;
 #else
-    return VPX_CODEC_INCAPABLE;
+  (void)ctx;
+  (void)args;
+  return VPX_CODEC_INCAPABLE;
+#endif
+}
+
+static vpx_codec_err_t vp8_set_dbg_color_mb_modes(vpx_codec_alg_priv_t *ctx,
+                                                  va_list args) {
+#if CONFIG_POSTPROC_VISUALIZER && CONFIG_POSTPROC
+  ctx->dbg_color_mb_modes_flag = va_arg(args, int);
+  return VPX_CODEC_OK;
+#else
+  (void)ctx;
+  (void)args;
+  return VPX_CODEC_INCAPABLE;
+#endif
+}
+
+static vpx_codec_err_t vp8_set_dbg_color_b_modes(vpx_codec_alg_priv_t *ctx,
+                                                 va_list args) {
+#if CONFIG_POSTPROC_VISUALIZER && CONFIG_POSTPROC
+  ctx->dbg_color_b_modes_flag = va_arg(args, int);
+  return VPX_CODEC_OK;
+#else
+  (void)ctx;
+  (void)args;
+  return VPX_CODEC_INCAPABLE;
+#endif
+}
+
+static vpx_codec_err_t vp8_set_dbg_display_mv(vpx_codec_alg_priv_t *ctx,
+                                              va_list args) {
+#if CONFIG_POSTPROC_VISUALIZER && CONFIG_POSTPROC
+  ctx->dbg_display_mv_flag = va_arg(args, int);
+  return VPX_CODEC_OK;
+#else
+  (void)ctx;
+  (void)args;
+  return VPX_CODEC_INCAPABLE;
 #endif
 }
 
 static vpx_codec_err_t vp8_get_last_ref_updates(vpx_codec_alg_priv_t *ctx,
-                                                int ctrl_id,
                                                 va_list args)
 {
     int *update_info = va_arg(args, int *);
@@ -679,7 +722,6 @@ static vpx_codec_err_t vp8_get_last_ref_updates(vpx_codec_alg_priv_t *ctx,
 
 extern int vp8dx_references_buffer( VP8_COMMON *oci, int ref_frame );
 static vpx_codec_err_t vp8_get_last_ref_frame(vpx_codec_alg_priv_t *ctx,
-                                              int ctrl_id,
                                               va_list args)
 {
     int *ref_info = va_arg(args, int *);
@@ -700,7 +742,6 @@ static vpx_codec_err_t vp8_get_last_ref_frame(vpx_codec_alg_priv_t *ctx,
 }
 
 static vpx_codec_err_t vp8_get_frame_corrupted(vpx_codec_alg_priv_t *ctx,
-                                               int ctrl_id,
                                                va_list args)
 {
 
@@ -709,8 +750,9 @@ static vpx_codec_err_t vp8_get_frame_corrupted(vpx_codec_alg_priv_t *ctx,
 
     if (corrupted && pbi)
     {
-        *corrupted = pbi->common.frame_to_show->corrupted;
-
+        const YV12_BUFFER_CONFIG *const frame = pbi->common.frame_to_show;
+        if (frame == NULL) return VPX_CODEC_ERROR;
+        *corrupted = frame->corrupted;
         return VPX_CODEC_OK;
     }
     else
@@ -719,10 +761,9 @@ static vpx_codec_err_t vp8_get_frame_corrupted(vpx_codec_alg_priv_t *ctx,
 }
 
 static vpx_codec_err_t vp8_set_decryptor(vpx_codec_alg_priv_t *ctx,
-                                         int ctrl_id,
                                          va_list args)
 {
-    vp8_decrypt_init *init = va_arg(args, vp8_decrypt_init *);
+    vpx_decrypt_init *init = va_arg(args, vpx_decrypt_init *);
 
     if (init)
     {
@@ -742,14 +783,14 @@ vpx_codec_ctrl_fn_map_t vp8_ctf_maps[] =
     {VP8_SET_REFERENCE,             vp8_set_reference},
     {VP8_COPY_REFERENCE,            vp8_get_reference},
     {VP8_SET_POSTPROC,              vp8_set_postproc},
-    {VP8_SET_DBG_COLOR_REF_FRAME,   vp8_set_dbg_options},
-    {VP8_SET_DBG_COLOR_MB_MODES,    vp8_set_dbg_options},
-    {VP8_SET_DBG_COLOR_B_MODES,     vp8_set_dbg_options},
-    {VP8_SET_DBG_DISPLAY_MV,        vp8_set_dbg_options},
+    {VP8_SET_DBG_COLOR_REF_FRAME,   vp8_set_dbg_color_ref_frame},
+    {VP8_SET_DBG_COLOR_MB_MODES,    vp8_set_dbg_color_mb_modes},
+    {VP8_SET_DBG_COLOR_B_MODES,     vp8_set_dbg_color_b_modes},
+    {VP8_SET_DBG_DISPLAY_MV,        vp8_set_dbg_display_mv},
     {VP8D_GET_LAST_REF_UPDATES,     vp8_get_last_ref_updates},
     {VP8D_GET_FRAME_CORRUPTED,      vp8_get_frame_corrupted},
     {VP8D_GET_LAST_REF_USED,        vp8_get_last_ref_frame},
-    {VP8D_SET_DECRYPTOR,            vp8_set_decryptor},
+    {VPXD_SET_DECRYPTOR,            vp8_set_decryptor},
     { -1, NULL},
 };
 
@@ -767,21 +808,21 @@ CODEC_INTERFACE(vpx_codec_vp8_dx) =
     vp8_init,         /* vpx_codec_init_fn_t       init; */
     vp8_destroy,      /* vpx_codec_destroy_fn_t    destroy; */
     vp8_ctf_maps,     /* vpx_codec_ctrl_fn_map_t  *ctrl_maps; */
-    NOT_IMPLEMENTED,  /* vpx_codec_get_mmap_fn_t   get_mmap; */
-    NOT_IMPLEMENTED,  /* vpx_codec_set_mmap_fn_t   set_mmap; */
     {
         vp8_peek_si,      /* vpx_codec_peek_si_fn_t    peek_si; */
         vp8_get_si,       /* vpx_codec_get_si_fn_t     get_si; */
         vp8_decode,       /* vpx_codec_decode_fn_t     decode; */
         vp8_get_frame,    /* vpx_codec_frame_get_fn_t  frame_get; */
-        NOT_IMPLEMENTED,
+        NULL,
     },
     { /* encoder functions */
-        NOT_IMPLEMENTED,
-        NOT_IMPLEMENTED,
-        NOT_IMPLEMENTED,
-        NOT_IMPLEMENTED,
-        NOT_IMPLEMENTED,
-        NOT_IMPLEMENTED
+        0,
+        NULL,  /* vpx_codec_enc_cfg_map_t */
+        NULL,  /* vpx_codec_encode_fn_t */
+        NULL,  /* vpx_codec_get_cx_data_fn_t */
+        NULL,  /* vpx_codec_enc_config_set_fn_t */
+        NULL,  /* vpx_codec_get_global_headers_fn_t */
+        NULL,  /* vpx_codec_get_preview_frame_fn_t */
+        NULL   /* vpx_codec_enc_mr_get_mem_loc_fn_t */
     }
 };

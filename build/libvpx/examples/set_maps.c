@@ -42,20 +42,20 @@
 // Use the `simple_decoder` example to decode this sample, and observe
 // the change in the image at frames 22, 33, and 44.
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define VPX_CODEC_DISABLE_COMPAT 1
 #include "vpx/vp8cx.h"
 #include "vpx/vpx_encoder.h"
 
-#include "./tools_common.h"
-#include "./video_writer.h"
+#include "../tools_common.h"
+#include "../video_writer.h"
 
 static const char *exec_name;
 
-void usage_exit() {
+void usage_exit(void) {
   fprintf(stderr, "Usage: %s <codec> <width> <height> <infile> <outfile>\n",
           exec_name);
   exit(EXIT_FAILURE);
@@ -64,7 +64,8 @@ void usage_exit() {
 static void set_roi_map(const vpx_codec_enc_cfg_t *cfg,
                         vpx_codec_ctx_t *codec) {
   unsigned int i;
-  vpx_roi_map_t roi = {0};
+  vpx_roi_map_t roi;
+  memset(&roi, 0, sizeof(roi));
 
   roi.rows = (cfg->g_h + 15) / 16;
   roi.cols = (cfg->g_w + 15) / 16;
@@ -97,7 +98,7 @@ static void set_roi_map(const vpx_codec_enc_cfg_t *cfg,
 static void set_active_map(const vpx_codec_enc_cfg_t *cfg,
                            vpx_codec_ctx_t *codec) {
   unsigned int i;
-  vpx_active_map_t map = {0};
+  vpx_active_map_t map = {0, 0, 0};
 
   map.rows = (cfg->g_h + 15) / 16;
   map.cols = (cfg->g_w + 15) / 16;
@@ -114,7 +115,7 @@ static void set_active_map(const vpx_codec_enc_cfg_t *cfg,
 
 static void unset_active_map(const vpx_codec_enc_cfg_t *cfg,
                              vpx_codec_ctx_t *codec) {
-  vpx_active_map_t map = {0};
+  vpx_active_map_t map = {0, 0, 0};
 
   map.rows = (cfg->g_h + 15) / 16;
   map.cols = (cfg->g_w + 15) / 16;
@@ -124,10 +125,11 @@ static void unset_active_map(const vpx_codec_enc_cfg_t *cfg,
     die_codec(codec, "Failed to set active map");
 }
 
-static void encode_frame(vpx_codec_ctx_t *codec,
-                         vpx_image_t *img,
-                         int frame_index,
-                         VpxVideoWriter *writer) {
+static int encode_frame(vpx_codec_ctx_t *codec,
+                        vpx_image_t *img,
+                        int frame_index,
+                        VpxVideoWriter *writer) {
+  int got_pkts = 0;
   vpx_codec_iter_t iter = NULL;
   const vpx_codec_cx_pkt_t *pkt = NULL;
   const vpx_codec_err_t res = vpx_codec_encode(codec, img, frame_index, 1, 0,
@@ -136,6 +138,8 @@ static void encode_frame(vpx_codec_ctx_t *codec,
     die_codec(codec, "Failed to encode frame");
 
   while ((pkt = vpx_codec_get_cx_data(codec, &iter)) != NULL) {
+    got_pkts = 1;
+
     if (pkt->kind == VPX_CODEC_CX_FRAME_PKT) {
       const int keyframe = (pkt->data.frame.flags & VPX_FRAME_IS_KEY) != 0;
       if (!vpx_video_writer_write_frame(writer,
@@ -149,30 +153,34 @@ static void encode_frame(vpx_codec_ctx_t *codec,
       fflush(stdout);
     }
   }
+
+  return got_pkts;
 }
 
 int main(int argc, char **argv) {
   FILE *infile = NULL;
-  vpx_codec_ctx_t codec = {0};
-  vpx_codec_enc_cfg_t cfg = {0};
+  vpx_codec_ctx_t codec;
+  vpx_codec_enc_cfg_t cfg;
   int frame_count = 0;
-  vpx_image_t raw = {0};
+  vpx_image_t raw;
   vpx_codec_err_t res;
-  VpxVideoInfo info = {0};
+  VpxVideoInfo info;
   VpxVideoWriter *writer = NULL;
   const VpxInterface *encoder = NULL;
   const int fps = 2;        // TODO(dkovalev) add command line argument
   const double bits_per_pixel_per_frame = 0.067;
 
   exec_name = argv[0];
-
   if (argc != 6)
     die("Invalid number of arguments");
 
-  encoder = get_vpx_encoder_by_name(argv[1]);
-  if (!encoder)
-    die("Unsupported codec.");
+  memset(&info, 0, sizeof(info));
 
+  encoder = get_vpx_encoder_by_name(argv[1]);
+  if (encoder == NULL) {
+    die("Unsupported codec.");
+  }
+  assert(encoder != NULL);
   info.codec_fourcc = encoder->fourcc;
   info.frame_width = strtol(argv[2], NULL, 0);
   info.frame_height = strtol(argv[3], NULL, 0);
@@ -191,9 +199,9 @@ int main(int argc, char **argv) {
     die("Failed to allocate image.");
   }
 
-  printf("Using %s\n", vpx_codec_iface_name(encoder->interface()));
+  printf("Using %s\n", vpx_codec_iface_name(encoder->codec_interface()));
 
-  res = vpx_codec_enc_config_default(encoder->interface(), &cfg, 0);
+  res = vpx_codec_enc_config_default(encoder->codec_interface(), &cfg, 0);
   if (res)
     die_codec(&codec, "Failed to get default codec config.");
 
@@ -212,9 +220,10 @@ int main(int argc, char **argv) {
   if (!(infile = fopen(argv[4], "rb")))
     die("Failed to open %s for reading.", argv[4]);
 
-  if (vpx_codec_enc_init(&codec, encoder->interface(), &cfg, 0))
+  if (vpx_codec_enc_init(&codec, encoder->codec_interface(), &cfg, 0))
     die_codec(&codec, "Failed to initialize encoder");
 
+  // Encode frames.
   while (vpx_img_read(&raw, infile)) {
     ++frame_count;
 
@@ -228,7 +237,10 @@ int main(int argc, char **argv) {
 
     encode_frame(&codec, &raw, frame_count, writer);
   }
-  encode_frame(&codec, NULL, -1, writer);
+
+  // Flush encoder.
+  while (encode_frame(&codec, NULL, -1, writer)) {}
+
   printf("\n");
   fclose(infile);
   printf("Processed %d frames.\n", frame_count);

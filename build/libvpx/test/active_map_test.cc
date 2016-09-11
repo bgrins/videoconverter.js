@@ -38,7 +38,7 @@ class ActiveMapTest
     if (video->frame() == 1) {
       encoder->Control(VP8E_SET_CPUUSED, cpu_used_);
     } else if (video->frame() == 3) {
-      vpx_active_map_t map = {0};
+      vpx_active_map_t map = vpx_active_map_t();
       uint8_t active_map[9 * 13] = {
         1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0,
         1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0,
@@ -57,7 +57,7 @@ class ActiveMapTest
       map.active_map = active_map;
       encoder->Control(VP8E_SET_ACTIVEMAP, &map);
     } else if (video->frame() == 15) {
-      vpx_active_map_t map = {0};
+      vpx_active_map_t map = vpx_active_map_t();
       map.cols = (kWidth + 15) / 16;
       map.rows = (kHeight + 15) / 16;
       map.active_map = NULL;
@@ -83,10 +83,7 @@ TEST_P(ActiveMapTest, Test) {
   ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
 }
 
-#define VP9_FACTORY \
-  static_cast<const libvpx_test::CodecFactory *>(&libvpx_test::kVP9)
-
 VP9_INSTANTIATE_TEST_CASE(ActiveMapTest,
                           ::testing::Values(::libvpx_test::kRealTime),
-                          ::testing::Range(0, 6));
+                          ::testing::Range(0, 9));
 }  // namespace

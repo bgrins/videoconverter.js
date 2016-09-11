@@ -1,7 +1,7 @@
 /*****************************************************************************
  * predict.c: arm intra prediction
  *****************************************************************************
- * Copyright (C) 2009-2014 x264 project
+ * Copyright (C) 2009-2016 x264 project
  *
  * Authors: David Conrad <lessen42@gmail.com>
  *
@@ -58,6 +58,19 @@ void x264_predict_8x8c_init_arm( int cpu, x264_predict_t pf[7] )
     pf[I_PRED_CHROMA_H] = x264_predict_8x8c_h_neon;
     pf[I_PRED_CHROMA_V] = x264_predict_8x8c_v_neon;
     pf[I_PRED_CHROMA_P] = x264_predict_8x8c_p_neon;
+#endif // !HIGH_BIT_DEPTH
+}
+
+void x264_predict_8x16c_init_arm( int cpu, x264_predict_t pf[7] )
+{
+    if (!(cpu&X264_CPU_NEON))
+        return;
+
+#if !HIGH_BIT_DEPTH
+    /* The other functions weren't faster than C (gcc 4.7.3) on Cortex A8 and A9. */
+    pf[I_PRED_CHROMA_DC_TOP]  = x264_predict_8x16c_dc_top_neon;
+    pf[I_PRED_CHROMA_H]       = x264_predict_8x16c_h_neon;
+    pf[I_PRED_CHROMA_P]       = x264_predict_8x16c_p_neon;
 #endif // !HIGH_BIT_DEPTH
 }
 

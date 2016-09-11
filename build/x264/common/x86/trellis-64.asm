@@ -1,7 +1,7 @@
 ;*****************************************************************************
 ;* trellis-64.asm: x86_64 trellis quantization
 ;*****************************************************************************
-;* Copyright (C) 2012-2014 x264 project
+;* Copyright (C) 2012-2016 x264 project
 ;*
 ;* Authors: Loren Merritt <lorenm@u.washington.edu>
 ;*

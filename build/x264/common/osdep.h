@@ -1,7 +1,7 @@
 /*****************************************************************************
  * osdep.h: platform-specific code
  *****************************************************************************
- * Copyright (C) 2007-2014 x264 project
+ * Copyright (C) 2007-2016 x264 project
  *
  * Authors: Loren Merritt <lorenm@u.washington.edu>
  *          Laurent Aimar <fenrir@via.ecp.fr>
@@ -48,17 +48,24 @@
 #define log2(x) (log(x)/0.693147180559945)
 #endif
 
-#ifdef __ICL
+#ifdef _MSC_VER
 #define inline __inline
 #define strcasecmp _stricmp
 #define strncasecmp _strnicmp
-#define snprintf _snprintf
 #define strtok_r strtok_s
 #define S_ISREG(x) (((x) & S_IFMT) == S_IFREG)
+#if _MSC_VER < 1900
+int x264_snprintf( char *s, size_t n, const char *fmt, ... );
+int x264_vsnprintf( char *s, size_t n, const char *fmt, va_list arg );
+#define snprintf  x264_snprintf
+#define vsnprintf x264_vsnprintf
+#endif
+#else
+#include <strings.h>
 #endif
 
-#if (defined(__GNUC__) || defined(__INTEL_COMPILER)) && (ARCH_X86 || ARCH_X86_64)
-#define HAVE_X86_INLINE_ASM 1
+#if !defined(va_copy) && defined(__INTEL_COMPILER)
+#define va_copy(dst, src) ((dst) = (src))
 #endif
 
 #if !defined(isfinite) && (SYS_OPENBSD || SYS_SunOS)
@@ -77,19 +84,23 @@ int x264_rename( const char *oldname, const char *newname );
 #define x264_struct_stat struct _stati64
 #define x264_fstat _fstati64
 int x264_stat( const char *path, x264_struct_stat *buf );
-int x264_vfprintf( FILE *stream, const char *format, va_list arg );
-int x264_is_pipe( const char *path );
 #else
 #define x264_fopen       fopen
 #define x264_rename      rename
 #define x264_struct_stat struct stat
 #define x264_fstat       fstat
 #define x264_stat        stat
-#define x264_vfprintf    vfprintf
-#define x264_is_pipe(x)  0
 #endif
 
-#ifdef __ICL
+#if defined(_WIN32) && !HAVE_WINRT
+int x264_vfprintf( FILE *stream, const char *format, va_list arg );
+int x264_is_pipe( const char *path );
+#else
+#define x264_vfprintf vfprintf
+#define x264_is_pipe(x) 0
+#endif
+
+#ifdef _MSC_VER
 #define DECLARE_ALIGNED( var, n ) __declspec(align(n)) var
 #else
 #define DECLARE_ALIGNED( var, n ) var __attribute__((aligned(n)))
@@ -146,8 +157,6 @@ int x264_is_pipe( const char *path );
 #define ALIGNED_ARRAY_N ALIGNED_ARRAY_16
 #endif
 
-#define UNINIT(x) x=x
-
 #if defined(__GNUC__) && (__GNUC__ > 3 || __GNUC__ == 3 && __GNUC_MINOR__ > 0)
 #define UNUSED __attribute__((unused))
 #define ALWAYS_INLINE __attribute__((always_inline)) inline
@@ -156,7 +165,7 @@ int x264_is_pipe( const char *path );
 #define x264_constant_p(x) __builtin_constant_p(x)
 #define x264_nonconstant_p(x) (!__builtin_constant_p(x))
 #else
-#ifdef __ICL
+#ifdef _MSC_VER
 #define ALWAYS_INLINE __forceinline
 #define NOINLINE __declspec(noinline)
 #else
@@ -369,6 +378,10 @@ static ALWAYS_INLINE void x264_prefetch( void *p )
     sp.sched_priority -= p;\
     pthread_setschedparam( handle, policy, &sp );\
 }
+#elif SYS_HAIKU
+#include <OS.h>
+#define x264_lower_thread_priority(p)\
+    { UNUSED status_t nice_ret = set_thread_priority( find_thread( NULL ), B_LOW_PRIORITY ); }
 #else
 #include <unistd.h>
 #define x264_lower_thread_priority(p) { UNUSED int nice_ret = nice(p); }

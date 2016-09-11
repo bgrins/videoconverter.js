@@ -25,18 +25,22 @@ Advanced options:
   ${toggle_docs}                  documentation
   ${toggle_unit_tests}            unit tests
   ${toggle_decode_perf_tests}     build decoder perf tests with unit tests
+  ${toggle_encode_perf_tests}     build encoder perf tests with unit tests
+  --cpu=CPU                       tune for the specified CPU (ARM: cortex-a8, X86: sse3)
   --libc=PATH                     path to alternate libc
+  --size-limit=WxH                max size to allow in the decoder
   --as={yasm|nasm|auto}           use specified assembler [auto, yasm preferred]
   --sdk-path=PATH                 path to root of sdk (android builds only)
-  ${toggle_fast_unaligned}        don't use unaligned accesses, even when
-                                  supported by hardware [auto]
   ${toggle_codec_srcs}            in/exclude codec library source code
   ${toggle_debug_libs}            in/exclude debug version of libraries
   ${toggle_static_msvcrt}         use static MSVCRT (VS builds only)
+  ${toggle_vp9_highbitdepth}      use VP9 high bit depth (10/12) profiles
+  ${toggle_better_hw_compatibility}
+                                  enable encoder to produce streams with better
+                                  hardware decoder compatibility
   ${toggle_vp8}                   VP8 codec support
   ${toggle_vp9}                   VP9 codec support
   ${toggle_internal_stats}        output of encoder internal stats for debug, if supported (encoders)
-  ${toggle_mem_tracker}           track memory usage
   ${toggle_postproc}              postprocessing
   ${toggle_vp9_postproc}          vp9 specific postprocessing
   ${toggle_multithread}           multithreaded encoding and decoding
@@ -44,6 +48,9 @@ Advanced options:
   ${toggle_realtime_only}         enable this option while building for real-time encoding
   ${toggle_onthefly_bitpacking}   enable on-the-fly bitpacking in real-time encoding
   ${toggle_error_concealment}     enable this option to get a decoder which is able to conceal losses
+  ${toggle_coefficient_range_checking}
+                                  enable decoder to check if intermediate
+                                  transform coefficients are in valid range
   ${toggle_runtime_cpu_detect}    runtime cpu detection
   ${toggle_shared}                shared library support
   ${toggle_static}                static library support
@@ -51,7 +58,10 @@ Advanced options:
   ${toggle_postproc_visualizer}   macro block / block level visualizers
   ${toggle_multi_res_encoding}    enable multiple-resolution encoding
   ${toggle_temporal_denoising}    enable temporal denoising and disable the spatial denoiser
+  ${toggle_vp9_temporal_denoising}
+                                  enable vp9 temporal denoising
   ${toggle_webm_io}               enable input from and output to WebM container
+  ${toggle_libyuv}                enable libyuv
 
 Codecs:
   Codecs can be selectively enabled or disabled individually, or by family:
@@ -64,10 +74,10 @@ Codecs:
 EOF
 #restore editor state '
 
-    local family;
-    local last_family;
-    local c;
-    local str;
+    family="";
+    last_family="";
+    c="";
+    str="";
     for c in ${CODECS}; do
         family=${c%_*}
         if [ "${family}" != "${last_family}" ]; then
@@ -87,11 +97,8 @@ EOF
 
 # all_platforms is a list of all supported target platforms. Maintain
 # alphabetically by architecture, generic-gnu last.
-all_platforms="${all_platforms} armv5te-android-gcc"
-all_platforms="${all_platforms} armv5te-linux-rvct"
-all_platforms="${all_platforms} armv5te-linux-gcc"
-all_platforms="${all_platforms} armv5te-none-rvct"
-all_platforms="${all_platforms} armv6-darwin-gcc"
+all_platforms="${all_platforms} arm64-darwin-gcc"
+all_platforms="${all_platforms} arm64-linux-gcc"
 all_platforms="${all_platforms} armv6-linux-rvct"
 all_platforms="${all_platforms} armv6-linux-gcc"
 all_platforms="${all_platforms} armv6-none-rvct"
@@ -102,13 +109,11 @@ all_platforms="${all_platforms} armv7-linux-gcc"     #neon Cortex-A8
 all_platforms="${all_platforms} armv7-none-rvct"     #neon Cortex-A8
 all_platforms="${all_platforms} armv7-win32-vs11"
 all_platforms="${all_platforms} armv7-win32-vs12"
+all_platforms="${all_platforms} armv7-win32-vs14"
+all_platforms="${all_platforms} armv7s-darwin-gcc"
+all_platforms="${all_platforms} armv8-linux-gcc"
 all_platforms="${all_platforms} mips32-linux-gcc"
-all_platforms="${all_platforms} ppc32-darwin8-gcc"
-all_platforms="${all_platforms} ppc32-darwin9-gcc"
-all_platforms="${all_platforms} ppc32-linux-gcc"
-all_platforms="${all_platforms} ppc64-darwin8-gcc"
-all_platforms="${all_platforms} ppc64-darwin9-gcc"
-all_platforms="${all_platforms} ppc64-linux-gcc"
+all_platforms="${all_platforms} mips64-linux-gcc"
 all_platforms="${all_platforms} sparc-solaris-gcc"
 all_platforms="${all_platforms} x86-android-gcc"
 all_platforms="${all_platforms} x86-darwin8-gcc"
@@ -119,6 +124,9 @@ all_platforms="${all_platforms} x86-darwin10-gcc"
 all_platforms="${all_platforms} x86-darwin11-gcc"
 all_platforms="${all_platforms} x86-darwin12-gcc"
 all_platforms="${all_platforms} x86-darwin13-gcc"
+all_platforms="${all_platforms} x86-darwin14-gcc"
+all_platforms="${all_platforms} x86-darwin15-gcc"
+all_platforms="${all_platforms} x86-iphonesimulator-gcc"
 all_platforms="${all_platforms} x86-linux-gcc"
 all_platforms="${all_platforms} x86-linux-icc"
 all_platforms="${all_platforms} x86-os2-gcc"
@@ -130,11 +138,16 @@ all_platforms="${all_platforms} x86-win32-vs9"
 all_platforms="${all_platforms} x86-win32-vs10"
 all_platforms="${all_platforms} x86-win32-vs11"
 all_platforms="${all_platforms} x86-win32-vs12"
+all_platforms="${all_platforms} x86-win32-vs14"
+all_platforms="${all_platforms} x86_64-android-gcc"
 all_platforms="${all_platforms} x86_64-darwin9-gcc"
 all_platforms="${all_platforms} x86_64-darwin10-gcc"
 all_platforms="${all_platforms} x86_64-darwin11-gcc"
 all_platforms="${all_platforms} x86_64-darwin12-gcc"
 all_platforms="${all_platforms} x86_64-darwin13-gcc"
+all_platforms="${all_platforms} x86_64-darwin14-gcc"
+all_platforms="${all_platforms} x86_64-darwin15-gcc"
+all_platforms="${all_platforms} x86_64-iphonesimulator-gcc"
 all_platforms="${all_platforms} x86_64-linux-gcc"
 all_platforms="${all_platforms} x86_64-linux-icc"
 all_platforms="${all_platforms} x86_64-solaris-gcc"
@@ -144,12 +157,7 @@ all_platforms="${all_platforms} x86_64-win64-vs9"
 all_platforms="${all_platforms} x86_64-win64-vs10"
 all_platforms="${all_platforms} x86_64-win64-vs11"
 all_platforms="${all_platforms} x86_64-win64-vs12"
-all_platforms="${all_platforms} universal-darwin8-gcc"
-all_platforms="${all_platforms} universal-darwin9-gcc"
-all_platforms="${all_platforms} universal-darwin10-gcc"
-all_platforms="${all_platforms} universal-darwin11-gcc"
-all_platforms="${all_platforms} universal-darwin12-gcc"
-all_platforms="${all_platforms} universal-darwin13-gcc"
+all_platforms="${all_platforms} x86_64-win64-vs14"
 all_platforms="${all_platforms} generic-gnu"
 
 # all_targets is a list of all targets that can be configured
@@ -158,7 +166,7 @@ all_targets="libs examples docs"
 
 # all targets available are enabled, by default.
 for t in ${all_targets}; do
-    [ -f ${source_path}/${t}.mk ] && enable_feature ${t}
+    [ -f "${source_path}/${t}.mk" ] && enable_feature ${t}
 done
 
 if ! perl --version >/dev/null; then
@@ -166,9 +174,9 @@ if ! perl --version >/dev/null; then
 fi
 
 
-if [ "`cd ${source_path} && pwd`" != "`pwd`" ]; then
+if [ "`cd \"${source_path}\" && pwd`" != "`pwd`" ]; then
   # test to see if source_path already configured
-  if [ -f ${source_path}/vpx_config.h ]; then
+  if [ -f "${source_path}/vpx_config.h" ]; then
     die "source directory already configured; run 'make distclean' there first"
   fi
 fi
@@ -186,63 +194,43 @@ if [ ${doxy_major:-0} -ge 1 ]; then
     [ $doxy_minor -eq 5 ] && [ $doxy_patch -ge 3 ] && enable_feature doxygen
 fi
 
+# disable codecs when their source directory does not exist
+[ -d "${source_path}/vp8" ] || disable_codec vp8
+[ -d "${source_path}/vp9" ] || disable_codec vp9
+
 # install everything except the sources, by default. sources will have
 # to be enabled when doing dist builds, since that's no longer a common
 # case.
-enabled doxygen && php -v >/dev/null 2>&1 && enable_feature install_docs
+enabled doxygen && enable_feature install_docs
 enable_feature install_bins
 enable_feature install_libs
 
 enable_feature static
 enable_feature optimizations
-enable_feature fast_unaligned #allow unaligned accesses, if supported by hw
+enable_feature dependency_tracking
 enable_feature spatial_resampling
 enable_feature multithread
 enable_feature os_support
 enable_feature temporal_denoising
 
-[ -d ${source_path}/../include ] && enable_feature alt_tree_layout
-for d in vp8 vp9; do
-    [ -d ${source_path}/${d} ] && disable_feature alt_tree_layout;
-done
-
-if ! enabled alt_tree_layout; then
-# development environment
-[ -d ${source_path}/vp8 ] && CODECS="${CODECS} vp8_encoder vp8_decoder"
-[ -d ${source_path}/vp9 ] && CODECS="${CODECS} vp9_encoder vp9_decoder"
-else
-# customer environment
-[ -f ${source_path}/../include/vpx/vp8cx.h ] && CODECS="${CODECS} vp8_encoder"
-[ -f ${source_path}/../include/vpx/vp8dx.h ] && CODECS="${CODECS} vp8_decoder"
-[ -f ${source_path}/../include/vpx/vp9cx.h ] && CODECS="${CODECS} vp9_encoder"
-[ -f ${source_path}/../include/vpx/vp9dx.h ] && CODECS="${CODECS} vp9_decoder"
-[ -f ${source_path}/../include/vpx/vp8cx.h ] || disable_feature vp8_encoder
-[ -f ${source_path}/../include/vpx/vp8dx.h ] || disable_feature vp8_decoder
-[ -f ${source_path}/../include/vpx/vp9cx.h ] || disable_feature vp9_encoder
-[ -f ${source_path}/../include/vpx/vp9dx.h ] || disable_feature vp9_decoder
-
-[ -f ${source_path}/../lib/*/*mt.lib ] && soft_enable static_msvcrt
-fi
-
-CODECS="$(echo ${CODECS} | tr ' ' '\n')"
-CODEC_FAMILIES="$(for c in ${CODECS}; do echo ${c%_*}; done | sort | uniq)"
+CODECS="
+    vp8_encoder
+    vp8_decoder
+    vp9_encoder
+    vp9_decoder
+"
+CODEC_FAMILIES="
+    vp8
+    vp9
+"
 
 ARCH_LIST="
     arm
     mips
     x86
     x86_64
-    ppc32
-    ppc64
 "
-ARCH_EXT_LIST="
-    edsp
-    media
-    neon
-
-    mips32
-    dspr2
-
+ARCH_EXT_LIST_X86="
     mmx
     sse
     sse2
@@ -251,23 +239,34 @@ ARCH_EXT_LIST="
     sse4_1
     avx
     avx2
+"
+ARCH_EXT_LIST="
+    edsp
+    media
+    neon
+    neon_asm
 
-    altivec
+    mips32
+    dspr2
+    msa
+    mips64
+
+    ${ARCH_EXT_LIST_X86}
 "
 HAVE_LIST="
     ${ARCH_EXT_LIST}
     vpx_ports
-    stdint_h
-    alt_tree_layout
     pthread_h
-    sys_mman_h
     unistd_h
 "
 EXPERIMENT_LIST="
-    multiple_arf
-    alpha
+    spatial_svc
+    fp_mb_stats
+    emulate_hardware
+    misc_fixes
 "
 CONFIG_LIST="
+    dependency_tracking
     external_build
     install_docs
     install_bins
@@ -285,10 +284,6 @@ CONFIG_LIST="
 
     codec_srcs
     debug_libs
-    fast_unaligned
-    mem_manager
-    mem_tracker
-    mem_checks
 
     dequant_tokens
     dc_recon
@@ -313,14 +308,21 @@ CONFIG_LIST="
     os_support
     unit_tests
     webm_io
+    libyuv
     decode_perf_tests
+    encode_perf_tests
     multi_res_encoding
     temporal_denoising
+    vp9_temporal_denoising
+    coefficient_range_checking
+    vp9_highbitdepth
+    better_hw_compatibility
     experimental
-    decrypt
+    size_limit
     ${EXPERIMENT_LIST}
 "
 CMDLINE_SELECT="
+    dependency_tracking
     external_build
     extra_warnings
     werror
@@ -343,7 +345,7 @@ CMDLINE_SELECT="
     docs
     libc
     as
-    fast_unaligned
+    size_limit
     codec_srcs
     debug_libs
 
@@ -356,7 +358,6 @@ CMDLINE_SELECT="
     ${CODECS}
     ${CODEC_FAMILIES}
     static_msvcrt
-    mem_tracker
     spatial_resampling
     realtime_only
     onthefly_bitpacking
@@ -367,26 +368,35 @@ CMDLINE_SELECT="
     postproc_visualizer
     unit_tests
     webm_io
+    libyuv
     decode_perf_tests
+    encode_perf_tests
     multi_res_encoding
     temporal_denoising
+    vp9_temporal_denoising
+    coefficient_range_checking
+    better_hw_compatibility
+    vp9_highbitdepth
     experimental
-    decrypt
 "
 
 process_cmdline() {
     for opt do
         optval="${opt#*=}"
         case "$opt" in
-        --disable-codecs) for c in ${CODECS}; do disable_feature $c; done ;;
+        --disable-codecs)
+          for c in ${CODEC_FAMILIES}; do disable_codec $c; done
+          ;;
         --enable-?*|--disable-?*)
         eval `echo "$opt" | sed 's/--/action=/;s/-/ option=/;s/-/_/g'`
-        if echo "${EXPERIMENT_LIST}" | grep "^ *$option\$" >/dev/null; then
+        if is_in ${option} ${EXPERIMENT_LIST}; then
             if enabled experimental; then
                 ${action}_feature $option
             else
                 log_echo "Ignoring $opt -- not in experimental mode."
             fi
+        elif is_in ${option} "${CODECS} ${CODEC_FAMILIES}"; then
+            ${action}_codec ${option}
         else
             process_common_cmdline $opt
         fi
@@ -398,15 +408,7 @@ process_cmdline() {
 }
 
 post_process_cmdline() {
-    local c
-
-    # If the codec family is disabled, disable all components of that family.
-    # If the codec family is enabled, enable all components of that family.
-    log_echo "Configuring selected codecs"
-    for c in ${CODECS}; do
-        disabled ${c%%_*} && disable_feature ${c}
-        enabled ${c%%_*} && enable_feature ${c}
-    done
+    c=""
 
     # Enable all detected codecs, if they haven't been disabled
     for c in ${CODECS}; do soft_enable $c; done
@@ -425,28 +427,12 @@ post_process_cmdline() {
 
 process_targets() {
     enabled child || write_common_config_banner
-    enabled universal || write_common_target_config_h  ${BUILD_PFX}vpx_config.h
-
-    # TODO: add host tools target (obj_int_extract, etc)
-
-    # For fat binaries, call configure recursively to configure for each
-    # binary architecture to be included.
-    if enabled universal; then
-        # Call configure (ourselves) for each subarchitecture
-        for arch in $fat_bin_archs; do
-            BUILD_PFX=${arch}/ toolchain=${arch} $self --child $cmdline_args || exit $?
-        done
-    fi
-
-    # The write_common_config (config.mk) logic is deferred until after the
-    # recursive calls to configure complete, because we want our universal
-    # targets to be executed last.
+    write_common_target_config_h ${BUILD_PFX}vpx_config.h
     write_common_config_targets
-    enabled universal && echo "FAT_ARCHS=${fat_bin_archs}" >> config.mk
 
     # Calculate the default distribution name, based on the enabled features
-    local cf
-    local DIST_DIR=vpx
+    cf=""
+    DIST_DIR=vpx
     for cf in $CODEC_FAMILIES; do
         if enabled ${cf}_encoder && enabled ${cf}_decoder; then
             DIST_DIR="${DIST_DIR}-${cf}"
@@ -468,7 +454,7 @@ process_targets() {
           ;;
     esac
     if [ -f "${source_path}/build/make/version.sh" ]; then
-        local ver=`"$source_path/build/make/version.sh" --bare $source_path`
+        ver=`"$source_path/build/make/version.sh" --bare "$source_path"`
         DIST_DIR="${DIST_DIR}-${ver}"
         VERSION_STRING=${ver}
         ver=${ver%%-*}
@@ -502,7 +488,7 @@ EOF
     # Write makefiles for all enabled targets
     #
     for tgt in libs examples docs solution; do
-        local tgt_fn="$tgt-$toolchain.mk"
+        tgt_fn="$tgt-$toolchain.mk"
 
         if enabled $tgt; then
             echo "Creating makefiles for ${toolchain} ${tgt}"
@@ -518,13 +504,18 @@ process_detect() {
         # Can only build shared libs on a subset of platforms. Doing this check
         # here rather than at option parse time because the target auto-detect
         # magic happens after the command line has been parsed.
-        if ! enabled linux; then
+        case "${tgt_os}" in
+        linux|os2|darwin*|iphonesimulator*)
+            # Supported platforms
+            ;;
+        *)
             if enabled gnu; then
                 echo "--enable-shared is only supported on ELF; assuming this is OK"
             else
-                die "--enable-shared only supported on ELF for now"
+                die "--enable-shared only supported on ELF, OS/2, and Darwin for now"
             fi
-        fi
+            ;;
+        esac
     fi
     if [ -z "$CC" ] || enabled external_build; then
         echo "Bypassing toolchain for environment detection."
@@ -541,7 +532,7 @@ process_detect() {
                     true;
                 ;;
                 *)
-                    local result=false
+                    result=false
                     for d in "$@"; do
                         [ -f "${d##-I}/$header" ] && result=true && break
                     done
@@ -551,16 +542,12 @@ process_detect() {
             # Specialize windows and POSIX environments.
             case $toolchain in
                 *-win*-*)
-                    case $header-$toolchain in
-                        stdint*-gcc) true;;
-                        *) false;;
-                    esac && enable_feature $var
-                    ;;
+                    # Don't check for any headers in Windows builds.
+                    false
+                ;;
                 *)
                     case $header in
-                        stdint.h) true;;
                         pthread.h) true;;
-                        sys/mman.h) true;;
                         unistd.h) true;;
                         *) false;;
                     esac && enable_feature $var
@@ -576,9 +563,7 @@ process_detect() {
 int main(void) {return 0;}
 EOF
     # check system headers
-    check_header stdint.h
     check_header pthread.h
-    check_header sys/mman.h
     check_header unistd.h # for sysconf(3) and friends.
 
     check_header vpx/vpx_integer.h -I${source_path} && enable_feature vpx_ports
@@ -586,30 +571,6 @@ EOF
 
 process_toolchain() {
     process_common_toolchain
-
-    # Handle universal binaries for this architecture
-    case $toolchain in
-        universal-darwin*)
-            local darwin_ver=${tgt_os##darwin}
-
-            # Snow Leopard (10.6/darwin10) dropped support for PPC
-            # Include PPC support for all prior versions
-            if [ $darwin_ver -lt 10 ]; then
-                fat_bin_archs="$fat_bin_archs ppc32-${tgt_os}-gcc"
-            fi
-
-            # Tiger (10.4/darwin8) brought support for x86
-            if [ $darwin_ver -ge 8 ]; then
-                fat_bin_archs="$fat_bin_archs x86-${tgt_os}-${tgt_cc}"
-            fi
-
-            # Leopard (10.5/darwin9) brought 64 bit support
-            if [ $darwin_ver -ge 9 ]; then
-                fat_bin_archs="$fat_bin_archs x86_64-${tgt_os}-${tgt_cc}"
-            fi
-            ;;
-    esac
-
 
     # Enable some useful compiler flags
     if enabled gcc; then
@@ -633,7 +594,11 @@ process_toolchain() {
           ;;
           *) check_add_cflags -Wunused-but-set-variable ;;
         esac
-        enabled extra_warnings || check_add_cflags -Wno-unused-function
+        if enabled mips || [ -z "${INLINE}" ]; then
+          enabled extra_warnings || check_add_cflags -Wno-unused-function
+        else
+          check_add_cflags -Wunused-function
+        fi
     fi
 
     if enabled icc; then
@@ -686,7 +651,7 @@ process_toolchain() {
                  VCPROJ_SFX=vcproj
                  gen_vcproj_cmd=${source_path}/build/make/gen_msvs_proj.sh
                  ;;
-             10|11|12)
+             10|11|12|14)
                  VCPROJ_SFX=vcxproj
                  gen_vcproj_cmd=${source_path}/build/make/gen_msvs_vcxproj.sh
                  enabled werror && gen_vcproj_cmd="${gen_vcproj_cmd} --enable-werror"
@@ -698,7 +663,7 @@ process_toolchain() {
     esac
 
     # Other toolchain specific defaults
-    case $toolchain in x86*|ppc*|universal*) soft_enable postproc;; esac
+    case $toolchain in x86*) soft_enable postproc;; esac
 
     if enabled postproc_visualizer; then
         enabled postproc || die "postproc_visualizer requires postproc to be enabled"
@@ -709,13 +674,20 @@ process_toolchain() {
         *-vs*)
             soft_enable unit_tests
             soft_enable webm_io
+            soft_enable libyuv
         ;;
         *-android-*)
+            soft_enable webm_io
+            soft_enable libyuv
             # GTestLog must be modified to use Android logging utilities.
         ;;
         *-darwin-*)
             # iOS/ARM builds do not work with gtest. This does not match
             # x86 targets.
+        ;;
+        *-iphonesimulator-*)
+            soft_enable webm_io
+            soft_enable libyuv
         ;;
         *-win*)
             # Some mingw toolchains don't have pthread available by default.
@@ -727,6 +699,9 @@ EOF
             check_cxx "$@" <<EOF && soft_enable webm_io
 int z;
 EOF
+            check_cxx "$@" <<EOF && soft_enable libyuv
+int z;
+EOF
         ;;
         *)
             enabled pthread_h && check_cxx "$@" <<EOF && soft_enable unit_tests
@@ -735,10 +710,23 @@ EOF
             check_cxx "$@" <<EOF && soft_enable webm_io
 int z;
 EOF
+            check_cxx "$@" <<EOF && soft_enable libyuv
+int z;
+EOF
         ;;
     esac
     # libwebm needs to be linked with C++ standard library
     enabled webm_io && LD=${CXX}
+
+    # append any user defined extra cflags
+    if [ -n "${extra_cflags}" ] ; then
+        check_add_cflags ${extra_cflags} || \
+        die "Requested extra CFLAGS '${extra_cflags}' not supported by compiler"
+    fi
+    if [ -n "${extra_cxxflags}" ]; then
+        check_add_cxxflags ${extra_cxxflags} || \
+        die "Requested extra CXXFLAGS '${extra_cxxflags}' not supported by compiler"
+    fi
 }
 
 
@@ -749,6 +737,7 @@ CONFIGURE_ARGS="$@"
 process "$@"
 print_webm_license ${BUILD_PFX}vpx_config.c "/*" " */"
 cat <<EOF >> ${BUILD_PFX}vpx_config.c
+#include "vpx/vpx_codec.h"
 static const char* const cfg = "$CONFIGURE_ARGS";
 const char *vpx_codec_build_config(void) {return cfg;}
 EOF

@@ -22,6 +22,7 @@
 #include "vpx_mem/vpx_mem.h"
 #include "vp8/common/systemdependent.h"
 #include "encodemv.h"
+#include "vpx_dsp/vpx_dsp_common.h"
 
 
 #define MIN_BPB_FACTOR          0.01
@@ -296,7 +297,7 @@ void vp8_setup_key_frame(VP8_COMP *cpi)
 
     vp8_default_coef_probs(& cpi->common);
 
-    vpx_memcpy(cpi->common.fc.mvc, vp8_default_mv_context, sizeof(vp8_default_mv_context));
+    memcpy(cpi->common.fc.mvc, vp8_default_mv_context, sizeof(vp8_default_mv_context));
     {
         int flag[2] = {1, 1};
         vp8_build_component_cost_table(cpi->mb.mvcost, (const MV_CONTEXT *) cpi->common.fc.mvc, flag);
@@ -305,9 +306,9 @@ void vp8_setup_key_frame(VP8_COMP *cpi)
     /* Make sure we initialize separate contexts for altref,gold, and normal.
      * TODO shouldn't need 3 different copies of structure to do this!
      */
-    vpx_memcpy(&cpi->lfc_a, &cpi->common.fc, sizeof(cpi->common.fc));
-    vpx_memcpy(&cpi->lfc_g, &cpi->common.fc, sizeof(cpi->common.fc));
-    vpx_memcpy(&cpi->lfc_n, &cpi->common.fc, sizeof(cpi->common.fc));
+    memcpy(&cpi->lfc_a, &cpi->common.fc, sizeof(cpi->common.fc));
+    memcpy(&cpi->lfc_g, &cpi->common.fc, sizeof(cpi->common.fc));
+    memcpy(&cpi->lfc_n, &cpi->common.fc, sizeof(cpi->common.fc));
 
     cpi->common.filter_level = cpi->common.base_qindex * 3 / 8 ;
 
@@ -380,7 +381,8 @@ static void calc_iframe_target_size(VP8_COMP *cpi)
         int initial_boost = 32; /* |3.0 * per_frame_bandwidth| */
         /* Boost depends somewhat on frame rate: only used for 1 layer case. */
         if (cpi->oxcf.number_of_layers == 1) {
-          kf_boost = MAX(initial_boost, (int)(2 * cpi->output_framerate - 16));
+          kf_boost = VPXMAX(initial_boost,
+                            (int)(2 * cpi->output_framerate - 16));
         }
         else {
           /* Initial factor: set target size to: |3.0 * per_frame_bandwidth|. */
@@ -708,7 +710,13 @@ static void calc_pframe_target_size(VP8_COMP *cpi)
                     Adjustment = (cpi->this_frame_target - min_frame_target);
 
                 if (cpi->frames_since_golden == (cpi->current_gf_interval >> 1))
-                    cpi->this_frame_target += ((cpi->current_gf_interval - 1) * Adjustment);
+                {
+                    Adjustment = (cpi->current_gf_interval - 1) * Adjustment;
+                    // Limit adjustment to 10% of current target.
+                    if (Adjustment > (10 * cpi->this_frame_target) / 100)
+                        Adjustment = (10 * cpi->this_frame_target) / 100;
+                    cpi->this_frame_target += Adjustment;
+                }
                 else
                     cpi->this_frame_target -= Adjustment;
             }
@@ -1209,6 +1217,11 @@ int vp8_regulate_q(VP8_COMP *cpi, int target_bits_per_frame)
 {
     int Q = cpi->active_worst_quality;
 
+    if (cpi->force_maxqp == 1) {
+      cpi->active_worst_quality = cpi->worst_quality;
+      return cpi->worst_quality;
+    }
+
     /* Reset Zbin OQ value */
     cpi->mb.zbin_over_quant = 0;
 
@@ -1552,4 +1565,74 @@ int vp8_pick_frame_size(VP8_COMP *cpi)
         }
     }
     return 1;
+}
+// If this just encoded frame (mcomp/transform/quant, but before loopfilter and
+// pack_bitstream) has large overshoot, and was not being encoded close to the
+// max QP, then drop this frame and force next frame to be encoded at max QP.
+// Condition this on 1 pass CBR with screen content mode and frame dropper off.
+// TODO(marpan): Should do this exit condition during the encode_frame
+// (i.e., halfway during the encoding of the frame) to save cycles.
+int vp8_drop_encodedframe_overshoot(VP8_COMP *cpi, int Q) {
+  if (cpi->pass == 0 &&
+      cpi->oxcf.end_usage == USAGE_STREAM_FROM_SERVER &&
+      cpi->drop_frames_allowed == 0 &&
+      cpi->common.frame_type != KEY_FRAME) {
+    // Note: the "projected_frame_size" from encode_frame() only gives estimate
+    // of mode/motion vector rate (in non-rd mode): so below we only require
+    // that projected_frame_size is somewhat greater than per-frame-bandwidth,
+    // but add additional condition with high threshold on prediction residual.
+
+    // QP threshold: only allow dropping if we are not close to qp_max.
+    int thresh_qp = 3 * cpi->worst_quality >> 2;
+    // Rate threshold, in bytes.
+    int thresh_rate = 2 * (cpi->av_per_frame_bandwidth >> 3);
+    // Threshold for the average (over all macroblocks) of the pixel-sum
+    // residual error over 16x16 block. Should add QP dependence on threshold?
+    int thresh_pred_err_mb = (256 << 4);
+    int pred_err_mb = (int)(cpi->mb.prediction_error / cpi->common.MBs);
+    if (Q < thresh_qp &&
+        cpi->projected_frame_size > thresh_rate &&
+        pred_err_mb > thresh_pred_err_mb) {
+      double new_correction_factor = cpi->rate_correction_factor;
+      const int target_size = cpi->av_per_frame_bandwidth;
+      int target_bits_per_mb;
+      // Drop this frame: advance frame counters, and set force_maxqp flag.
+      cpi->common.current_video_frame++;
+      cpi->frames_since_key++;
+      // Flag to indicate we will force next frame to be encoded at max QP.
+      cpi->force_maxqp = 1;
+      // Reset the buffer levels.
+      cpi->buffer_level = cpi->oxcf.optimal_buffer_level;
+      cpi->bits_off_target = cpi->oxcf.optimal_buffer_level;
+      // Compute a new rate correction factor, corresponding to the current
+      // target frame size and max_QP, and adjust the rate correction factor
+      // upwards, if needed.
+      // This is to prevent a bad state where the re-encoded frame at max_QP
+      // undershoots significantly, and then we end up dropping every other
+      // frame because the QP/rate_correction_factor may have been too low
+      // before the drop and then takes too long to come up.
+      if (target_size >= (INT_MAX >> BPER_MB_NORMBITS))
+        target_bits_per_mb =
+            (target_size / cpi->common.MBs) << BPER_MB_NORMBITS;
+      else
+        target_bits_per_mb =
+            (target_size << BPER_MB_NORMBITS) / cpi->common.MBs;
+      // Rate correction factor based on target_size_per_mb and max_QP.
+      new_correction_factor = (double)target_bits_per_mb /
+          (double)vp8_bits_per_mb[INTER_FRAME][cpi->worst_quality];
+      if (new_correction_factor > cpi->rate_correction_factor)
+        cpi->rate_correction_factor =
+            VPXMIN(2.0 * cpi->rate_correction_factor, new_correction_factor);
+      if (cpi->rate_correction_factor > MAX_BPB_FACTOR)
+        cpi->rate_correction_factor = MAX_BPB_FACTOR;
+      return 1;
+    } else {
+      cpi->force_maxqp = 0;
+      return 0;
+    }
+    cpi->force_maxqp = 0;
+    return 0;
+  }
+  cpi->force_maxqp = 0;
+  return 0;
 }

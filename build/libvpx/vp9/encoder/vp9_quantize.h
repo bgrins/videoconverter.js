@@ -11,6 +11,7 @@
 #ifndef VP9_ENCODER_VP9_QUANTIZE_H_
 #define VP9_ENCODER_VP9_QUANTIZE_H_
 
+#include "./vpx_config.h"
 #include "vp9/encoder/vp9_block.h"
 
 #ifdef __cplusplus
@@ -23,17 +24,17 @@ typedef struct {
   DECLARE_ALIGNED(16, int16_t, y_zbin[QINDEX_RANGE][8]);
   DECLARE_ALIGNED(16, int16_t, y_round[QINDEX_RANGE][8]);
 
+  // TODO(jingning): in progress of re-working the quantization. will decide
+  // if we want to deprecate the current use of y_quant.
+  DECLARE_ALIGNED(16, int16_t, y_quant_fp[QINDEX_RANGE][8]);
+  DECLARE_ALIGNED(16, int16_t, uv_quant_fp[QINDEX_RANGE][8]);
+  DECLARE_ALIGNED(16, int16_t, y_round_fp[QINDEX_RANGE][8]);
+  DECLARE_ALIGNED(16, int16_t, uv_round_fp[QINDEX_RANGE][8]);
+
   DECLARE_ALIGNED(16, int16_t, uv_quant[QINDEX_RANGE][8]);
   DECLARE_ALIGNED(16, int16_t, uv_quant_shift[QINDEX_RANGE][8]);
   DECLARE_ALIGNED(16, int16_t, uv_zbin[QINDEX_RANGE][8]);
   DECLARE_ALIGNED(16, int16_t, uv_round[QINDEX_RANGE][8]);
-
-#if CONFIG_ALPHA
-  DECLARE_ALIGNED(16, int16_t, a_quant[QINDEX_RANGE][8]);
-  DECLARE_ALIGNED(16, int16_t, a_quant_shift[QINDEX_RANGE][8]);
-  DECLARE_ALIGNED(16, int16_t, a_zbin[QINDEX_RANGE][8]);
-  DECLARE_ALIGNED(16, int16_t, a_round[QINDEX_RANGE][8]);
-#endif
 } QUANTS;
 
 void vp9_regular_quantize_b_4x4(MACROBLOCK *x, int plane, int block,
@@ -43,8 +44,6 @@ struct VP9_COMP;
 struct VP9Common;
 
 void vp9_frame_init_quantizer(struct VP9_COMP *cpi);
-
-void vp9_update_zbin_extra(struct VP9_COMP *cpi, MACROBLOCK *x);
 
 void vp9_init_plane_quantizers(struct VP9_COMP *cpi, MACROBLOCK *x);
 

@@ -1,7 +1,7 @@
 /*****************************************************************************
  * pixel.c: ppc pixel metrics
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Eric Petit <eric.petit@lapsus.org>
  *          Guillaume Poirier <gpoirier@mplayerhq.hu>
@@ -26,7 +26,6 @@
 
 #include "common/common.h"
 #include "ppccommon.h"
-#include "../predict.h"
 
 #if !HIGH_BIT_DEPTH
 /***********************************************************************

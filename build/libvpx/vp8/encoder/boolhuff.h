@@ -35,10 +35,6 @@ typedef struct
     unsigned char *buffer;
     unsigned char *buffer_end;
     struct vpx_internal_error_info *error;
-
-    /* Variables used to track bit costs without outputing to the bitstream */
-    unsigned int  measure_cost;
-    unsigned long bit_counter;
 } BOOL_CODER;
 
 extern void vp8_start_encode(BOOL_CODER *bc, unsigned char *buffer, unsigned char *buffer_end);
@@ -69,7 +65,7 @@ static void vp8_encode_bool(BOOL_CODER *br, int bit, int probability)
     int count = br->count;
     unsigned int range = br->range;
     unsigned int lowvalue = br->lowvalue;
-    register unsigned int shift;
+    register int shift;
 
 #ifdef VP8_ENTROPY_STATS
 #if defined(SECTIONBITS_OUTPUT)

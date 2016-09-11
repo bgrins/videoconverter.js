@@ -26,19 +26,14 @@ enum {
   VP9D_DEBUG_TXT_RATE_INFO    = 1 << 6,
   VP9D_DEBUG_DRAW_MV          = 1 << 7,
   VP9D_DEBUG_CLR_BLK_MODES    = 1 << 8,
-  VP9D_DEBUG_CLR_FRM_REF_BLKS = 1 << 9
+  VP9D_DEBUG_CLR_FRM_REF_BLKS = 1 << 9,
+  VP9D_MFQE                   = 1 << 10
 };
 
 typedef struct {
   int post_proc_flag;
   int deblocking_level;
   int noise_level;
-#if CONFIG_POSTPROC_VISUALIZER
-  int display_ref_frame_flag;
-  int display_mb_modes_flag;
-  int display_b_modes_flag;
-  int display_mv_flag;
-#endif  // CONFIG_POSTPROC_VISUALIZER
 } vp9_ppflags_t;
 
 #ifdef __cplusplus

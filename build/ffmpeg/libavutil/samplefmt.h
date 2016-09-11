@@ -32,7 +32,6 @@
  *
  * Audio sample format enumeration and related convenience functions.
  * @{
- *
  */
 
 /**
@@ -128,14 +127,6 @@ enum AVSampleFormat av_get_planar_sample_fmt(enum AVSampleFormat sample_fmt);
  * unknown or in case of other errors
  */
 char *av_get_sample_fmt_string(char *buf, int buf_size, enum AVSampleFormat sample_fmt);
-
-#if FF_API_GET_BITS_PER_SAMPLE_FMT
-/**
- * @deprecated Use av_get_bytes_per_sample() instead.
- */
-attribute_deprecated
-int av_get_bits_per_sample_fmt(enum AVSampleFormat sample_fmt);
-#endif
 
 /**
  * Return number of bytes per sample.

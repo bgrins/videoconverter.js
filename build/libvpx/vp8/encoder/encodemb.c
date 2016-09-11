@@ -8,89 +8,41 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "./vpx_dsp_rtcd.h"
 
 #include "vpx_config.h"
 #include "vp8_rtcd.h"
 #include "encodemb.h"
 #include "vp8/common/reconinter.h"
-#include "quantize.h"
+#include "vp8/encoder/quantize.h"
 #include "tokenize.h"
 #include "vp8/common/invtrans.h"
 #include "vpx_mem/vpx_mem.h"
 #include "rdopt.h"
 
-void vp8_subtract_b_c(BLOCK *be, BLOCKD *bd, int pitch)
-{
-    unsigned char *src_ptr = (*(be->base_src) + be->src);
-    short *diff_ptr = be->src_diff;
-    unsigned char *pred_ptr = bd->predictor;
-    int src_stride = be->src_stride;
+void vp8_subtract_b(BLOCK *be, BLOCKD *bd, int pitch) {
+  unsigned char *src_ptr = (*(be->base_src) + be->src);
+  short *diff_ptr = be->src_diff;
+  unsigned char *pred_ptr = bd->predictor;
+  int src_stride = be->src_stride;
 
-    int r, c;
-
-    for (r = 0; r < 4; r++)
-    {
-        for (c = 0; c < 4; c++)
-        {
-            diff_ptr[c] = src_ptr[c] - pred_ptr[c];
-        }
-
-        diff_ptr += pitch;
-        pred_ptr += pitch;
-        src_ptr  += src_stride;
-    }
+  vpx_subtract_block(4, 4, diff_ptr, pitch, src_ptr, src_stride,
+                     pred_ptr, pitch);
 }
 
-void vp8_subtract_mbuv_c(short *diff, unsigned char *usrc, unsigned char *vsrc,
+void vp8_subtract_mbuv(short *diff, unsigned char *usrc, unsigned char *vsrc,
                          int src_stride, unsigned char *upred,
-                         unsigned char *vpred, int pred_stride)
-{
-    short *udiff = diff + 256;
-    short *vdiff = diff + 320;
+                         unsigned char *vpred, int pred_stride) {
+  short *udiff = diff + 256;
+  short *vdiff = diff + 320;
 
-    int r, c;
-
-    for (r = 0; r < 8; r++)
-    {
-        for (c = 0; c < 8; c++)
-        {
-            udiff[c] = usrc[c] - upred[c];
-        }
-
-        udiff += 8;
-        upred += pred_stride;
-        usrc  += src_stride;
-    }
-
-    for (r = 0; r < 8; r++)
-    {
-        for (c = 0; c < 8; c++)
-        {
-            vdiff[c] = vsrc[c] - vpred[c];
-        }
-
-        vdiff += 8;
-        vpred += pred_stride;
-        vsrc  += src_stride;
-    }
+  vpx_subtract_block(8, 8, udiff, 8, usrc, src_stride, upred, pred_stride);
+  vpx_subtract_block(8, 8, vdiff, 8, vsrc, src_stride, vpred, pred_stride);
 }
 
-void vp8_subtract_mby_c(short *diff, unsigned char *src, int src_stride,
-                        unsigned char *pred, int pred_stride)
-{
-    int r, c;
-
-    for (r = 0; r < 16; r++)
-    {
-        for (c = 0; c < 16; c++)
-        {
-            diff[c] = src[c] - pred[c];
-        }
-
-        diff += 16;
-        pred += pred_stride;
-        src  += src_stride;
-    }
+void vp8_subtract_mby(short *diff, unsigned char *src, int src_stride,
+                      unsigned char *pred, int pred_stride) {
+  vpx_subtract_block(16, 16, diff, 16, src, src_stride, pred, pred_stride);
 }
 
 static void vp8_subtract_mb(MACROBLOCK *x)
@@ -257,13 +209,6 @@ static void optimize_b(MACROBLOCK *mb, int ib, int type,
 
     b = &mb->block[ib];
     d = &mb->e_mbd.block[ib];
-
-    /* Enable this to test the effect of RDO as a replacement for the dynamic
-     *  zero bin instead of an augmentation of it.
-     */
-#if 0
-    vp8_strict_quantize_b(b, d);
-#endif
 
     dequant_ptr = d->dequant;
     coeff_ptr = b->coeff;
@@ -513,8 +458,8 @@ static void optimize_mb(MACROBLOCK *x)
     ENTROPY_CONTEXT *ta;
     ENTROPY_CONTEXT *tl;
 
-    vpx_memcpy(&t_above, x->e_mbd.above_context, sizeof(ENTROPY_CONTEXT_PLANES));
-    vpx_memcpy(&t_left, x->e_mbd.left_context, sizeof(ENTROPY_CONTEXT_PLANES));
+    memcpy(&t_above, x->e_mbd.above_context, sizeof(ENTROPY_CONTEXT_PLANES));
+    memcpy(&t_left, x->e_mbd.left_context, sizeof(ENTROPY_CONTEXT_PLANES));
 
     ta = (ENTROPY_CONTEXT *)&t_above;
     tl = (ENTROPY_CONTEXT *)&t_left;
@@ -562,8 +507,8 @@ void vp8_optimize_mby(MACROBLOCK *x)
     if (!x->e_mbd.left_context)
         return;
 
-    vpx_memcpy(&t_above, x->e_mbd.above_context, sizeof(ENTROPY_CONTEXT_PLANES));
-    vpx_memcpy(&t_left, x->e_mbd.left_context, sizeof(ENTROPY_CONTEXT_PLANES));
+    memcpy(&t_above, x->e_mbd.above_context, sizeof(ENTROPY_CONTEXT_PLANES));
+    memcpy(&t_left, x->e_mbd.left_context, sizeof(ENTROPY_CONTEXT_PLANES));
 
     ta = (ENTROPY_CONTEXT *)&t_above;
     tl = (ENTROPY_CONTEXT *)&t_left;
@@ -602,8 +547,8 @@ void vp8_optimize_mbuv(MACROBLOCK *x)
     if (!x->e_mbd.left_context)
         return;
 
-    vpx_memcpy(&t_above, x->e_mbd.above_context, sizeof(ENTROPY_CONTEXT_PLANES));
-    vpx_memcpy(&t_left, x->e_mbd.left_context, sizeof(ENTROPY_CONTEXT_PLANES));
+    memcpy(&t_above, x->e_mbd.above_context, sizeof(ENTROPY_CONTEXT_PLANES));
+    memcpy(&t_left, x->e_mbd.left_context, sizeof(ENTROPY_CONTEXT_PLANES));
 
     ta = (ENTROPY_CONTEXT *)&t_above;
     tl = (ENTROPY_CONTEXT *)&t_left;

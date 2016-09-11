@@ -1,7 +1,7 @@
 /*****************************************************************************
  * avs.c: avisynth input
  *****************************************************************************
- * Copyright (C) 2009-2014 x264 project
+ * Copyright (C) 2009-2016 x264 project
  *
  * Authors: Steven Walters <kemuri9@gmail.com>
  *
@@ -27,15 +27,15 @@
 #if USE_AVXSYNTH
 #include <dlfcn.h>
 #if SYS_MACOSX
-#define avs_open dlopen( "libavxsynth.dylib", RTLD_NOW )
+#define avs_open() dlopen( "libavxsynth.dylib", RTLD_NOW )
 #else
-#define avs_open dlopen( "libavxsynth.so", RTLD_NOW )
+#define avs_open() dlopen( "libavxsynth.so", RTLD_NOW )
 #endif
 #define avs_close dlclose
 #define avs_address dlsym
 #else
 #include <windows.h>
-#define avs_open LoadLibraryW( L"avisynth" )
+#define avs_open() LoadLibraryW( L"avisynth" )
 #define avs_close FreeLibrary
 #define avs_address GetProcAddress
 #endif
@@ -80,7 +80,7 @@ typedef struct
 {
     AVS_Clip *clip;
     AVS_ScriptEnvironment *env;
-    HMODULE library;
+    void *library;
     int num_frames;
     struct
     {
@@ -102,7 +102,7 @@ typedef struct
 /* load the library and functions we require from it */
 static int x264_avs_load_library( avs_hnd_t *h )
 {
-    h->library = avs_open;
+    h->library = avs_open();
     if( !h->library )
         return -1;
     LOAD_AVS_FUNC( avs_clip_get_error, 0 );
@@ -175,8 +175,9 @@ static int open_file( char *psz_filename, hnd_t *p_handle, video_info_t *info, c
     FILE *fh = x264_fopen( psz_filename, "r" );
     if( !fh )
         return -1;
-    FAIL_IF_ERROR( !x264_is_regular_file( fh ), "AVS input is incompatible with non-regular file `%s'\n", psz_filename );
+    int b_regular = x264_is_regular_file( fh );
     fclose( fh );
+    FAIL_IF_ERROR( !b_regular, "AVS input is incompatible with non-regular file `%s'\n", psz_filename );
 
     avs_hnd_t *h = malloc( sizeof(avs_hnd_t) );
     if( !h )
@@ -282,8 +283,8 @@ static int open_file( char *psz_filename, hnd_t *p_handle, video_info_t *info, c
                        "input clip height not divisible by 4 (%dx%d)\n", vi->width, vi->height )
         FAIL_IF_ERROR( (opt->output_csp == X264_CSP_I420 || info->interlaced) && (vi->height&1),
                        "input clip height not divisible by 2 (%dx%d)\n", vi->width, vi->height )
-        char conv_func[14] = { "ConvertTo" };
-        strcat( conv_func, csp );
+        char conv_func[14];
+        snprintf( conv_func, sizeof(conv_func), "ConvertTo%s", csp );
         char matrix[7] = "";
         int arg_count = 2;
         /* if doing a rgb <-> yuv conversion then range is handled via 'matrix'. though it's only supported in 2.56+ */
@@ -291,14 +292,16 @@ static int open_file( char *psz_filename, hnd_t *p_handle, video_info_t *info, c
         {
             // if converting from yuv, then we specify the matrix for the input, otherwise use the output's.
             int use_pc_matrix = avs_is_yuv( vi ) ? opt->input_range == RANGE_PC : opt->output_range == RANGE_PC;
-            strcpy( matrix, use_pc_matrix ? "PC." : "Rec" );
-            strcat( matrix, "601" ); /* FIXME: use correct coefficients */
+            snprintf( matrix, sizeof(matrix), "%s601", use_pc_matrix ? "PC." : "Rec" ); /* FIXME: use correct coefficients */
             arg_count++;
             // notification that the input range has changed to the desired one
             opt->input_range = opt->output_range;
         }
         const char *arg_name[] = { NULL, "interlaced", "matrix" };
-        AVS_Value arg_arr[] = { res, avs_new_value_bool( info->interlaced ), avs_new_value_string( matrix ) };
+        AVS_Value arg_arr[3];
+        arg_arr[0] = res;
+        arg_arr[1] = avs_new_value_bool( info->interlaced );
+        arg_arr[2] = avs_new_value_string( matrix );
         AVS_Value res2 = h->func.avs_invoke( h->env, conv_func, avs_new_value_array( arg_arr, arg_count ), arg_name );
         FAIL_IF_ERROR( avs_is_error( res2 ), "couldn't convert input clip to %s\n", csp )
         res = update_clip( h, &vi, res2, res );
@@ -308,7 +311,9 @@ static int open_file( char *psz_filename, hnd_t *p_handle, video_info_t *info, c
     {
         const char *levels = opt->output_range ? "TV->PC" : "PC->TV";
         x264_cli_log( "avs", X264_LOG_WARNING, "performing %s conversion\n", levels );
-        AVS_Value arg_arr[] = { res, avs_new_value_string( levels ) };
+        AVS_Value arg_arr[2];
+        arg_arr[0] = res;
+        arg_arr[1] = avs_new_value_string( levels );
         const char *arg_name[] = { NULL, "levels" };
         AVS_Value res2 = h->func.avs_invoke( h->env, "ColorYUV", avs_new_value_array( arg_arr, 2 ), arg_name );
         FAIL_IF_ERROR( avs_is_error( res2 ), "couldn't convert range: %s\n", avs_as_error( res2 ) )
@@ -352,7 +357,7 @@ static int open_file( char *psz_filename, hnd_t *p_handle, video_info_t *info, c
     return 0;
 }
 
-static int picture_alloc( cli_pic_t *pic, int csp, int width, int height )
+static int picture_alloc( cli_pic_t *pic, hnd_t handle, int csp, int width, int height )
 {
     if( x264_cli_pic_alloc( pic, X264_CSP_NONE, width, height ) )
         return -1;
@@ -394,7 +399,7 @@ static int release_frame( cli_pic_t *pic, hnd_t handle )
     return 0;
 }
 
-static void picture_clean( cli_pic_t *pic )
+static void picture_clean( cli_pic_t *pic, hnd_t handle )
 {
     memset( pic, 0, sizeof(cli_pic_t) );
 }

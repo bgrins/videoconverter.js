@@ -1,9 +1,9 @@
 /*****************************************************************************
  * rectangle.h: rectangle filling
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
- * Authors: Jason Garrett-Glaser <darkshikari@gmail.com>
+ * Authors: Fiona Glaser <fiona@x264.com>
  *          Loren Merritt <lorenm@u.washington.edu>
  *
  * This program is free software; you can redistribute it and/or modify

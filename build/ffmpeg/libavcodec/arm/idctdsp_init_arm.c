@@ -26,17 +26,11 @@
 #include "libavutil/arm/cpu.h"
 #include "libavcodec/avcodec.h"
 #include "libavcodec/idctdsp.h"
+#include "idct.h"
 #include "idctdsp_arm.h"
 
-void ff_j_rev_dct_arm(int16_t *data);
-void ff_simple_idct_arm(int16_t *data);
-
-/* XXX: local hack */
-static void (*ff_put_pixels_clamped)(const int16_t *block, uint8_t *pixels, int line_size);
-static void (*ff_add_pixels_clamped)(const int16_t *block, uint8_t *pixels, int line_size);
-
 void ff_add_pixels_clamped_arm(const int16_t *block, uint8_t *dest,
-                               int line_size);
+                               ptrdiff_t line_size);
 
 /* XXX: those functions should be suppressed ASAP when all IDCTs are
  * converted */
@@ -69,21 +63,18 @@ av_cold void ff_idctdsp_init_arm(IDCTDSPContext *c, AVCodecContext *avctx,
 {
     int cpu_flags = av_get_cpu_flags();
 
-    ff_put_pixels_clamped = c->put_pixels_clamped;
-    ff_add_pixels_clamped = c->add_pixels_clamped;
-
     if (!avctx->lowres && !high_bit_depth) {
-        if (avctx->idct_algo == FF_IDCT_AUTO ||
+        if ((avctx->idct_algo == FF_IDCT_AUTO && !(avctx->flags & AV_CODEC_FLAG_BITEXACT)) ||
             avctx->idct_algo == FF_IDCT_ARM) {
-            c->idct_put              = j_rev_dct_arm_put;
-            c->idct_add              = j_rev_dct_arm_add;
-            c->idct                  = ff_j_rev_dct_arm;
-            c->idct_permutation_type = FF_LIBMPEG2_IDCT_PERM;
+            c->idct_put  = j_rev_dct_arm_put;
+            c->idct_add  = j_rev_dct_arm_add;
+            c->idct      = ff_j_rev_dct_arm;
+            c->perm_type = FF_IDCT_PERM_LIBMPEG2;
         } else if (avctx->idct_algo == FF_IDCT_SIMPLEARM) {
-            c->idct_put              = simple_idct_arm_put;
-            c->idct_add              = simple_idct_arm_add;
-            c->idct                  = ff_simple_idct_arm;
-            c->idct_permutation_type = FF_NO_IDCT_PERM;
+            c->idct_put  = simple_idct_arm_put;
+            c->idct_add  = simple_idct_arm_add;
+            c->idct      = ff_simple_idct_arm;
+            c->perm_type = FF_IDCT_PERM_NONE;
         }
     }
 

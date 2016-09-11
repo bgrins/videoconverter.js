@@ -33,6 +33,7 @@
 #include "libavutil/samplefmt.h"
 
 #if FF_API_AVCODEC_RESAMPLE
+FF_DISABLE_DEPRECATION_WARNINGS
 
 #define MAX_CHANNELS 8
 
@@ -290,12 +291,6 @@ int audio_resample(ReSampleContext *s, short *output, short *input, int nb_sampl
     short *output_bak = NULL;
     int lenout;
 
-    if (s->input_channels == s->output_channels && s->ratio == 1.0 && 0) {
-        /* nothing to do */
-        memcpy(output, input, nb_samples * s->input_channels * sizeof(short));
-        return nb_samples;
-    }
-
     if (s->sample_fmt[0] != AV_SAMPLE_FMT_S16) {
         int istride[1] = { s->sample_size[0] };
         int ostride[1] = { 2 };
@@ -347,10 +342,17 @@ int audio_resample(ReSampleContext *s, short *output, short *input, int nb_sampl
 
     /* XXX: move those malloc to resample init code */
     for (i = 0; i < s->filter_channels; i++) {
-        bufin[i] = av_malloc((nb_samples + s->temp_len) * sizeof(short));
+        bufin[i] = av_malloc_array((nb_samples + s->temp_len), sizeof(short));
+        bufout[i] = av_malloc_array(lenout, sizeof(short));
+
+        if (!bufin[i] || !bufout[i]) {
+            av_log(s->resample_context, AV_LOG_ERROR, "Could not allocate buffer\n");
+            nb_samples1 = 0;
+            goto fail;
+        }
+
         memcpy(bufin[i], s->temp[i], s->temp_len * sizeof(short));
         buftmp2[i] = bufin[i] + s->temp_len;
-        bufout[i] = av_malloc(lenout * sizeof(short));
     }
 
     if (s->input_channels == 2 && s->output_channels == 1) {
@@ -384,7 +386,7 @@ int audio_resample(ReSampleContext *s, short *output, short *input, int nb_sampl
         nb_samples1 = av_resample(s->resample_context, buftmp3[i], bufin[i],
                                   &consumed, nb_samples, lenout, is_last);
         s->temp_len = nb_samples - consumed;
-        s->temp[i] = av_realloc(s->temp[i], s->temp_len * sizeof(short));
+        s->temp[i] = av_realloc_array(s->temp[i], s->temp_len, sizeof(short));
         memcpy(s->temp[i], bufin[i] + consumed, s->temp_len * sizeof(short));
     }
 
@@ -411,6 +413,7 @@ int audio_resample(ReSampleContext *s, short *output, short *input, int nb_sampl
         }
     }
 
+fail:
     for (i = 0; i < s->filter_channels; i++) {
         av_free(bufin[i]);
         av_free(bufout[i]);
@@ -432,4 +435,5 @@ void audio_resample_close(ReSampleContext *s)
     av_free(s);
 }
 
+FF_ENABLE_DEPRECATION_WARNINGS
 #endif

@@ -11,20 +11,48 @@
 #ifndef VP9_ENCODER_VP9_FIRSTPASS_H_
 #define VP9_ENCODER_VP9_FIRSTPASS_H_
 
+#include "vp9/encoder/vp9_lookahead.h"
+#include "vp9/encoder/vp9_ratectrl.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#if CONFIG_FP_MB_STATS
+
+#define FPMB_DCINTRA_MASK 0x01
+
+#define FPMB_MOTION_ZERO_MASK 0x02
+#define FPMB_MOTION_LEFT_MASK 0x04
+#define FPMB_MOTION_RIGHT_MASK 0x08
+#define FPMB_MOTION_UP_MASK 0x10
+#define FPMB_MOTION_DOWN_MASK 0x20
+
+#define FPMB_ERROR_SMALL_MASK 0x40
+#define FPMB_ERROR_LARGE_MASK 0x80
+#define FPMB_ERROR_SMALL_TH 2000
+#define FPMB_ERROR_LARGE_TH 48000
+
+typedef struct {
+  uint8_t *mb_stats_start;
+  uint8_t *mb_stats_end;
+} FIRSTPASS_MB_STATS;
+#endif
+
 typedef struct {
   double frame;
+  double weight;
   double intra_error;
   double coded_error;
   double sr_coded_error;
-  double ssim_weighted_pred_err;
   double pcnt_inter;
   double pcnt_motion;
   double pcnt_second_ref;
   double pcnt_neutral;
+  double intra_skip_pct;
+  double intra_smooth_pct;    // % of blocks that are smooth
+  double inactive_zone_rows;  // Image mask rows top and bottom.
+  double inactive_zone_cols;  // Image mask columns at left and right edges.
   double MVr;
   double mvr_abs;
   double MVc;
@@ -38,10 +66,34 @@ typedef struct {
   int64_t spatial_layer_id;
 } FIRSTPASS_STATS;
 
-struct twopass_rc {
+typedef enum {
+  KF_UPDATE = 0,
+  LF_UPDATE = 1,
+  GF_UPDATE = 2,
+  ARF_UPDATE = 3,
+  OVERLAY_UPDATE = 4,
+  FRAME_UPDATE_TYPES = 5
+} FRAME_UPDATE_TYPE;
+
+#define FC_ANIMATION_THRESH 0.15
+typedef enum {
+  FC_NORMAL = 0,
+  FC_GRAPHICS_ANIMATION = 1,
+  FRAME_CONTENT_TYPES = 2
+} FRAME_CONTENT_TYPE;
+
+typedef struct {
+  unsigned char index;
+  RATE_FACTOR_LEVEL rf_level[(MAX_LAG_BUFFERS * 2) + 1];
+  FRAME_UPDATE_TYPE update_type[(MAX_LAG_BUFFERS * 2) + 1];
+  unsigned char arf_src_offset[(MAX_LAG_BUFFERS * 2) + 1];
+  unsigned char arf_update_idx[(MAX_LAG_BUFFERS * 2) + 1];
+  unsigned char arf_ref_idx[(MAX_LAG_BUFFERS * 2) + 1];
+  int bit_allocation[(MAX_LAG_BUFFERS * 2) + 1];
+} GF_GROUP;
+
+typedef struct {
   unsigned int section_intra_rating;
-  unsigned int next_iiratio;
-  unsigned int this_iiratio;
   FIRSTPASS_STATS total_stats;
   FIRSTPASS_STATS this_frame_stats;
   const FIRSTPASS_STATS *stats_in;
@@ -50,17 +102,19 @@ struct twopass_rc {
   FIRSTPASS_STATS total_left_stats;
   int first_pass_done;
   int64_t bits_left;
-  int64_t clip_bits_total;
-  double avg_iiratio;
   double modified_error_min;
   double modified_error_max;
-  double modified_error_total;
   double modified_error_left;
-  double kf_intra_err_min;
-  double gf_intra_err_min;
-  int kf_bits;
-  // Remaining error from uncoded frames in a gf group. Two pass use only
-  int64_t gf_group_error_left;
+  double mb_av_energy;
+  double mb_smooth_pct;
+
+#if CONFIG_FP_MB_STATS
+  uint8_t *frame_mb_stats_buf;
+  uint8_t *this_frame_mb_stats;
+  FIRSTPASS_MB_STATS firstpass_mb_stats;
+#endif
+  // An indication of the content type of the current frame
+  FRAME_CONTENT_TYPE fr_content_type;
 
   // Projected total bits available for a key frame group of frames
   int64_t kf_group_bits;
@@ -68,34 +122,40 @@ struct twopass_rc {
   // Error score of frames still to be coded in kf group
   int64_t kf_group_error_left;
 
-  // Projected Bits available for a group of frames including 1 GF or ARF
-  int64_t gf_group_bits;
-  // Bits for the golden frame or ARF - 2 pass only
-  int gf_bits;
-  int alt_extra_bits;
+  double bpm_factor;
+  int rolling_arf_group_target_bits;
+  int rolling_arf_group_actual_bits;
 
   int sr_update_lag;
-
   int kf_zeromotion_pct;
-  int gf_zeromotion_pct;
-
+  int last_kfgroup_zeromotion_pct;
   int active_worst_quality;
-};
+  int baseline_active_worst_quality;
+  int extend_minq;
+  int extend_maxq;
+  int extend_minq_fast;
+
+  GF_GROUP gf_group;
+} TWO_PASS;
 
 struct VP9_COMP;
 
 void vp9_init_first_pass(struct VP9_COMP *cpi);
 void vp9_rc_get_first_pass_params(struct VP9_COMP *cpi);
-void vp9_first_pass(struct VP9_COMP *cpi);
+void vp9_first_pass(struct VP9_COMP *cpi, const struct lookahead_entry *source);
 void vp9_end_first_pass(struct VP9_COMP *cpi);
 
 void vp9_init_second_pass(struct VP9_COMP *cpi);
 void vp9_rc_get_second_pass_params(struct VP9_COMP *cpi);
-int vp9_twopass_worst_quality(struct VP9_COMP *cpi, FIRSTPASS_STATS *fpstats,
-                              int section_target_bandwitdh);
+void vp9_twopass_postencode_update(struct VP9_COMP *cpi);
 
 // Post encode update of the rate control parameters for 2-pass
 void vp9_twopass_postencode_update(struct VP9_COMP *cpi);
+
+void calculate_coded_size(struct VP9_COMP *cpi,
+                          int *scaled_frame_width,
+                          int *scaled_frame_height);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

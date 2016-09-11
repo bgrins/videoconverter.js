@@ -30,11 +30,12 @@
 SECTION_RODATA
 cextern pb_1
 cextern pw_2
-pw_8192: times 8 dw (1<<13)
 pb_interleave16: db 0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15
 pb_interleave8:  db 0, 4, 1, 5, 2, 6, 3, 7
 
-SECTION_TEXT
+cextern pw_8192
+
+SECTION .text
 
 ; void ff_put_pixels8_x2(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
 %macro PUT_PIXELS8_X2 0

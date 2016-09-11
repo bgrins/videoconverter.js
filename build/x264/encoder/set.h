@@ -1,7 +1,7 @@
 /*****************************************************************************
  * set.h: header writing
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *          Loren Merritt <lorenm@u.washington.edu>
@@ -28,6 +28,7 @@
 #define X264_ENCODER_SET_H
 
 void x264_sps_init( x264_sps_t *sps, int i_id, x264_param_t *param );
+void x264_sps_init_reconfigurable( x264_sps_t *sps, x264_param_t *param );
 void x264_sps_write( bs_t *s, x264_sps_t *sps );
 void x264_pps_init( x264_pps_t *pps, int i_id, x264_param_t *param, x264_sps_t *sps );
 void x264_pps_write( bs_t *s, x264_sps_t *sps, x264_pps_t *pps );

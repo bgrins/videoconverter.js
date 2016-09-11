@@ -1,7 +1,7 @@
 /*****************************************************************************
  * depth.c: bit-depth conversion video filter
  *****************************************************************************
- * Copyright (C) 2010-2014 x264 project
+ * Copyright (C) 2010-2016 x264 project
  *
  * Authors: Oskar Arvidsson <oskar@irock.se>
  *
@@ -50,6 +50,7 @@ static int depth_filter_csp_is_supported( int csp )
            csp_mask == X264_CSP_YV16 ||
            csp_mask == X264_CSP_YV24 ||
            csp_mask == X264_CSP_NV12 ||
+           csp_mask == X264_CSP_NV21 ||
            csp_mask == X264_CSP_NV16 ||
            csp_mask == X264_CSP_BGR ||
            csp_mask == X264_CSP_RGB ||
@@ -59,7 +60,7 @@ static int depth_filter_csp_is_supported( int csp )
 static int csp_num_interleaved( int csp, int plane )
 {
     int csp_mask = csp & X264_CSP_MASK;
-    return (csp_mask == X264_CSP_NV12 || csp_mask == X264_CSP_NV16) && plane == 1 ? 2 :
+    return (csp_mask == X264_CSP_NV12 || csp_mask == X264_CSP_NV21 || csp_mask == X264_CSP_NV16) && plane == 1 ? 2 :
            csp_mask == X264_CSP_BGR || csp_mask == X264_CSP_RGB ? 3 :
            csp_mask == X264_CSP_BGRA ? 4 :
            1;
@@ -73,10 +74,10 @@ static int csp_num_interleaved( int csp, int plane )
 static void dither_plane_##pitch( pixel *dst, int dst_stride, uint16_t *src, int src_stride, \
                                   int width, int height, int16_t *errors ) \
 { \
-    const int lshift = 16-BIT_DEPTH; \
-    const int rshift = 16-BIT_DEPTH+2; \
-    const int half = 1 << (16-BIT_DEPTH+1); \
-    const int pixel_max = (1 << BIT_DEPTH)-1; \
+    const int lshift = 16-X264_BIT_DEPTH; \
+    const int rshift = 16-X264_BIT_DEPTH+2; \
+    const int half = 1 << (16-X264_BIT_DEPTH+1); \
+    const int pixel_max = (1 << X264_BIT_DEPTH)-1; \
     memset( errors, 0, (width+1) * sizeof(int16_t) ); \
     for( int y = 0; y < height; y++, src += src_stride, dst += dst_stride ) \
     { \
@@ -136,7 +137,7 @@ static void dither_image( cli_image_t *out, cli_image_t *img, int16_t *error_buf
 static void scale_image( cli_image_t *output, cli_image_t *img )
 {
     int csp_mask = img->csp & X264_CSP_MASK;
-    const int shift = BIT_DEPTH - 8;
+    const int shift = X264_BIT_DEPTH - 8;
     for( int i = 0; i < img->planes; i++ )
     {
         uint8_t *src = img->plane[i];
@@ -199,7 +200,7 @@ static int init( hnd_t *handle, cli_vid_filter_t *filter, video_info_t *info,
 
     if( opt_string )
     {
-        static const char *optlist[] = { "bit_depth", NULL };
+        static const char * const optlist[] = { "bit_depth", NULL };
         char **opts = x264_split_options( opt_string, optlist );
 
         if( opts )
@@ -210,13 +211,13 @@ static int init( hnd_t *handle, cli_vid_filter_t *filter, video_info_t *info,
             ret = bit_depth < 8 || bit_depth > 16;
             csp = bit_depth > 8 ? csp | X264_CSP_HIGH_DEPTH : csp & ~X264_CSP_HIGH_DEPTH;
             change_fmt = (info->csp ^ csp) & X264_CSP_HIGH_DEPTH;
-            x264_free_string_array( opts );
+            free( opts );
         }
         else
             ret = 1;
     }
 
-    FAIL_IF_ERROR( bit_depth != BIT_DEPTH, "this build supports only bit depth %d\n", BIT_DEPTH )
+    FAIL_IF_ERROR( bit_depth != X264_BIT_DEPTH, "this build supports only bit depth %d\n", X264_BIT_DEPTH )
     FAIL_IF_ERROR( ret, "unsupported bit depth conversion.\n" )
 
     /* only add the filter to the chain if it's needed */

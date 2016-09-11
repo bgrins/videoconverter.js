@@ -9,7 +9,7 @@
 ##
 
 # libvpx reverse dependencies (targets that depend on libvpx)
-VPX_NONDEPS=$(addsuffix .$(VCPROJ_SFX),vpx gtest obj_int_extract)
+VPX_NONDEPS=$(addsuffix .$(VCPROJ_SFX),vpx gtest)
 VPX_RDEPS=$(foreach vcp,\
               $(filter-out $(VPX_NONDEPS),$^), --dep=$(vcp:.$(VCPROJ_SFX)=):vpx)
 
@@ -17,7 +17,6 @@ vpx.sln: $(wildcard *.$(VCPROJ_SFX))
 	@echo "    [CREATE] $@"
 	$(SRC_PATH_BARE)/build/make/gen_msvs_sln.sh \
             $(if $(filter vpx.$(VCPROJ_SFX),$^),$(VPX_RDEPS)) \
-            --dep=vpx:obj_int_extract \
             --dep=test_libvpx:gtest \
             --ver=$(CONFIG_VS_VERSION)\
             --out=$@ $^

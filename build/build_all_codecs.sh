@@ -31,16 +31,18 @@ make clean
 emconfigure ./configure --prefix=$(pwd)/../dist --disable-examples --disable-docs \
   --disable-runtime-cpu-detect --disable-multithread --disable-optimizations \
   --target=generic-gnu
+sed -i.bak -e 's/ARFLAGS = -crs$(if $(quiet),,v)/ARFLAGS = crs$(if $(quiet),,v)/' ./libs-generic-gnu.mk
 emmake make
 emmake make install
 cd ..
 
-# x264-snapshot-20140501-2245
+# x264-snapshot-20160910-2245
 cd x264
 make clean
+patch --forward ./configure ../fix_x264_configure.patch
 emconfigure ./configure --disable-thread --disable-asm \
-  --host=i686-pc-linux-gnu \
-  --disable-cli --enable-static --disable-gpl --prefix=$(pwd)/../dist
+            --host=i686-pc-linux-gnu \
+            --disable-cli --enable-static --disable-gpl --prefix=$(pwd)/../dist
 emmake make
 emmake make install
 cd ..
@@ -52,6 +54,10 @@ emconfigure ./configure --cc="emcc" --prefix=$(pwd)/../dist --extra-cflags="-I$(
     --disable-ffplay --disable-ffprobe --disable-ffserver --disable-asm --disable-doc --disable-devices --disable-pthreads --disable-w32threads --disable-network \
     --disable-hwaccels --disable-parsers --disable-bsfs --disable-debug --disable-protocols --disable-indevs --disable-outdevs --enable-protocol=file \
     --enable-libvpx --enable-gpl --extra-libs="$(pwd)/../dist/lib/libx264.a $(pwd)/../dist/lib/libvpx.a"
+
+# Because there doesn't appear to be a way to tell configure that arc4random isn't actually there
+sed -i.bak -e 's/#define HAVE_ARC4RANDOM 1/#define HAVE_ARC4RANDOM 0/' ./config.h
+sed -i.bak -e 's/HAVE_ARC4RANDOM=yes/HAVE_ARC4RANDOM=no/' ./config.mak
 
 # If we --enable-libx264 there is an error.  Instead just act like it is there, extra-libs seems to work.
 sed -i '' 's/define CONFIG_LIBX264 0/define CONFIG_LIBX264 1/' config.h
@@ -83,5 +89,6 @@ cd dist
 emcc -s OUTLINING_LIMIT=100000 -s VERBOSE=1 -s TOTAL_MEMORY=33554432 -O2 -v ffmpeg.bc libx264.bc  libvpx.bc libz.bc -o ../ffmpeg-all-codecs.js --pre-js ../ffmpeg_pre.js --post-js ../ffmpeg_post.js
 cd ..
 
+cp ffmpeg-all-codecs.js* ../demo
 
 echo "Finished Build"

@@ -7,7 +7,7 @@ FFmpeg.
 The source code used to build this file can be obtained at https://github.com/bgrins/videoconverter.js,
 and in zip form at https://github.com/bgrins/videoconverter.js/archive/master.zip
 */
-
+var Module = {};
 function ffmpeg_run(opts) {
   var isNode = typeof(exports) !== 'undefined';
   if (!isNode) {
@@ -36,6 +36,9 @@ function ffmpeg_run(opts) {
     Module['postRun'] = function() {
       var handle = FS.analyzePath(Module['outputDirectory']);
       Module['return'] = getAllBuffers(handle);
+      if (typeof(Module['returnCallback']) == "function") {
+        Module['returnCallback'](Module['return']);
+      }
     };
     function getAllBuffers(result) {
       var buffers = [];
