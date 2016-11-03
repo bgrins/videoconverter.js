@@ -1,0 +1,16 @@
+diff --git a/libmp3lame/vector/xmm_quantize_sub.c b/libmp3lame/vector/xmm_quantize_sub.c
+index 1375aa2..b7473b3 100644
+--- a/libmp3lame/vector/xmm_quantize_sub.c
++++ b/libmp3lame/vector/xmm_quantize_sub.c
+@@ -67,8 +67,9 @@ init_xrpow_core_sse(gr_info * const cod_info, FLOAT xrpow[576], int upper, FLOAT
+     vecfloat_union vec_sum;
+     vecfloat_union vec_tmp;
+ 
+-    _mm_prefetch((char *) cod_info->xr, _MM_HINT_T0);
+-    _mm_prefetch((char *) xrpow, _MM_HINT_T0);
++// emcc 1.32.0 doesn't support _mm_prefetch
++//    _mm_prefetch((char *) cod_info->xr, _MM_HINT_T0);
++//    _mm_prefetch((char *) xrpow, _MM_HINT_T0);
+ 
+     vec_xrpow_max._m128 = _mm_set_ps1(0);
+     vec_sum._m128 = _mm_set_ps1(0);

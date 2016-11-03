@@ -1,11 +1,21 @@
-importScripts('../build/ffmpeg-all-codecs.js');
+importScripts('ffmpeg.js');
 
 var now = Date.now;
+var startTime;
 
 function print(text) {
   postMessage({
     'type' : 'stdout',
     'data' : text
+  });
+  console.log('ffmpeg print: ' + text);
+}
+
+function onReturn(data) {
+  postMessage({
+    'type' : 'done',
+    'data' : data,
+    'time' : now() - startTime
   });
 }
 
@@ -18,6 +28,7 @@ onmessage = function(event) {
     var Module = {
       print: print,
       printErr: print,
+      'return': onReturn,
       files: message.files || [],
       arguments: message.arguments || [],
       TOTAL_MEMORY: 268435456
@@ -37,20 +48,8 @@ onmessage = function(event) {
                 ((Module.TOTAL_MEMORY) ? ".  Processing with " + Module.TOTAL_MEMORY + " bits." : "")
     });
 
-    var time = now();
-    var result = ffmpeg_run(Module);
-
-    var totalTime = now() - time;
-    postMessage({
-      'type' : 'stdout',
-      'data' : 'Finished processing (took ' + totalTime + 'ms)'
-    });
-
-    postMessage({
-      'type' : 'done',
-      'data' : result,
-      'time' : totalTime
-    });
+    startTime = now();
+    ffmpeg_run(Module);
   }
 };
 

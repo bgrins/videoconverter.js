@@ -1,0 +1,14 @@
+diff --git a/codec/common/src/WelsThreadLib.cpp b/codec/common/src/WelsThreadLib.cpp
+index 9366807..57c89d3 100644
+--- a/codec/common/src/WelsThreadLib.cpp
++++ b/codec/common/src/WelsThreadLib.cpp
+@@ -487,7 +487,8 @@ WELS_THREAD_ERROR_CODE    WelsQueryLogicalProcessInfo (WelsLogicalProcessInfo* p
+ 
+   size_t len = sizeof (pInfo->ProcessorCount);
+ 
+-  if (sysctlbyname (HW_NCPU_NAME, &pInfo->ProcessorCount, &len, NULL, 0) == -1)
++  // emcc goes here, but doesn't have sysctlbyname
++  //if (sysctlbyname (HW_NCPU_NAME, &pInfo->ProcessorCount, &len, NULL, 0) == -1)
+     pInfo->ProcessorCount = 1;
+ 
+   return WELS_THREAD_ERROR_OK;

@@ -1,0 +1,14 @@
+diff --git a/build/make/configure.sh b/build/make/configure.sh
+index a51a847..d097de6 100644
+--- a/build/make/configure.sh
++++ b/build/make/configure.sh
+@@ -428,7 +428,8 @@ NM=${NM}
+ 
+ CFLAGS  = ${CFLAGS}
+ CXXFLAGS  = ${CXXFLAGS}
+-ARFLAGS = -rus\$(if \$(quiet),c,v)
++# llvm-ar doesn't like "-" before options
++ARFLAGS = rus\$(if \$(quiet),c,v)
+ LDFLAGS = ${LDFLAGS}
+ ASFLAGS = ${ASFLAGS}
+ extralibs = ${extralibs}

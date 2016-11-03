@@ -1,0 +1,4 @@
+#!/bin/sh
+PKG_CONFIG_PATH=`dirname $0`/dist/lib/pkgconfig
+export PKG_CONFIG_PATH
+exec /usr/bin/pkg-config "$@"
