@@ -1,4 +1,4 @@
-#videoconverter.js
+# videoconverter.js
 
 videoconverter.js is a library that allows you to convert and manipulate videos inside of your web browser.
 
