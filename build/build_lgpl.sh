@@ -39,11 +39,11 @@ rm *.bc
 cp lib/libz.a libz.bc
 cp ../ffmpeg/ffmpeg ffmpeg.bc
 
-emcc -s OUTLINING_LIMIT=100000 -v -s TOTAL_MEMORY=33554432 -O2 ffmpeg.bc -o ../ffmpeg.js --pre-js ../ffmpeg_pre.js --post-js ../ffmpeg_post.js
+emcc -v -s TOTAL_MEMORY=33554432 -Os ffmpeg.bc -o ../ffmpeg.js --pre-js ../ffmpeg_pre.js --post-js ../ffmpeg_post.js -s WASM=1 -s "BINARYEN_METHOD='native-wasm'" -s ALLOW_MEMORY_GROWTH=1
 
 cd ..
 
 cp ffmpeg.js* ../demo
-
+cp ffmpeg.wasm* ../demo
 
 echo "Finished Build"
