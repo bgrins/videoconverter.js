@@ -1,11 +1,11 @@
 /*****************************************************************************
  * frame.c: frame handling
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *          Loren Merritt <lorenm@u.washington.edu>
- *          Jason Garrett-Glaser <darkshikari@gmail.com>
+ *          Fiona Glaser <fiona@x264.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -47,6 +47,7 @@ static int x264_frame_internal_csp( int external_csp )
     switch( external_csp & X264_CSP_MASK )
     {
         case X264_CSP_NV12:
+        case X264_CSP_NV21:
         case X264_CSP_I420:
         case X264_CSP_YV12:
             return X264_CSP_NV12;
@@ -77,7 +78,7 @@ static x264_frame_t *x264_frame_new( x264_t *h, int b_fdec )
 #if ARCH_X86 || ARCH_X86_64
     if( h->param.cpu&X264_CPU_CACHELINE_64 )
         align = 64;
-    else if( h->param.cpu&X264_CPU_CACHELINE_32 || h->param.cpu&X264_CPU_AVX2 )
+    else if( h->param.cpu&X264_CPU_CACHELINE_32 || h->param.cpu&X264_CPU_AVX )
         align = 32;
 #endif
 #if ARCH_PPC
@@ -387,7 +388,15 @@ int x264_frame_copy_picture( x264_t *h, x264_frame_t *dst, x264_picture_t *src )
         return -1;
     }
 
-    dst->i_type     = src->i_type;
+    if( src->i_type < X264_TYPE_AUTO || src->i_type > X264_TYPE_KEYFRAME )
+    {
+        x264_log( h, X264_LOG_WARNING, "forced frame type (%d) at %d is unknown\n", src->i_type, h->frames.i_input );
+        dst->i_forced_type = X264_TYPE_AUTO;
+    }
+    else
+        dst->i_forced_type = src->i_type;
+
+    dst->i_type     = dst->i_forced_type;
     dst->i_qpplus1  = src->i_qpplus1;
     dst->i_pts      = dst->i_reordered_pts = src->i_pts;
     dst->param      = src->param;
@@ -434,6 +443,12 @@ int x264_frame_copy_picture( x264_t *h, x264_frame_t *dst, x264_picture_t *src )
             get_plane_ptr( h, src, &pix[1], &stride[1], 1, 0, v_shift );
             h->mc.plane_copy( dst->plane[1], dst->i_stride[1], (pixel*)pix[1],
                               stride[1]/sizeof(pixel), h->param.i_width, h->param.i_height>>v_shift );
+        }
+        else if( i_csp == X264_CSP_NV21 )
+        {
+            get_plane_ptr( h, src, &pix[1], &stride[1], 1, 0, v_shift );
+            h->mc.plane_copy_swap( dst->plane[1], dst->i_stride[1], (pixel*)pix[1],
+                                   stride[1]/sizeof(pixel), h->param.i_width>>1, h->param.i_height>>v_shift );
         }
         else if( i_csp == X264_CSP_I420 || i_csp == X264_CSP_I422 || i_csp == X264_CSP_YV12 || i_csp == X264_CSP_YV16 )
         {

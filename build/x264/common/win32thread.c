@@ -1,10 +1,11 @@
 /*****************************************************************************
  * win32thread.c: windows threading
  *****************************************************************************
- * Copyright (C) 2010-2014 x264 project
+ * Copyright (C) 2010-2016 x264 project
  *
  * Authors: Steven Walters <kemuri9@gmail.com>
  *          Pegasys Inc. <http://www.pegasys-inc.com>
+ *          Henrik Gramner <henrik@gramner.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,32 +32,23 @@
  * this API does not detect nor utilize more than 64 cpus for systems that have them. */
 
 #include "common.h"
+
+#if HAVE_WINRT
+/* _beginthreadex() is technically the correct option, but it's only available for Desktop applications.
+ * Using CreateThread() as an alternative works on Windows Store and Windows Phone 8.1+ as long as we're
+ * using a dynamically linked MSVCRT which happens to be a requirement for WinRT applications anyway */
+#define _beginthreadex CreateThread
+#define InitializeCriticalSectionAndSpinCount(a, b) InitializeCriticalSectionEx(a, b, CRITICAL_SECTION_NO_DEBUG_INFO)
+#define WaitForSingleObject(a, b) WaitForSingleObjectEx(a, b, FALSE)
+#else
 #include <process.h>
+#endif
 
 /* number of times to spin a thread about to block on a locked mutex before retrying and sleeping if still locked */
 #define X264_SPIN_COUNT 0
 
-/* GROUP_AFFINITY struct */
-typedef struct
-{
-    ULONG_PTR mask; // KAFFINITY = ULONG_PTR
-    USHORT group;
-    USHORT reserved[3];
-} x264_group_affinity_t;
-
-typedef struct
-{
-    /* global mutex for replacing MUTEX_INITIALIZER instances */
-    x264_pthread_mutex_t static_mutex;
-
-    /* function pointers to conditional variable API on windows 6.0+ kernels */
-    void (WINAPI *cond_broadcast)( x264_pthread_cond_t *cond );
-    void (WINAPI *cond_init)( x264_pthread_cond_t *cond );
-    void (WINAPI *cond_signal)( x264_pthread_cond_t *cond );
-    BOOL (WINAPI *cond_wait)( x264_pthread_cond_t *cond, x264_pthread_mutex_t *mutex, DWORD milliseconds );
-} x264_win32thread_control_t;
-
-static x264_win32thread_control_t thread_control;
+/* global mutex for replacing MUTEX_INITIALIZER instances */
+static x264_pthread_mutex_t static_mutex;
 
 /* _beginthreadex requires that the start routine is __stdcall */
 static unsigned __stdcall x264_win32thread_worker( void *arg )
@@ -101,9 +93,9 @@ int x264_pthread_mutex_destroy( x264_pthread_mutex_t *mutex )
 
 int x264_pthread_mutex_lock( x264_pthread_mutex_t *mutex )
 {
-    static x264_pthread_mutex_t init = X264_PTHREAD_MUTEX_INITIALIZER;
+    static const x264_pthread_mutex_t init = X264_PTHREAD_MUTEX_INITIALIZER;
     if( !memcmp( mutex, &init, sizeof(x264_pthread_mutex_t) ) )
-        *mutex = thread_control.static_mutex;
+        *mutex = static_mutex;
     EnterCriticalSection( mutex );
     return 0;
 }
@@ -113,6 +105,64 @@ int x264_pthread_mutex_unlock( x264_pthread_mutex_t *mutex )
     LeaveCriticalSection( mutex );
     return 0;
 }
+
+void x264_win32_threading_destroy( void )
+{
+    x264_pthread_mutex_destroy( &static_mutex );
+    memset( &static_mutex, 0, sizeof(static_mutex) );
+}
+
+#if HAVE_WINRT
+int x264_pthread_cond_init( x264_pthread_cond_t *cond, const x264_pthread_condattr_t *attr )
+{
+    InitializeConditionVariable( cond );
+    return 0;
+}
+
+int x264_pthread_cond_destroy( x264_pthread_cond_t *cond )
+{
+    return 0;
+}
+
+int x264_pthread_cond_broadcast( x264_pthread_cond_t *cond )
+{
+    WakeAllConditionVariable( cond );
+    return 0;
+}
+
+int x264_pthread_cond_signal( x264_pthread_cond_t *cond )
+{
+    WakeConditionVariable( cond );
+    return 0;
+}
+
+int x264_pthread_cond_wait( x264_pthread_cond_t *cond, x264_pthread_mutex_t *mutex )
+{
+    return !SleepConditionVariableCS( cond, mutex, INFINITE );
+}
+
+int x264_win32_threading_init( void )
+{
+    return x264_pthread_mutex_init( &static_mutex, NULL );
+}
+
+int x264_pthread_num_processors_np( void )
+{
+    SYSTEM_INFO si;
+    GetNativeSystemInfo(&si);
+    return si.dwNumberOfProcessors;
+}
+
+#else
+
+static struct
+{
+    /* function pointers to conditional variable API on windows 6.0+ kernels */
+    void (WINAPI *cond_broadcast)( x264_pthread_cond_t *cond );
+    void (WINAPI *cond_init)( x264_pthread_cond_t *cond );
+    void (WINAPI *cond_signal)( x264_pthread_cond_t *cond );
+    BOOL (WINAPI *cond_wait)( x264_pthread_cond_t *cond, x264_pthread_mutex_t *mutex, DWORD milliseconds );
+} thread_control;
 
 /* for pre-Windows 6.0 platforms we need to define and use our own condition variable and api */
 typedef struct
@@ -137,8 +187,8 @@ int x264_pthread_cond_init( x264_pthread_cond_t *cond, const x264_pthread_condat
     x264_win32_cond_t *win32_cond = calloc( 1, sizeof(x264_win32_cond_t) );
     if( !win32_cond )
         return -1;
-    cond->ptr = win32_cond;
-    win32_cond->semaphore = CreateSemaphore( NULL, 0, 0x7fffffff, NULL );
+    cond->Ptr = win32_cond;
+    win32_cond->semaphore = CreateSemaphoreW( NULL, 0, 0x7fffffff, NULL );
     if( !win32_cond->semaphore )
         return -1;
 
@@ -147,7 +197,7 @@ int x264_pthread_cond_init( x264_pthread_cond_t *cond, const x264_pthread_condat
     if( x264_pthread_mutex_init( &win32_cond->mtx_broadcast, NULL ) )
         return -1;
 
-    win32_cond->waiters_done = CreateEvent( NULL, FALSE, FALSE, NULL );
+    win32_cond->waiters_done = CreateEventW( NULL, FALSE, FALSE, NULL );
     if( !win32_cond->waiters_done )
         return -1;
 
@@ -161,7 +211,7 @@ int x264_pthread_cond_destroy( x264_pthread_cond_t *cond )
         return 0;
 
     /* non native condition variables */
-    x264_win32_cond_t *win32_cond = cond->ptr;
+    x264_win32_cond_t *win32_cond = cond->Ptr;
     CloseHandle( win32_cond->semaphore );
     CloseHandle( win32_cond->waiters_done );
     x264_pthread_mutex_destroy( &win32_cond->mtx_broadcast );
@@ -180,7 +230,7 @@ int x264_pthread_cond_broadcast( x264_pthread_cond_t *cond )
     }
 
     /* non native condition variables */
-    x264_win32_cond_t *win32_cond = cond->ptr;
+    x264_win32_cond_t *win32_cond = cond->Ptr;
     x264_pthread_mutex_lock( &win32_cond->mtx_broadcast );
     x264_pthread_mutex_lock( &win32_cond->mtx_waiter_count );
     int have_waiter = 0;
@@ -212,7 +262,7 @@ int x264_pthread_cond_signal( x264_pthread_cond_t *cond )
     }
 
     /* non-native condition variables */
-    x264_win32_cond_t *win32_cond = cond->ptr;
+    x264_win32_cond_t *win32_cond = cond->Ptr;
 
     x264_pthread_mutex_lock( &win32_cond->mtx_broadcast );
     x264_pthread_mutex_lock( &win32_cond->mtx_waiter_count );
@@ -234,7 +284,7 @@ int x264_pthread_cond_wait( x264_pthread_cond_t *cond, x264_pthread_mutex_t *mut
         return !thread_control.cond_wait( cond, mutex, INFINITE );
 
     /* non native condition variables */
-    x264_win32_cond_t *win32_cond = cond->ptr;
+    x264_win32_cond_t *win32_cond = cond->Ptr;
 
     x264_pthread_mutex_lock( &win32_cond->mtx_broadcast );
     x264_pthread_mutex_lock( &win32_cond->mtx_waiter_count );
@@ -270,13 +320,7 @@ int x264_win32_threading_init( void )
         thread_control.cond_signal = (void*)GetProcAddress( kernel_dll, "WakeConditionVariable" );
         thread_control.cond_wait = (void*)GetProcAddress( kernel_dll, "SleepConditionVariableCS" );
     }
-    return x264_pthread_mutex_init( &thread_control.static_mutex, NULL );
-}
-
-void x264_win32_threading_destroy( void )
-{
-    x264_pthread_mutex_destroy( &thread_control.static_mutex );
-    memset( &thread_control, 0, sizeof(x264_win32thread_control_t) );
+    return x264_pthread_mutex_init( &static_mutex, NULL );
 }
 
 int x264_pthread_num_processors_np( void )
@@ -289,11 +333,16 @@ int x264_pthread_num_processors_np( void )
 #if ARCH_X86_64
     /* find function pointers to API functions specific to x86_64 platforms, if they exist */
     HANDLE kernel_dll = GetModuleHandleW( L"kernel32.dll" );
-    BOOL (*get_thread_affinity)( HANDLE thread, x264_group_affinity_t *group_affinity ) = (void*)GetProcAddress( kernel_dll, "GetThreadGroupAffinity" );
+    BOOL (*get_thread_affinity)( HANDLE thread, void *group_affinity ) = (void*)GetProcAddress( kernel_dll, "GetThreadGroupAffinity" );
     if( get_thread_affinity )
     {
         /* running on a platform that supports >64 logical cpus */
-        x264_group_affinity_t thread_affinity;
+        struct /* GROUP_AFFINITY */
+        {
+            ULONG_PTR mask; // KAFFINITY = ULONG_PTR
+            USHORT group;
+            USHORT reserved[3];
+        } thread_affinity;
         if( get_thread_affinity( GetCurrentThread(), &thread_affinity ) )
             process_cpus = thread_affinity.mask;
     }
@@ -305,3 +354,4 @@ int x264_pthread_num_processors_np( void )
 
     return cpus ? cpus : 1;
 }
+#endif

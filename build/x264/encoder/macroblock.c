@@ -1,11 +1,11 @@
 /*****************************************************************************
  * macroblock.c: macroblock encoding
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *          Loren Merritt <lorenm@u.washington.edu>
- *          Jason Garrett-Glaser <darkshikari@gmail.com>
+ *          Fiona Glaser <fiona@x264.com>
  *          Henrik Gramner <henrik@gramner.com>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -785,6 +785,7 @@ static ALWAYS_INLINE void x264_macroblock_encode_internal( x264_t *h, int plane_
 
             for( int p = 0; p < plane_count; p++, i_qp = h->mb.i_chroma_qp )
             {
+                int quant_cat = p ? CQM_8PC : CQM_8PY;
                 CLEAR_16x16_NNZ( p );
                 h->dctf.sub16x16_dct8( dct8x8, h->mb.pic.p_fenc[p], h->mb.pic.p_fdec[p] );
                 h->nr_count[1+!!p*2] += h->mb.b_noise_reduction * 4;
@@ -814,7 +815,7 @@ static ALWAYS_INLINE void x264_macroblock_encode_internal( x264_t *h, int plane_
                     h->mb.i_cbp_luma |= plane_cbp;
                     FOREACH_BIT( idx, 0, plane_cbp )
                     {
-                        h->quantf.dequant_8x8( dct8x8[idx], h->dequant8_mf[p?CQM_8PC:CQM_8PY], i_qp );
+                        h->quantf.dequant_8x8( dct8x8[idx], h->dequant8_mf[quant_cat], i_qp );
                         h->dctf.add8x8_idct8( &h->mb.pic.p_fdec[p][8*(idx&1) + 8*(idx>>1)*FDEC_STRIDE], dct8x8[idx] );
                         STORE_8x8_NNZ( p, idx, 1 );
                     }
@@ -826,6 +827,7 @@ static ALWAYS_INLINE void x264_macroblock_encode_internal( x264_t *h, int plane_
             ALIGNED_ARRAY_N( dctcoef, dct4x4,[16],[16] );
             for( int p = 0; p < plane_count; p++, i_qp = h->mb.i_chroma_qp )
             {
+                int quant_cat = p ? CQM_4PC : CQM_4PY;
                 CLEAR_16x16_NNZ( p );
                 h->dctf.sub16x16_dct( dct4x4, h->mb.pic.p_fenc[p], h->mb.pic.p_fdec[p] );
 
@@ -846,10 +848,10 @@ static ALWAYS_INLINE void x264_macroblock_encode_internal( x264_t *h, int plane_
                         for( int i4x4 = 0; i4x4 < 4; i4x4++ )
                         {
                             int idx = i8x8*4+i4x4;
-                            if( x264_quant_4x4_trellis( h, dct4x4[idx], CQM_4PY, i_qp, ctx_cat_plane[DCT_LUMA_4x4][p], 0, !!p, p*16+idx ) )
+                            if( x264_quant_4x4_trellis( h, dct4x4[idx], quant_cat, i_qp, ctx_cat_plane[DCT_LUMA_4x4][p], 0, !!p, p*16+idx ) )
                             {
                                 h->zigzagf.scan_4x4( h->dct.luma4x4[p*16+idx], dct4x4[idx] );
-                                h->quantf.dequant_4x4( dct4x4[idx], h->dequant4_mf[p?CQM_4PC:CQM_4PY], i_qp );
+                                h->quantf.dequant_4x4( dct4x4[idx], h->dequant4_mf[quant_cat], i_qp );
                                 if( i_decimate_8x8 < 6 )
                                     i_decimate_8x8 += h->quantf.decimate_score16( h->dct.luma4x4[p*16+idx] );
                                 h->mb.cache.non_zero_count[x264_scan8[p*16+idx]] = 1;
@@ -859,13 +861,13 @@ static ALWAYS_INLINE void x264_macroblock_encode_internal( x264_t *h, int plane_
                     }
                     else
                     {
-                        nnz8x8 = nz = h->quantf.quant_4x4x4( &dct4x4[i8x8*4], h->quant4_mf[CQM_4PY][i_qp], h->quant4_bias[CQM_4PY][i_qp] );
+                        nnz8x8 = nz = h->quantf.quant_4x4x4( &dct4x4[i8x8*4], h->quant4_mf[quant_cat][i_qp], h->quant4_bias[quant_cat][i_qp] );
                         if( nz )
                         {
                             FOREACH_BIT( idx, i8x8*4, nz )
                             {
                                 h->zigzagf.scan_4x4( h->dct.luma4x4[p*16+idx], dct4x4[idx] );
-                                h->quantf.dequant_4x4( dct4x4[idx], h->dequant4_mf[p?CQM_4PC:CQM_4PY], i_qp );
+                                h->quantf.dequant_4x4( dct4x4[idx], h->dequant4_mf[quant_cat], i_qp );
                                 if( i_decimate_8x8 < 6 )
                                     i_decimate_8x8 += h->quantf.decimate_score16( h->dct.luma4x4[p*16+idx] );
                                 h->mb.cache.non_zero_count[x264_scan8[p*16+idx]] = 1;

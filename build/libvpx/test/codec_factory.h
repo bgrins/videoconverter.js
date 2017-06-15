@@ -35,6 +35,11 @@ class CodecFactory {
   virtual Decoder* CreateDecoder(vpx_codec_dec_cfg_t cfg,
                                  unsigned long deadline) const = 0;
 
+  virtual Decoder* CreateDecoder(vpx_codec_dec_cfg_t cfg,
+                                 const vpx_codec_flags_t flags,
+                                 unsigned long deadline)  // NOLINT(runtime/int)
+                                 const = 0;
+
   virtual Encoder* CreateEncoder(vpx_codec_enc_cfg_t cfg,
                                  unsigned long deadline,
                                  const unsigned long init_flags,
@@ -72,6 +77,10 @@ class VP8Decoder : public Decoder {
   VP8Decoder(vpx_codec_dec_cfg_t cfg, unsigned long deadline)
       : Decoder(cfg, deadline) {}
 
+  VP8Decoder(vpx_codec_dec_cfg_t cfg, const vpx_codec_flags_t flag,
+             unsigned long deadline)  // NOLINT
+      : Decoder(cfg, flag, deadline) {}
+
  protected:
   virtual vpx_codec_iface_t* CodecInterface() const {
 #if CONFIG_VP8_DECODER
@@ -104,8 +113,14 @@ class VP8CodecFactory : public CodecFactory {
 
   virtual Decoder* CreateDecoder(vpx_codec_dec_cfg_t cfg,
                                  unsigned long deadline) const {
+    return CreateDecoder(cfg, 0, deadline);
+  }
+
+  virtual Decoder* CreateDecoder(vpx_codec_dec_cfg_t cfg,
+                                 const vpx_codec_flags_t flags,
+                                 unsigned long deadline) const {  // NOLINT
 #if CONFIG_VP8_DECODER
-    return new VP8Decoder(cfg, deadline);
+    return new VP8Decoder(cfg, flags, deadline);
 #else
     return NULL;
 #endif
@@ -154,6 +169,10 @@ class VP9Decoder : public Decoder {
   VP9Decoder(vpx_codec_dec_cfg_t cfg, unsigned long deadline)
       : Decoder(cfg, deadline) {}
 
+  VP9Decoder(vpx_codec_dec_cfg_t cfg, const vpx_codec_flags_t flag,
+             unsigned long deadline)  // NOLINT
+      : Decoder(cfg, flag, deadline) {}
+
  protected:
   virtual vpx_codec_iface_t* CodecInterface() const {
 #if CONFIG_VP9_DECODER
@@ -186,8 +205,14 @@ class VP9CodecFactory : public CodecFactory {
 
   virtual Decoder* CreateDecoder(vpx_codec_dec_cfg_t cfg,
                                  unsigned long deadline) const {
+    return CreateDecoder(cfg, 0, deadline);
+  }
+
+  virtual Decoder* CreateDecoder(vpx_codec_dec_cfg_t cfg,
+                                 const vpx_codec_flags_t flags,
+                                 unsigned long deadline) const {  // NOLINT
 #if CONFIG_VP9_DECODER
-    return new VP9Decoder(cfg, deadline);
+    return new VP9Decoder(cfg, flags, deadline);
 #else
     return NULL;
 #endif
@@ -226,7 +251,5 @@ const libvpx_test::VP9CodecFactory kVP9;
 #define VP9_INSTANTIATE_TEST_CASE(test, ...)
 #endif  // CONFIG_VP9
 
-
 }  // namespace libvpx_test
-
 #endif  // TEST_CODEC_FACTORY_H_

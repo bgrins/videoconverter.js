@@ -12,7 +12,13 @@
 #ifndef VPX_PORTS_X86_H_
 #define VPX_PORTS_X86_H_
 #include <stdlib.h>
+
+#if defined(_MSC_VER)
+#include <intrin.h>  /* For __cpuidex, __rdtsc */
+#endif
+
 #include "vpx_config.h"
+#include "vpx/vpx_integer.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -76,16 +82,12 @@ typedef enum {
 #else /* end __SUNPRO__ */
 #if ARCH_X86_64
 #if defined(_MSC_VER) && _MSC_VER > 1500
-void __cpuidex(int CPUInfo[4], int info_type, int ecxvalue);
-#pragma intrinsic(__cpuidex)
 #define cpuid(func, func2, a, b, c, d) do {\
     int regs[4];\
     __cpuidex(regs, func, func2); \
     a = regs[0];  b = regs[1];  c = regs[2];  d = regs[3];\
   } while(0)
 #else
-void __cpuid(int CPUInfo[4], int info_type);
-#pragma intrinsic(__cpuid)
 #define cpuid(func, func2, a, b, c, d) do {\
     int regs[4];\
     __cpuid(regs, func); \
@@ -104,6 +106,44 @@ void __cpuid(int CPUInfo[4], int info_type);
 #endif
 #endif /* end others */
 
+// NaCl has no support for xgetbv or the raw opcode.
+#if !defined(__native_client__) && (defined(__i386__) || defined(__x86_64__))
+static INLINE uint64_t xgetbv(void) {
+  const uint32_t ecx = 0;
+  uint32_t eax, edx;
+  // Use the raw opcode for xgetbv for compatibility with older toolchains.
+  __asm__ volatile (
+    ".byte 0x0f, 0x01, 0xd0\n"
+    : "=a"(eax), "=d"(edx) : "c" (ecx));
+  return ((uint64_t)edx << 32) | eax;
+}
+#elif (defined(_M_X64) || defined(_M_IX86)) && \
+      defined(_MSC_FULL_VER) && _MSC_FULL_VER >= 160040219  // >= VS2010 SP1
+#include <immintrin.h>
+#define xgetbv() _xgetbv(0)
+#elif defined(_MSC_VER) && defined(_M_IX86)
+static INLINE uint64_t xgetbv(void) {
+  uint32_t eax_, edx_;
+  __asm {
+    xor ecx, ecx  // ecx = 0
+    // Use the raw opcode for xgetbv for compatibility with older toolchains.
+    __asm _emit 0x0f __asm _emit 0x01 __asm _emit 0xd0
+    mov eax_, eax
+    mov edx_, edx
+  }
+  return ((uint64_t)edx_ << 32) | eax_;
+}
+#else
+#define xgetbv() 0U  // no AVX for older x64 or unrecognized toolchains.
+#endif
+
+#if defined(_MSC_VER) && _MSC_VER >= 1700
+#include <windows.h>
+#if WINAPI_FAMILY_PARTITION(WINAPI_FAMILY_APP)
+#define getenv(x) NULL
+#endif
+#endif
+
 #define HAS_MMX     0x01
 #define HAS_SSE     0x02
 #define HAS_SSE2    0x04
@@ -116,11 +156,11 @@ void __cpuid(int CPUInfo[4], int info_type);
 #define BIT(n) (1<<n)
 #endif
 
-static int
+static INLINE int
 x86_simd_caps(void) {
   unsigned int flags = 0;
   unsigned int mask = ~0;
-  unsigned int reg_eax, reg_ebx, reg_ecx, reg_edx;
+  unsigned int max_cpuid_val, reg_eax, reg_ebx, reg_ecx, reg_edx;
   char *env;
   (void)reg_ebx;
 
@@ -133,12 +173,12 @@ x86_simd_caps(void) {
   env = getenv("VPX_SIMD_CAPS_MASK");
 
   if (env && *env)
-    mask = strtol(env, NULL, 0);
+    mask = (unsigned int)strtoul(env, NULL, 0);
 
   /* Ensure that the CPUID instruction supports extended features */
-  cpuid(0, 0, reg_eax, reg_ebx, reg_ecx, reg_edx);
+  cpuid(0, 0, max_cpuid_val, reg_ebx, reg_ecx, reg_edx);
 
-  if (reg_eax < 1)
+  if (max_cpuid_val < 1)
     return 0;
 
   /* Get the standard feature flags */
@@ -156,23 +196,29 @@ x86_simd_caps(void) {
 
   if (reg_ecx & BIT(19)) flags |= HAS_SSE4_1;
 
-  if (reg_ecx & BIT(28)) flags |= HAS_AVX;
+  // bits 27 (OSXSAVE) & 28 (256-bit AVX)
+  if ((reg_ecx & (BIT(27) | BIT(28))) == (BIT(27) | BIT(28))) {
+    if ((xgetbv() & 0x6) == 0x6) {
+      flags |= HAS_AVX;
 
-  /* Get the leaf 7 feature flags. Needed to check for AVX2 support */
-  reg_eax = 7;
-  reg_ecx = 0;
-  cpuid(7, 0, reg_eax, reg_ebx, reg_ecx, reg_edx);
+      if (max_cpuid_val >= 7) {
+        /* Get the leaf 7 feature flags. Needed to check for AVX2 support */
+        cpuid(7, 0, reg_eax, reg_ebx, reg_ecx, reg_edx);
 
-  if (reg_ebx & BIT(5)) flags |= HAS_AVX2;
+        if (reg_ebx & BIT(5)) flags |= HAS_AVX2;
+      }
+    }
+  }
 
   return flags & mask;
 }
 
-#if ARCH_X86_64 && defined(_MSC_VER)
-unsigned __int64 __rdtsc(void);
-#pragma intrinsic(__rdtsc)
-#endif
-static unsigned int
+// Note:
+//  32-bit CPU cycle counter is light-weighted for most function performance
+//  measurement. For large function (CPU time > a couple of seconds), 64-bit
+//  counter should be used.
+// 32-bit CPU cycle counter
+static INLINE unsigned int
 x86_readtsc(void) {
 #if defined(__GNUC__) && __GNUC__
   unsigned int tsc;
@@ -190,7 +236,25 @@ x86_readtsc(void) {
 #endif
 #endif
 }
-
+// 64-bit CPU cycle counter
+static INLINE uint64_t
+x86_readtsc64(void) {
+#if defined(__GNUC__) && __GNUC__
+  uint32_t hi, lo;
+  __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
+  return ((uint64_t)hi << 32) | lo;
+#elif defined(__SUNPRO_C) || defined(__SUNPRO_CC)
+  uint_t hi, lo;
+  asm volatile("rdtsc\n\t" : "=a"(lo), "=d"(hi));
+  return ((uint64_t)hi << 32) | lo;
+#else
+#if ARCH_X86_64
+  return (uint64_t)__rdtsc();
+#else
+  __asm  rdtsc;
+#endif
+#endif
+}
 
 #if defined(__GNUC__) && __GNUC__
 #define x86_pause_hint()\
@@ -249,9 +313,9 @@ x87_get_control_word(void) {
 }
 #endif
 
-static unsigned short
+static INLINE unsigned int
 x87_set_double_precision(void) {
-  unsigned short mode = x87_get_control_word();
+  unsigned int mode = x87_get_control_word();
   x87_set_control_word((mode&~0x300) | 0x200);
   return mode;
 }

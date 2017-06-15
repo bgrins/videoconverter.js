@@ -123,6 +123,7 @@ static av_cold int tta_decode_init(AVCodecContext * avctx)
     TTAContext *s = avctx->priv_data;
     GetBitContext gb;
     int total_frames;
+    int ret;
 
     s->avctx = avctx;
 
@@ -131,7 +132,10 @@ static av_cold int tta_decode_init(AVCodecContext * avctx)
         return AVERROR_INVALIDDATA;
 
     s->crc_table = av_crc_get_table(AV_CRC_32_IEEE_LE);
-    init_get_bits8(&gb, avctx->extradata, avctx->extradata_size);
+    ret = init_get_bits8(&gb, avctx->extradata, avctx->extradata_size);
+    if (ret < 0)
+        return ret;
+
     if (show_bits_long(&gb, 32) == AV_RL32("TTA1")) {
         /* signature */
         skip_bits_long(&gb, 32);
@@ -394,7 +398,7 @@ static av_cold int tta_decode_close(AVCodecContext *avctx) {
     TTAContext *s = avctx->priv_data;
 
     if (s->bps < 3)
-        av_free(s->decode_buffer);
+        av_freep(&s->decode_buffer);
     s->decode_buffer = NULL;
     av_freep(&s->ch_ctx);
 
@@ -425,6 +429,6 @@ AVCodec ff_tta_decoder = {
     .close          = tta_decode_close,
     .decode         = tta_decode_frame,
     .init_thread_copy = ONLY_IF_THREADS_ENABLED(init_thread_copy),
-    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_FRAME_THREADS,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
     .priv_class     = &tta_decoder_class,
 };

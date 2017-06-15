@@ -13,22 +13,33 @@
  * High-resolution input video is down-sampled to lower-resolutions. The
  * encoder then encodes the video and outputs multiple bitstreams with
  * different resolutions.
+ *
+ * This test also allows for settings temporal layers for each spatial layer.
+ * Different number of temporal layers per spatial stream may be used.
+ * Currently up to 3 temporal layers per spatial stream (encoder) are supported
+ * in this test.
  */
+
+#include "./vpx_config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 #include <math.h>
-#define VPX_CODEC_DISABLE_COMPAT 1
+#include <assert.h>
+#include <sys/time.h>
+#include "vpx_ports/vpx_timer.h"
 #include "vpx/vpx_encoder.h"
 #include "vpx/vp8cx.h"
 #include "vpx_ports/mem_ops.h"
-#include "./tools_common.h"
+#include "../tools_common.h"
 #define interface (vpx_codec_vp8_cx())
 #define fourcc    0x30385056
 
-#define IVF_FILE_HDR_SZ  (32)
-#define IVF_FRAME_HDR_SZ (12)
+void usage_exit(void) {
+  exit(EXIT_FAILURE);
+}
 
 /*
  * The input video frame is downsampled several times to generate a multi-level
@@ -38,31 +49,17 @@
  * bitstreams with resolution of 1280x720(level 0), 640x360(level 1), and
  * 320x180(level 2) respectively.
  */
+
+/* Number of encoders (spatial resolutions) used in this test. */
 #define NUM_ENCODERS 3
+
+/* Maximum number of temporal layers allowed for this test. */
+#define MAX_NUM_TEMPORAL_LAYERS 3
 
 /* This example uses the scaler function in libyuv. */
 #include "third_party/libyuv/include/libyuv/basic_types.h"
 #include "third_party/libyuv/include/libyuv/scale.h"
 #include "third_party/libyuv/include/libyuv/cpu_id.h"
-
-static void die(const char *fmt, ...) {
-    va_list ap;
-
-    va_start(ap, fmt);
-    vprintf(fmt, ap);
-    if(fmt[strlen(fmt)-1] != '\n')
-        printf("\n");
-    exit(EXIT_FAILURE);
-}
-
-static void die_codec(vpx_codec_ctx_t *ctx, const char *s) {
-    const char *detail = vpx_codec_error_detail(ctx);
-
-    printf("%s: %s\n", s, vpx_codec_error(ctx));
-    if(detail)
-        printf("    %s\n",detail);
-    exit(EXIT_FAILURE);
-}
 
 int (*read_frame_p)(FILE *f, vpx_image_t *img);
 
@@ -170,21 +167,172 @@ static void write_ivf_frame_header(FILE *outfile,
     (void) fwrite(header, 1, 12, outfile);
 }
 
+/* Temporal scaling parameters */
+/* This sets all the temporal layer parameters given |num_temporal_layers|,
+ * including the target bit allocation across temporal layers. Bit allocation
+ * parameters will be passed in as user parameters in another version.
+ */
+static void set_temporal_layer_pattern(int num_temporal_layers,
+                                       vpx_codec_enc_cfg_t *cfg,
+                                       int bitrate,
+                                       int *layer_flags)
+{
+    assert(num_temporal_layers <= MAX_NUM_TEMPORAL_LAYERS);
+    switch (num_temporal_layers)
+    {
+    case 1:
+    {
+        /* 1-layer */
+        cfg->ts_number_layers     = 1;
+        cfg->ts_periodicity       = 1;
+        cfg->ts_rate_decimator[0] = 1;
+        cfg->ts_layer_id[0] = 0;
+        cfg->ts_target_bitrate[0] = bitrate;
+
+        // Update L only.
+        layer_flags[0] = VP8_EFLAG_NO_UPD_GF | VP8_EFLAG_NO_UPD_ARF;
+        break;
+    }
+
+    case 2:
+    {
+        /* 2-layers, with sync point at first frame of layer 1. */
+        cfg->ts_number_layers     = 2;
+        cfg->ts_periodicity       = 2;
+        cfg->ts_rate_decimator[0] = 2;
+        cfg->ts_rate_decimator[1] = 1;
+        cfg->ts_layer_id[0] = 0;
+        cfg->ts_layer_id[1] = 1;
+        // Use 60/40 bit allocation as example.
+        cfg->ts_target_bitrate[0] = 0.6f * bitrate;
+        cfg->ts_target_bitrate[1] = bitrate;
+
+        /* 0=L, 1=GF */
+        // ARF is used as predictor for all frames, and is only updated on
+        // key frame. Sync point every 8 frames.
+
+        // Layer 0: predict from L and ARF, update L and G.
+        layer_flags[0] = VP8_EFLAG_NO_REF_GF |
+                         VP8_EFLAG_NO_UPD_ARF;
+
+        // Layer 1: sync point: predict from L and ARF, and update G.
+        layer_flags[1] = VP8_EFLAG_NO_REF_GF |
+                         VP8_EFLAG_NO_UPD_LAST |
+                         VP8_EFLAG_NO_UPD_ARF;
+
+        // Layer 0, predict from L and ARF, update L.
+        layer_flags[2] = VP8_EFLAG_NO_REF_GF  |
+                         VP8_EFLAG_NO_UPD_GF  |
+                         VP8_EFLAG_NO_UPD_ARF;
+
+        // Layer 1: predict from L, G and ARF, and update G.
+        layer_flags[3] = VP8_EFLAG_NO_UPD_ARF |
+                         VP8_EFLAG_NO_UPD_LAST |
+                         VP8_EFLAG_NO_UPD_ENTROPY;
+
+        // Layer 0
+        layer_flags[4] = layer_flags[2];
+
+        // Layer 1
+        layer_flags[5] = layer_flags[3];
+
+        // Layer 0
+        layer_flags[6] = layer_flags[4];
+
+        // Layer 1
+        layer_flags[7] = layer_flags[5];
+        break;
+    }
+
+    case 3:
+    default:
+    {
+        // 3-layers structure where ARF is used as predictor for all frames,
+        // and is only updated on key frame.
+        // Sync points for layer 1 and 2 every 8 frames.
+        cfg->ts_number_layers     = 3;
+        cfg->ts_periodicity       = 4;
+        cfg->ts_rate_decimator[0] = 4;
+        cfg->ts_rate_decimator[1] = 2;
+        cfg->ts_rate_decimator[2] = 1;
+        cfg->ts_layer_id[0] = 0;
+        cfg->ts_layer_id[1] = 2;
+        cfg->ts_layer_id[2] = 1;
+        cfg->ts_layer_id[3] = 2;
+        // Use 40/20/40 bit allocation as example.
+        cfg->ts_target_bitrate[0] = 0.4f * bitrate;
+        cfg->ts_target_bitrate[1] = 0.6f * bitrate;
+        cfg->ts_target_bitrate[2] = bitrate;
+
+        /* 0=L, 1=GF, 2=ARF */
+
+        // Layer 0: predict from L and ARF; update L and G.
+        layer_flags[0] =  VP8_EFLAG_NO_UPD_ARF |
+                          VP8_EFLAG_NO_REF_GF;
+
+        // Layer 2: sync point: predict from L and ARF; update none.
+        layer_flags[1] = VP8_EFLAG_NO_REF_GF |
+                         VP8_EFLAG_NO_UPD_GF |
+                         VP8_EFLAG_NO_UPD_ARF |
+                         VP8_EFLAG_NO_UPD_LAST |
+                         VP8_EFLAG_NO_UPD_ENTROPY;
+
+        // Layer 1: sync point: predict from L and ARF; update G.
+        layer_flags[2] = VP8_EFLAG_NO_REF_GF |
+                         VP8_EFLAG_NO_UPD_ARF |
+                         VP8_EFLAG_NO_UPD_LAST;
+
+        // Layer 2: predict from L, G, ARF; update none.
+        layer_flags[3] = VP8_EFLAG_NO_UPD_GF |
+                         VP8_EFLAG_NO_UPD_ARF |
+                         VP8_EFLAG_NO_UPD_LAST |
+                         VP8_EFLAG_NO_UPD_ENTROPY;
+
+        // Layer 0: predict from L and ARF; update L.
+        layer_flags[4] = VP8_EFLAG_NO_UPD_GF |
+                         VP8_EFLAG_NO_UPD_ARF |
+                         VP8_EFLAG_NO_REF_GF;
+
+        // Layer 2: predict from L, G, ARF; update none.
+        layer_flags[5] = layer_flags[3];
+
+        // Layer 1: predict from L, G, ARF; update G.
+        layer_flags[6] = VP8_EFLAG_NO_UPD_ARF |
+                         VP8_EFLAG_NO_UPD_LAST;
+
+        // Layer 2: predict from L, G, ARF; update none.
+        layer_flags[7] = layer_flags[3];
+        break;
+    }
+    }
+}
+
+/* The periodicity of the pattern given the number of temporal layers. */
+static int periodicity_to_num_layers[MAX_NUM_TEMPORAL_LAYERS] = {1, 8, 8};
+
 int main(int argc, char **argv)
 {
-    FILE                *infile, *outfile[NUM_ENCODERS];
+    FILE                 *infile, *outfile[NUM_ENCODERS];
+    FILE                 *downsampled_input[NUM_ENCODERS - 1];
+    char                 filename[50];
     vpx_codec_ctx_t      codec[NUM_ENCODERS];
     vpx_codec_enc_cfg_t  cfg[NUM_ENCODERS];
-    vpx_codec_pts_t      frame_cnt = 0;
+    int                  frame_cnt = 0;
     vpx_image_t          raw[NUM_ENCODERS];
     vpx_codec_err_t      res[NUM_ENCODERS];
 
     int                  i;
     long                 width;
     long                 height;
+    int                  length_frame;
     int                  frame_avail;
     int                  got_data;
     int                  flags = 0;
+    int                  layer_id = 0;
+
+    int                  layer_flags[VPX_TS_MAX_PERIODICITY * NUM_ENCODERS]
+                                     = {0};
+    int                  flag_periodicity;
 
     /*Currently, only realtime mode is supported in multi-resolution encoding.*/
     int                  arg_deadline = VPX_DL_REALTIME;
@@ -193,39 +341,50 @@ int main(int argc, char **argv)
        don't need to know PSNR, which will skip PSNR calculation and save
        encoding time. */
     int                  show_psnr = 0;
+    int                  key_frame_insert = 0;
     uint64_t             psnr_sse_total[NUM_ENCODERS] = {0};
     uint64_t             psnr_samples_total[NUM_ENCODERS] = {0};
     double               psnr_totals[NUM_ENCODERS][4] = {{0,0}};
     int                  psnr_count[NUM_ENCODERS] = {0};
+
+    int64_t              cx_time = 0;
 
     /* Set the required target bitrates for each resolution level.
      * If target bitrate for highest-resolution level is set to 0,
      * (i.e. target_bitrate[0]=0), we skip encoding at that level.
      */
     unsigned int         target_bitrate[NUM_ENCODERS]={1000, 500, 100};
+
     /* Enter the frame rate of the input video */
     int                  framerate = 30;
+
     /* Set down-sampling factor for each resolution level.
        dsf[0] controls down sampling from level 0 to level 1;
        dsf[1] controls down sampling from level 1 to level 2;
        dsf[2] is not used. */
     vpx_rational_t dsf[NUM_ENCODERS] = {{2, 1}, {2, 1}, {1, 1}};
 
-    if(argc!= (5+NUM_ENCODERS))
-        die("Usage: %s <width> <height> <infile> <outfile(s)> <output psnr?>\n",
+    /* Set the number of temporal layers for each encoder/resolution level,
+     * starting from highest resoln down to lowest resoln. */
+    unsigned int         num_temporal_layers[NUM_ENCODERS] = {3, 3, 3};
+
+    if(argc!= (7 + 3 * NUM_ENCODERS))
+        die("Usage: %s <width> <height> <frame_rate>  <infile> <outfile(s)> "
+            "<rate_encoder(s)> <temporal_layer(s)> <key_frame_insert> <output psnr?> \n",
             argv[0]);
 
     printf("Using %s\n",vpx_codec_iface_name(interface));
 
     width = strtol(argv[1], NULL, 0);
     height = strtol(argv[2], NULL, 0);
+    framerate = strtol(argv[3], NULL, 0);
 
     if(width < 16 || width%2 || height <16 || height%2)
         die("Invalid resolution: %ldx%ld", width, height);
 
     /* Open input video file for encoding */
-    if(!(infile = fopen(argv[3], "rb")))
-        die("Failed to open %s for reading", argv[3]);
+    if(!(infile = fopen(argv[4], "rb")))
+        die("Failed to open %s for reading", argv[4]);
 
     /* Open output file for each encoder to output bitstreams */
     for (i=0; i< NUM_ENCODERS; i++)
@@ -236,11 +395,40 @@ int main(int argc, char **argv)
             continue;
         }
 
-        if(!(outfile[i] = fopen(argv[i+4], "wb")))
+        if(!(outfile[i] = fopen(argv[i+5], "wb")))
             die("Failed to open %s for writing", argv[i+4]);
     }
 
-    show_psnr = strtol(argv[NUM_ENCODERS + 4], NULL, 0);
+    // Bitrates per spatial layer: overwrite default rates above.
+    for (i=0; i< NUM_ENCODERS; i++)
+    {
+        target_bitrate[i] = strtol(argv[NUM_ENCODERS + 5 + i], NULL, 0);
+    }
+
+    // Temporal layers per spatial layers: overwrite default settings above.
+    for (i=0; i< NUM_ENCODERS; i++)
+    {
+        num_temporal_layers[i] = strtol(argv[2 * NUM_ENCODERS + 5 + i], NULL, 0);
+        if (num_temporal_layers[i] < 1 || num_temporal_layers[i] > 3)
+          die("Invalid temporal layers: %d, Must be 1, 2, or 3. \n",
+              num_temporal_layers);
+    }
+
+    /* Open file to write out each spatially downsampled input stream. */
+    for (i=0; i< NUM_ENCODERS - 1; i++)
+    {
+       // Highest resoln is encoder 0.
+        if (sprintf(filename,"ds%d.yuv",NUM_ENCODERS - i) < 0)
+        {
+            return EXIT_FAILURE;
+        }
+        downsampled_input[i] = fopen(filename,"wb");
+    }
+
+    key_frame_insert = strtol(argv[3 * NUM_ENCODERS + 5], NULL, 0);
+
+    show_psnr = strtol(argv[3 * NUM_ENCODERS + 6], NULL, 0);
+
 
     /* Populate default encoder configuration */
     for (i=0; i< NUM_ENCODERS; i++)
@@ -258,14 +446,13 @@ int main(int argc, char **argv)
     /* Highest-resolution encoder settings */
     cfg[0].g_w = width;
     cfg[0].g_h = height;
-    cfg[0].g_threads = 1;                           /* number of threads used */
-    cfg[0].rc_dropframe_thresh = 30;
+    cfg[0].rc_dropframe_thresh = 0;
     cfg[0].rc_end_usage = VPX_CBR;
     cfg[0].rc_resize_allowed = 0;
-    cfg[0].rc_min_quantizer = 4;
+    cfg[0].rc_min_quantizer = 2;
     cfg[0].rc_max_quantizer = 56;
-    cfg[0].rc_undershoot_pct = 98;
-    cfg[0].rc_overshoot_pct = 100;
+    cfg[0].rc_undershoot_pct = 100;
+    cfg[0].rc_overshoot_pct = 15;
     cfg[0].rc_buf_initial_sz = 500;
     cfg[0].rc_buf_optimal_sz = 600;
     cfg[0].rc_buf_sz = 1000;
@@ -276,7 +463,6 @@ int main(int argc, char **argv)
     /* Note: These 3 settings are copied to all levels. But, except the lowest
      * resolution level, all other levels are set to VPX_KF_DISABLED internally.
      */
-    //cfg[0].kf_mode           = VPX_KF_DISABLED;
     cfg[0].kf_mode           = VPX_KF_AUTO;
     cfg[0].kf_min_dist = 3000;
     cfg[0].kf_max_dist = 3000;
@@ -290,7 +476,6 @@ int main(int argc, char **argv)
     {
         memcpy(&cfg[i], &cfg[0], sizeof(vpx_codec_enc_cfg_t));
 
-        cfg[i].g_threads = 1;                       /* number of threads used */
         cfg[i].rc_target_bitrate = target_bitrate[i];
 
         /* Note: Width & height of other-resolution encoders are calculated
@@ -310,6 +495,13 @@ int main(int argc, char **argv)
         if((cfg[i].g_h)%2)cfg[i].g_h++;
     }
 
+
+    // Set the number of threads per encode/spatial layer.
+    // (1, 1, 1) means no encoder threading.
+    cfg[0].g_threads = 2;
+    cfg[1].g_threads = 1;
+    cfg[2].g_threads = 1;
+
     /* Allocate image for each encoder */
     for (i=0; i< NUM_ENCODERS; i++)
         if(!vpx_img_alloc(&raw[i], VPX_IMG_FMT_I420, cfg[i].g_w, cfg[i].g_h, 32))
@@ -324,6 +516,15 @@ int main(int argc, char **argv)
         if(outfile[i])
             write_ivf_file_header(outfile[i], &cfg[i], 0);
 
+    /* Temporal layers settings */
+    for ( i=0; i<NUM_ENCODERS; i++)
+    {
+        set_temporal_layer_pattern(num_temporal_layers[i],
+                                   &cfg[i],
+                                   cfg[i].rc_target_bitrate,
+                                   &layer_flags[i * VPX_TS_MAX_PERIODICITY]);
+    }
+
     /* Initialize multi-encoder */
     if(vpx_codec_enc_init_multi(&codec[0], interface, &cfg[0], NUM_ENCODERS,
                                 (show_psnr ? VPX_CODEC_USE_PSNR : 0), &dsf[0]))
@@ -334,15 +535,16 @@ int main(int argc, char **argv)
     for ( i=0; i<NUM_ENCODERS; i++)
     {
         int speed = -6;
+        /* Lower speed for the lowest resolution. */
+        if (i == NUM_ENCODERS - 1) speed = -4;
         if(vpx_codec_control(&codec[i], VP8E_SET_CPUUSED, speed))
             die_codec(&codec[i], "Failed to set cpu_used");
     }
 
-    /* Set static threshold. */
+    /* Set static threshold = 1 for all encoders */
     for ( i=0; i<NUM_ENCODERS; i++)
     {
-        unsigned int static_thresh = 1;
-        if(vpx_codec_control(&codec[i], VP8E_SET_STATIC_THRESHOLD, static_thresh))
+        if(vpx_codec_control(&codec[i], VP8E_SET_STATIC_THRESHOLD, 1))
             die_codec(&codec[i], "Failed to set static threshold");
     }
 
@@ -356,12 +558,30 @@ int main(int argc, char **argv)
             die_codec(&codec[i], "Failed to set noise_sensitivity");
     }
 
+    /* Set the number of token partitions */
+    for ( i=0; i<NUM_ENCODERS; i++)
+    {
+        if(vpx_codec_control(&codec[i], VP8E_SET_TOKEN_PARTITIONS, 1))
+            die_codec(&codec[i], "Failed to set static threshold");
+    }
+
+    /* Set the max intra target bitrate */
+    for ( i=0; i<NUM_ENCODERS; i++)
+    {
+        unsigned int max_intra_size_pct =
+            (int)(((double)cfg[0].rc_buf_optimal_sz * 0.5) * framerate / 10);
+        if(vpx_codec_control(&codec[i], VP8E_SET_MAX_INTRA_BITRATE_PCT,
+                             max_intra_size_pct))
+            die_codec(&codec[i], "Failed to set static threshold");
+       //printf("%d %d \n",i,max_intra_size_pct);
+    }
 
     frame_avail = 1;
     got_data = 0;
 
     while(frame_avail || got_data)
     {
+        struct vpx_usec_timer timer;
         vpx_codec_iter_t iter[NUM_ENCODERS]={NULL};
         const vpx_codec_cx_pkt_t *pkt[NUM_ENCODERS];
 
@@ -382,18 +602,55 @@ int main(int argc, char **argv)
                           raw[i].planes[VPX_PLANE_U], raw[i].stride[VPX_PLANE_U],
                           raw[i].planes[VPX_PLANE_V], raw[i].stride[VPX_PLANE_V],
                           raw[i].d_w, raw[i].d_h, 1);
+                /* Write out down-sampled input. */
+                length_frame = cfg[i].g_w *  cfg[i].g_h *3/2;
+                if (fwrite(raw[i].planes[0], 1, length_frame,
+                           downsampled_input[NUM_ENCODERS - i - 1]) !=
+                               length_frame)
+                {
+                    return EXIT_FAILURE;
+                }
             }
         }
 
+        /* Set the flags (reference and update) for all the encoders.*/
+        for ( i=0; i<NUM_ENCODERS; i++)
+        {
+            layer_id = cfg[i].ts_layer_id[frame_cnt % cfg[i].ts_periodicity];
+            flags = 0;
+            flag_periodicity = periodicity_to_num_layers
+                [num_temporal_layers[i] - 1];
+            flags = layer_flags[i * VPX_TS_MAX_PERIODICITY +
+                                frame_cnt % flag_periodicity];
+            // Key frame flag for first frame.
+            if (frame_cnt == 0)
+            {
+                flags |= VPX_EFLAG_FORCE_KF;
+            }
+            if (frame_cnt > 0 && frame_cnt == key_frame_insert)
+            {
+                flags = VPX_EFLAG_FORCE_KF;
+            }
+
+            vpx_codec_control(&codec[i], VP8E_SET_FRAME_FLAGS, flags);
+            vpx_codec_control(&codec[i], VP8E_SET_TEMPORAL_LAYER_ID, layer_id);
+        }
+
         /* Encode each frame at multi-levels */
+        /* Note the flags must be set to 0 in the encode call if they are set
+           for each frame with the vpx_codec_control(), as done above. */
+        vpx_usec_timer_start(&timer);
         if(vpx_codec_encode(&codec[0], frame_avail? &raw[0] : NULL,
-            frame_cnt, 1, flags, arg_deadline))
+            frame_cnt, 1, 0, arg_deadline))
+        {
             die_codec(&codec[0], "Failed to encode frame");
+        }
+        vpx_usec_timer_mark(&timer);
+        cx_time += vpx_usec_timer_elapsed(&timer);
 
         for (i=NUM_ENCODERS-1; i>=0 ; i--)
         {
             got_data = 0;
-
             while( (pkt[i] = vpx_codec_get_cx_data(&codec[i], &iter[i])) )
             {
                 got_data = 1;
@@ -412,7 +669,6 @@ int main(int argc, char **argv)
                             psnr_samples_total[i] += pkt[i]->data.psnr.samples[0];
                             for (j = 0; j < 4; j++)
                             {
-                                //fprintf(stderr, "%.3lf ", pkt[i]->data.psnr.psnr[j]);
                                 psnr_totals[i][j] += pkt[i]->data.psnr.psnr[j];
                             }
                             psnr_count[i]++;
@@ -423,13 +679,17 @@ int main(int argc, char **argv)
                         break;
                 }
                 printf(pkt[i]->kind == VPX_CODEC_CX_FRAME_PKT
-                       && (pkt[i]->data.frame.flags & VPX_FRAME_IS_KEY)? "K":".");
+                       && (pkt[i]->data.frame.flags & VPX_FRAME_IS_KEY)? "K":"");
                 fflush(stdout);
             }
         }
         frame_cnt++;
     }
     printf("\n");
+    printf("Frame cnt and encoding time/FPS stats for encoding: %d %f %f \n",
+            frame_cnt,
+            1000 * (float)cx_time / (double)(frame_cnt * 1000000),
+            1000000 * (double)frame_cnt / (double)cx_time);
 
     fclose(infile);
 

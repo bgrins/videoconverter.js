@@ -16,7 +16,7 @@
 extern "C" {
 #endif
 
-#include "vp9/encoder/vp9_onyx_int.h"
+#include "vp9/encoder/vp9_encoder.h"
 
 struct yv12_buffer_config;
 struct VP9_COMP;

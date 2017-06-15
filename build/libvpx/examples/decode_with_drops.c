@@ -56,18 +56,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define VPX_CODEC_DISABLE_COMPAT 1
-
 #include "vpx/vp8dx.h"
 #include "vpx/vpx_decoder.h"
 
-#include "./tools_common.h"
-#include "./video_reader.h"
+#include "../tools_common.h"
+#include "../video_reader.h"
 #include "./vpx_config.h"
 
 static const char *exec_name;
 
-void usage_exit() {
+void usage_exit(void) {
   fprintf(stderr, "Usage: %s <infile> <outfile> <N-M|N/M>\n", exec_name);
   exit(EXIT_FAILURE);
 }
@@ -108,9 +106,9 @@ int main(int argc, char **argv) {
   if (!decoder)
     die("Unknown input codec.");
 
-  printf("Using %s\n", vpx_codec_iface_name(decoder->interface()));
+  printf("Using %s\n", vpx_codec_iface_name(decoder->codec_interface()));
 
-  if (vpx_codec_dec_init(&codec, decoder->interface(), NULL, 0))
+  if (vpx_codec_dec_init(&codec, decoder->codec_interface(), NULL, 0))
     die_codec(&codec, "Failed to initialize decoder.");
 
   while (vpx_video_reader_read_frame(reader)) {

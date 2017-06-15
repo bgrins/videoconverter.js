@@ -10,23 +10,48 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <set>
 #include <string>
 #include "third_party/googletest/src/include/gtest/gtest.h"
+#include "../tools_common.h"
+#include "./vpx_config.h"
 #include "test/codec_factory.h"
 #include "test/decode_test_driver.h"
 #include "test/ivf_video_source.h"
 #include "test/md5_helper.h"
 #include "test/test_vectors.h"
 #include "test/util.h"
+#if CONFIG_WEBM_IO
 #include "test/webm_video_source.h"
+#endif
 #include "vpx_mem/vpx_mem.h"
 
 namespace {
 
+enum DecodeMode {
+  kSerialMode,
+  kFrameParallelMode
+};
+
+const int kDecodeMode = 0;
+const int kThreads = 1;
+const int kFileName = 2;
+
+typedef std::tr1::tuple<int, int, const char*> DecodeParam;
+
 class TestVectorTest : public ::libvpx_test::DecoderTest,
-    public ::libvpx_test::CodecTestWithParam<const char*> {
+    public ::libvpx_test::CodecTestWithParam<DecodeParam> {
  protected:
-  TestVectorTest() : DecoderTest(GET_PARAM(0)), md5_file_(NULL) {}
+  TestVectorTest()
+      : DecoderTest(GET_PARAM(0)),
+        md5_file_(NULL) {
+#if CONFIG_VP9_DECODER
+    resize_clips_.insert(
+      ::libvpx_test::kVP9TestVectorsResize,
+      ::libvpx_test::kVP9TestVectorsResize +
+          ::libvpx_test::kNumVP9TestVectorsResize);
+#endif
+  }
 
   virtual ~TestVectorTest() {
     if (md5_file_)
@@ -59,6 +84,10 @@ class TestVectorTest : public ::libvpx_test::DecoderTest,
         << "Md5 checksums don't match: frame number = " << frame_number;
   }
 
+#if CONFIG_VP9_DECODER
+  std::set<std::string> resize_clips_;
+#endif
+
  private:
   FILE *md5_file_;
 };
@@ -68,14 +97,45 @@ class TestVectorTest : public ::libvpx_test::DecoderTest,
 // checksums match the correct md5 data, then the test is passed. Otherwise,
 // the test failed.
 TEST_P(TestVectorTest, MD5Match) {
-  const std::string filename = GET_PARAM(1);
+  const DecodeParam input = GET_PARAM(1);
+  const std::string filename = std::tr1::get<kFileName>(input);
+  const int threads = std::tr1::get<kThreads>(input);
+  const int mode = std::tr1::get<kDecodeMode>(input);
   libvpx_test::CompressedVideoSource *video = NULL;
+  vpx_codec_flags_t flags = 0;
+  vpx_codec_dec_cfg_t cfg = vpx_codec_dec_cfg_t();
+  char str[256];
+
+  if (mode == kFrameParallelMode) {
+    flags |= VPX_CODEC_USE_FRAME_THREADING;
+#if CONFIG_VP9_DECODER
+    // TODO(hkuang): Fix frame parallel decode bug. See issue 1086.
+    if (resize_clips_.find(filename) != resize_clips_.end()) {
+      printf("Skipping the test file: %s, due to frame parallel decode bug.\n",
+             filename.c_str());
+      return;
+    }
+#endif
+  }
+
+  cfg.threads = threads;
+
+  snprintf(str, sizeof(str) / sizeof(str[0]) - 1,
+           "file: %s  mode: %s threads: %d",
+           filename.c_str(), mode == 0 ? "Serial" : "Parallel", threads);
+  SCOPED_TRACE(str);
 
   // Open compressed video file.
   if (filename.substr(filename.length() - 3, 3) == "ivf") {
     video = new libvpx_test::IVFVideoSource(filename);
   } else if (filename.substr(filename.length() - 4, 4) == "webm") {
+#if CONFIG_WEBM_IO
     video = new libvpx_test::WebMVideoSource(filename);
+#else
+    fprintf(stderr, "WebM IO is disabled, skipping test vector %s\n",
+            filename.c_str());
+    return;
+#endif
   }
   video->Init();
 
@@ -83,18 +143,50 @@ TEST_P(TestVectorTest, MD5Match) {
   const std::string md5_filename = filename + ".md5";
   OpenMD5File(md5_filename);
 
+  // Set decode config and flags.
+  set_cfg(cfg);
+  set_flags(flags);
+
   // Decode frame, and check the md5 matching.
-  ASSERT_NO_FATAL_FAILURE(RunLoop(video));
+  ASSERT_NO_FATAL_FAILURE(RunLoop(video, cfg));
   delete video;
 }
 
-VP8_INSTANTIATE_TEST_CASE(TestVectorTest,
-                          ::testing::ValuesIn(libvpx_test::kVP8TestVectors,
-                                              libvpx_test::kVP8TestVectors +
-                                              libvpx_test::kNumVP8TestVectors));
-VP9_INSTANTIATE_TEST_CASE(TestVectorTest,
-                          ::testing::ValuesIn(libvpx_test::kVP9TestVectors,
-                                              libvpx_test::kVP9TestVectors +
-                                              libvpx_test::kNumVP9TestVectors));
+// Test VP8 decode in serial mode with single thread.
+// NOTE: VP8 only support serial mode.
+#if CONFIG_VP8_DECODER
+VP8_INSTANTIATE_TEST_CASE(
+    TestVectorTest,
+    ::testing::Combine(
+        ::testing::Values(0),  // Serial Mode.
+        ::testing::Values(1),  // Single thread.
+        ::testing::ValuesIn(libvpx_test::kVP8TestVectors,
+                            libvpx_test::kVP8TestVectors +
+                                libvpx_test::kNumVP8TestVectors)));
+#endif  // CONFIG_VP8_DECODER
 
+// Test VP9 decode in serial mode with single thread.
+#if CONFIG_VP9_DECODER
+VP9_INSTANTIATE_TEST_CASE(
+    TestVectorTest,
+    ::testing::Combine(
+        ::testing::Values(0),  // Serial Mode.
+        ::testing::Values(1),  // Single thread.
+        ::testing::ValuesIn(libvpx_test::kVP9TestVectors,
+                            libvpx_test::kVP9TestVectors +
+                                libvpx_test::kNumVP9TestVectors)));
+
+// Test VP9 decode in frame parallel mode with different number of threads.
+INSTANTIATE_TEST_CASE_P(
+    VP9MultiThreadedFrameParallel, TestVectorTest,
+    ::testing::Combine(
+        ::testing::Values(
+            static_cast<const libvpx_test::CodecFactory *>(&libvpx_test::kVP9)),
+        ::testing::Combine(
+            ::testing::Values(1),        // Frame Parallel mode.
+            ::testing::Range(2, 9),      // With 2 ~ 8 threads.
+            ::testing::ValuesIn(libvpx_test::kVP9TestVectors,
+                                libvpx_test::kVP9TestVectors +
+                                    libvpx_test::kNumVP9TestVectors))));
+#endif
 }  // namespace

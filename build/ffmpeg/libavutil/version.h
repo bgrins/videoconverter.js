@@ -32,9 +32,17 @@
  * @{
  */
 
-#define AV_VERSION_INT(a, b, c) (a<<16 | b<<8 | c)
+#define AV_VERSION_INT(a, b, c) ((a)<<16 | (b)<<8 | (c))
 #define AV_VERSION_DOT(a, b, c) a ##.## b ##.## c
 #define AV_VERSION(a, b, c) AV_VERSION_DOT(a, b, c)
+
+/**
+ * Extract version components from the full ::AV_VERSION_INT int as returned
+ * by functions like ::avformat_version() and ::avcodec_version()
+ */
+#define AV_VERSION_MAJOR(a) ((a) >> 16)
+#define AV_VERSION_MINOR(a) (((a) & 0x00FF00) >> 8)
+#define AV_VERSION_MICRO(a) ((a) & 0xFF)
 
 /**
  * @}
@@ -55,8 +63,8 @@
  * @{
  */
 
-#define LIBAVUTIL_VERSION_MAJOR  52
-#define LIBAVUTIL_VERSION_MINOR  92
+#define LIBAVUTIL_VERSION_MAJOR  55
+#define LIBAVUTIL_VERSION_MINOR  28
 #define LIBAVUTIL_VERSION_MICRO 100
 
 #define LIBAVUTIL_VERSION_INT   AV_VERSION_INT(LIBAVUTIL_VERSION_MAJOR, \
@@ -77,82 +85,44 @@
  * dropped at a future version bump. The defines themselves are not part of
  * the public API and may change, break or disappear at any time.
  *
+ * @note, when bumping the major version it is recommended to manually
+ * disable each FF_API_* in its own commit instead of disabling them all
+ * at once through the bump. This improves the git bisect-ability of the change.
+ *
  * @{
  */
 
-#ifndef FF_API_GET_BITS_PER_SAMPLE_FMT
-#define FF_API_GET_BITS_PER_SAMPLE_FMT (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_FIND_OPT
-#define FF_API_FIND_OPT                 (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_OLD_AVOPTIONS
-#define FF_API_OLD_AVOPTIONS            (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_PIX_FMT
-#define FF_API_PIX_FMT                  (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_CONTEXT_SIZE
-#define FF_API_CONTEXT_SIZE             (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_PIX_FMT_DESC
-#define FF_API_PIX_FMT_DESC             (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_AV_REVERSE
-#define FF_API_AV_REVERSE               (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_AUDIOCONVERT
-#define FF_API_AUDIOCONVERT             (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_CPU_FLAG_MMX2
-#define FF_API_CPU_FLAG_MMX2            (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_SAMPLES_UTILS_RETURN_ZERO
-#define FF_API_SAMPLES_UTILS_RETURN_ZERO (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_LLS_PRIVATE
-#define FF_API_LLS_PRIVATE              (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_LLS1
-#define FF_API_LLS1                     (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_AVFRAME_LAVC
-#define FF_API_AVFRAME_LAVC             (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
 #ifndef FF_API_VDPAU
-#define FF_API_VDPAU                    (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_GET_CHANNEL_LAYOUT_COMPAT
-#define FF_API_GET_CHANNEL_LAYOUT_COMPAT (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_OLD_OPENCL
-#define FF_API_OLD_OPENCL               (LIBAVUTIL_VERSION_MAJOR < 54)
+#define FF_API_VDPAU                    (LIBAVUTIL_VERSION_MAJOR < 56)
 #endif
 #ifndef FF_API_XVMC
-#define FF_API_XVMC                     (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_INTFLOAT
-#define FF_API_INTFLOAT                 (LIBAVUTIL_VERSION_MAJOR < 54)
+#define FF_API_XVMC                     (LIBAVUTIL_VERSION_MAJOR < 56)
 #endif
 #ifndef FF_API_OPT_TYPE_METADATA
-#define FF_API_OPT_TYPE_METADATA        (LIBAVUTIL_VERSION_MAJOR < 54)
+#define FF_API_OPT_TYPE_METADATA        (LIBAVUTIL_VERSION_MAJOR < 56)
 #endif
-#ifndef FF_API_AVFRAME_COLORSPACE
-#define FF_API_AVFRAME_COLORSPACE       (LIBAVUTIL_VERSION_MAJOR >= 52)
+#ifndef FF_API_DLOG
+#define FF_API_DLOG                     (LIBAVUTIL_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_VAAPI
+#define FF_API_VAAPI                    (LIBAVUTIL_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_FRAME_QP
+#define FF_API_FRAME_QP                 (LIBAVUTIL_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_PLUS1_MINUS1
+#define FF_API_PLUS1_MINUS1             (LIBAVUTIL_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_ERROR_FRAME
+#define FF_API_ERROR_FRAME              (LIBAVUTIL_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_CRC_BIG_TABLE
+#define FF_API_CRC_BIG_TABLE            (LIBAVUTIL_VERSION_MAJOR < 56)
 #endif
 
-
-#ifndef FF_CONST_AVUTIL53
-#if LIBAVUTIL_VERSION_MAJOR >= 53
-#define FF_CONST_AVUTIL53 const
-#else
-#define FF_CONST_AVUTIL53
-#endif
-#endif
 
 /**
  * @}
  */
 
 #endif /* AVUTIL_VERSION_H */
-

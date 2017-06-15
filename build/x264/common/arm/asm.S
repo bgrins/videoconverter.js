@@ -1,7 +1,7 @@
 /*****************************************************************************
  * asm.S: arm utility macros
  *****************************************************************************
- * Copyright (C) 2008-2014 x264 project
+ * Copyright (C) 2008-2016 x264 project
  *
  * Authors: Mans Rullgard <mans@mansr.com>
  *          David Conrad <lessen42@gmail.com>
@@ -28,6 +28,16 @@
 
 .syntax unified
 
+#if   HAVE_NEON
+        .arch           armv7-a
+#elif HAVE_ARMV6T2
+        .arch           armv6t2
+#elif HAVE_ARMV6
+        .arch           armv6
+#endif
+
+.fpu neon
+
 #ifdef PREFIX
 #   define EXTERN_ASM _
 #else
@@ -40,6 +50,18 @@
 #   define ELF @
 #endif
 
+#if HAVE_AS_FUNC
+#   define FUNC
+#else
+#   define FUNC @
+#endif
+
+#if SYS_LINUX
+#define HAVE_SECTION_DATA_REL_RO 1
+#else
+#define HAVE_SECTION_DATA_REL_RO 0
+#endif
+
 .macro require8, val=1
 ELF     .eabi_attribute 24, \val
 .endm
@@ -49,27 +71,85 @@ ELF     .eabi_attribute 25, \val
 .endm
 
 .macro function name, export=1
+    .macro endfunc
+ELF     .size   \name, . - \name
+FUNC    .endfunc
+        .purgem endfunc
+    .endm
         .align  2
 .if \export == 1
         .global EXTERN_ASM\name
 ELF     .hidden EXTERN_ASM\name
 ELF     .type   EXTERN_ASM\name, %function
-        .func   EXTERN_ASM\name
+FUNC    .func   EXTERN_ASM\name
 EXTERN_ASM\name:
 .else
 ELF     .hidden \name
 ELF     .type   \name, %function
-        .func   \name
+FUNC    .func   \name
 \name:
 .endif
 .endm
 
+.macro const name, align=2, relocate=0
+    .macro endconst
+ELF     .size   \name, . - \name
+        .purgem endconst
+    .endm
+.if HAVE_SECTION_DATA_REL_RO && \relocate
+        .section        .data.rel.ro
+.else
+        .section        .rodata
+.endif
+        .align          \align
+\name:
+.endm
+
 .macro movrel rd, val
-#if HAVE_ARMV6T2 && !defined(PIC)
+#if defined(PIC)
+        ldr             \rd,  1f
+        b               2f
+1:
+@ FIXME: thumb
+        .word           \val - (2f + 8)
+2:
+        add             \rd,  \rd,  pc
+#elif HAVE_ARMV6T2
         movw            \rd, #:lower16:\val
         movt            \rd, #:upper16:\val
 #else
         ldr             \rd, =\val
+#endif
+.endm
+
+.macro movrelx rd, val, got
+#if defined(PIC) && defined(__ELF__)
+        ldr             \got, 2f
+        ldr             \rd,  1f
+        b               3f
+1:
+@ FIXME: thumb
+        .word \val(GOT)
+2:
+        .word _GLOBAL_OFFSET_TABLE_ - (3f + 8)
+3:
+        add             \got, \got, pc
+        ldr             \rd, [\got, \rd]
+#elif defined(PIC) && defined(__APPLE__)
+        ldr             \rd,  1f
+        b               2f
+1:
+@ FIXME: thumb
+        .word           3f - (2f + 8)
+2:
+        ldr             \rd, [pc, \rd]
+        .non_lazy_symbol_pointer
+3:
+        .indirect_symbol \val
+        .word           0
+        .text
+#else
+        movrel          \rd, \val
 #endif
 .endm
 

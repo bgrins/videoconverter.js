@@ -28,9 +28,7 @@
 // -----------------
 // For encoders, you only have to include `vpx_encoder.h` and then any
 // header files for the specific codecs you use. In this case, we're using
-// vp8. The `VPX_CODEC_DISABLE_COMPAT` macro can be defined to ensure
-// strict compliance with the latest SDK by disabling some backwards
-// compatibility features. Defining this macro is encouraged.
+// vp8.
 //
 // Getting The Default Configuration
 // ---------------------------------
@@ -101,28 +99,28 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define VPX_CODEC_DISABLE_COMPAT 1
 #include "vpx/vpx_encoder.h"
 
-#include "./tools_common.h"
-#include "./video_writer.h"
+#include "../tools_common.h"
+#include "../video_writer.h"
 
 static const char *exec_name;
 
-void usage_exit() {
+void usage_exit(void) {
   fprintf(stderr,
           "Usage: %s <codec> <width> <height> <infile> <outfile> "
-              "<keyframe-interval> [<error-resilient>]\nSee comments in "
-              "simple_encoder.c for more information.\n",
+              "<keyframe-interval> <error-resilient> <frames to encode>\n"
+              "See comments in simple_encoder.c for more information.\n",
           exec_name);
   exit(EXIT_FAILURE);
 }
 
-static void encode_frame(vpx_codec_ctx_t *codec,
-                         vpx_image_t *img,
-                         int frame_index,
-                         int flags,
-                         VpxVideoWriter *writer) {
+static int encode_frame(vpx_codec_ctx_t *codec,
+                        vpx_image_t *img,
+                        int frame_index,
+                        int flags,
+                        VpxVideoWriter *writer) {
+  int got_pkts = 0;
   vpx_codec_iter_t iter = NULL;
   const vpx_codec_cx_pkt_t *pkt = NULL;
   const vpx_codec_err_t res = vpx_codec_encode(codec, img, frame_index, 1,
@@ -131,6 +129,8 @@ static void encode_frame(vpx_codec_ctx_t *codec,
     die_codec(codec, "Failed to encode frame");
 
   while ((pkt = vpx_codec_get_cx_data(codec, &iter)) != NULL) {
+    got_pkts = 1;
+
     if (pkt->kind == VPX_CODEC_CX_FRAME_PKT) {
       const int keyframe = (pkt->data.frame.flags & VPX_FRAME_IS_KEY) != 0;
       if (!vpx_video_writer_write_frame(writer,
@@ -139,13 +139,15 @@ static void encode_frame(vpx_codec_ctx_t *codec,
                                         pkt->data.frame.pts)) {
         die_codec(codec, "Failed to write compressed frame");
       }
-
       printf(keyframe ? "K" : ".");
       fflush(stdout);
     }
   }
+
+  return got_pkts;
 }
 
+// TODO(tomfinegan): Improve command line parsing and add args for bitrate/fps.
 int main(int argc, char **argv) {
   FILE *infile = NULL;
   vpx_codec_ctx_t codec;
@@ -156,12 +158,11 @@ int main(int argc, char **argv) {
   VpxVideoInfo info = {0};
   VpxVideoWriter *writer = NULL;
   const VpxInterface *encoder = NULL;
-  const int fps = 30;        // TODO(dkovalev) add command line argument
-  const int bitrate = 200;   // kbit/s TODO(dkovalev) add command line argument
+  const int fps = 30;
+  const int bitrate = 200;
   int keyframe_interval = 0;
-
-  // TODO(dkovalev): Add some simple command line parsing code to make the
-  // command line more flexible.
+  int max_frames = 0;
+  int frames_encoded = 0;
   const char *codec_arg = NULL;
   const char *width_arg = NULL;
   const char *height_arg = NULL;
@@ -171,7 +172,7 @@ int main(int argc, char **argv) {
 
   exec_name = argv[0];
 
-  if (argc < 7)
+  if (argc != 9)
     die("Invalid number of arguments");
 
   codec_arg = argv[1];
@@ -180,6 +181,7 @@ int main(int argc, char **argv) {
   infile_arg = argv[4];
   outfile_arg = argv[5];
   keyframe_interval_arg = argv[6];
+  max_frames = strtol(argv[8], NULL, 0);
 
   encoder = get_vpx_encoder_by_name(codec_arg);
   if (!encoder)
@@ -207,9 +209,9 @@ int main(int argc, char **argv) {
   if (keyframe_interval < 0)
     die("Invalid keyframe interval value.");
 
-  printf("Using %s\n", vpx_codec_iface_name(encoder->interface()));
+  printf("Using %s\n", vpx_codec_iface_name(encoder->codec_interface()));
 
-  res = vpx_codec_enc_config_default(encoder->interface(), &cfg, 0);
+  res = vpx_codec_enc_config_default(encoder->codec_interface(), &cfg, 0);
   if (res)
     die_codec(&codec, "Failed to get default codec config.");
 
@@ -218,7 +220,7 @@ int main(int argc, char **argv) {
   cfg.g_timebase.num = info.time_base.numerator;
   cfg.g_timebase.den = info.time_base.denominator;
   cfg.rc_target_bitrate = bitrate;
-  cfg.g_error_resilient = argc > 7 ? strtol(argv[7], NULL, 0) : 0;
+  cfg.g_error_resilient = strtol(argv[7], NULL, 0);
 
   writer = vpx_video_writer_open(outfile_arg, kContainerIVF, &info);
   if (!writer)
@@ -227,16 +229,22 @@ int main(int argc, char **argv) {
   if (!(infile = fopen(infile_arg, "rb")))
     die("Failed to open %s for reading.", infile_arg);
 
-  if (vpx_codec_enc_init(&codec, encoder->interface(), &cfg, 0))
+  if (vpx_codec_enc_init(&codec, encoder->codec_interface(), &cfg, 0))
     die_codec(&codec, "Failed to initialize encoder");
 
+  // Encode frames.
   while (vpx_img_read(&raw, infile)) {
     int flags = 0;
     if (keyframe_interval > 0 && frame_count % keyframe_interval == 0)
       flags |= VPX_EFLAG_FORCE_KF;
     encode_frame(&codec, &raw, frame_count++, flags, writer);
+    frames_encoded++;
+    if (max_frames > 0 && frames_encoded >= max_frames)
+      break;
   }
-  encode_frame(&codec, NULL, -1, 0, writer);  // flush the encoder
+
+  // Flush encoder.
+  while (encode_frame(&codec, NULL, -1, 0, writer)) {};
 
   printf("\n");
   fclose(infile);

@@ -1,7 +1,7 @@
 /*****************************************************************************
  * common.h: misc common functions
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *          Loren Merritt <lorenm@u.washington.edu>
@@ -316,8 +316,8 @@ static ALWAYS_INLINE int x264_predictor_difference( int16_t (*mvc)[2], intptr_t 
 
 static ALWAYS_INLINE uint16_t x264_cabac_mvd_sum( uint8_t *mvdleft, uint8_t *mvdtop )
 {
-    int amvd0 = abs(mvdleft[0]) + abs(mvdtop[0]);
-    int amvd1 = abs(mvdleft[1]) + abs(mvdtop[1]);
+    int amvd0 = mvdleft[0] + mvdtop[0];
+    int amvd1 = mvdleft[1] + mvdtop[1];
     amvd0 = (amvd0 > 2) + (amvd0 > 32);
     amvd1 = (amvd1 > 2) + (amvd1 > 32);
     return amvd0 + (amvd1<<8);
@@ -895,9 +895,6 @@ struct x264_t
     /* stats */
     struct
     {
-        /* Current frame stats */
-        x264_frame_stat_t frame;
-
         /* Cumulated stats */
 
         /* per slice info */
@@ -927,6 +924,8 @@ struct x264_t
         /* num p-frames weighted */
         int     i_wpred[2];
 
+        /* Current frame stats */
+        x264_frame_stat_t frame;
     } stat;
 
     /* 0 = luma 4x4, 1 = luma 8x8, 2 = chroma 4x4, 3 = chroma 8x8 */
@@ -973,6 +972,12 @@ struct x264_t
     x264_opencl_t opencl;
 #endif
 };
+
+typedef struct
+{
+    int sad;
+    int16_t mv[2];
+} mvsad_t;
 
 // included at the end because it needs x264_t
 #include "macroblock.h"

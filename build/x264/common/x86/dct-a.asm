@@ -1,13 +1,13 @@
 ;*****************************************************************************
 ;* dct-a.asm: x86 transform and zigzag
 ;*****************************************************************************
-;* Copyright (C) 2003-2014 x264 project
+;* Copyright (C) 2003-2016 x264 project
 ;*
 ;* Authors: Holger Lubitz <holger@lubitz.org>
 ;*          Loren Merritt <lorenm@u.washington.edu>
 ;*          Laurent Aimar <fenrir@via.ecp.fr>
 ;*          Min Chen <chenm001.163.com>
-;*          Jason Garrett-Glaser <darkshikari@gmail.com>
+;*          Fiona Glaser <fiona@x264.com>
 ;*
 ;* This program is free software; you can redistribute it and/or modify
 ;* it under the terms of the GNU General Public License as published by
@@ -143,7 +143,7 @@ INIT_XMM avx
 DCT4x4_DC
 %else
 
-INIT_MMX mmx
+INIT_MMX mmx2
 cglobal dct4x4dc, 1,1
     movq   m3, [r0+24]
     movq   m2, [r0+16]
@@ -208,6 +208,78 @@ cglobal idct4x4dc, 1,1
     movq  [r0+24], m3
     RET
 %endif ; HIGH_BIT_DEPTH
+
+;-----------------------------------------------------------------------------
+; void dct2x4dc( dctcoef dct[8], dctcoef dct4x4[8][16] )
+;-----------------------------------------------------------------------------
+%if WIN64
+    DECLARE_REG_TMP 6 ; Avoid some REX prefixes to reduce code size
+%else
+    DECLARE_REG_TMP 2
+%endif
+
+%macro INSERT_COEFF 3 ; dst, src, imm
+    %if %3
+        %if HIGH_BIT_DEPTH
+            %if cpuflag(sse4)
+                pinsrd %1, %2, %3
+            %elif %3 == 2
+                movd       m2, %2
+            %elif %3 == 1
+                punpckldq  %1, %2
+            %else
+                punpckldq  m2, %2
+                punpcklqdq %1, m2
+            %endif
+        %else
+            %if %3 == 2
+                punpckldq  %1, %2
+            %else
+                pinsrw %1, %2, %3
+            %endif
+        %endif
+    %else
+        movd %1, %2
+    %endif
+    %if HIGH_BIT_DEPTH
+        mov %2, t0d
+    %else
+        mov %2, t0w
+    %endif
+%endmacro
+
+%macro DCT2x4DC 2
+cglobal dct2x4dc, 2,3
+    xor          t0d, t0d
+    INSERT_COEFF  m0, [r1+0*16*SIZEOF_DCTCOEF], 0
+    INSERT_COEFF  m0, [r1+1*16*SIZEOF_DCTCOEF], 2
+    add           r1, 4*16*SIZEOF_DCTCOEF
+    INSERT_COEFF  m0, [r1-2*16*SIZEOF_DCTCOEF], 1
+    INSERT_COEFF  m0, [r1-1*16*SIZEOF_DCTCOEF], 3
+    INSERT_COEFF  m1, [r1+0*16*SIZEOF_DCTCOEF], 0
+    INSERT_COEFF  m1, [r1+1*16*SIZEOF_DCTCOEF], 2
+    INSERT_COEFF  m1, [r1+2*16*SIZEOF_DCTCOEF], 1
+    INSERT_COEFF  m1, [r1+3*16*SIZEOF_DCTCOEF], 3
+    SUMSUB_BA     %1, 1, 0, 2
+    SBUTTERFLY    %2, 1, 0, 2
+    SUMSUB_BA     %1, 0, 1, 2
+    SBUTTERFLY    %2, 0, 1, 2
+    SUMSUB_BA     %1, 1, 0, 2
+    pshuf%1       m0, m0, q1032
+    mova        [r0], m1
+    mova [r0+mmsize], m0
+    RET
+%endmacro
+
+%if HIGH_BIT_DEPTH
+INIT_XMM sse2
+DCT2x4DC d, dq
+INIT_XMM avx
+DCT2x4DC d, dq
+%else
+INIT_MMX mmx2
+DCT2x4DC w, wd
+%endif
 
 %if HIGH_BIT_DEPTH
 ;-----------------------------------------------------------------------------

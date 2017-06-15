@@ -1,10 +1,10 @@
 ;*****************************************************************************
 ;* sad-a.asm: x86 sad functions
 ;*****************************************************************************
-;* Copyright (C) 2003-2014 x264 project
+;* Copyright (C) 2003-2016 x264 project
 ;*
 ;* Authors: Loren Merritt <lorenm@u.washington.edu>
-;*          Jason Garrett-Glaser <darkshikari@gmail.com>
+;*          Fiona Glaser <fiona@x264.com>
 ;*          Laurent Aimar <fenrir@via.ecp.fr>
 ;*          Alex Izvorski <aizvorksi@gmail.com>
 ;*
@@ -113,7 +113,7 @@ SAD  4,  4
 ;=============================================================================
 
 %macro SAD_END_SSE2 0
-    movhlps m1, m0
+    MOVHL   m1, m0
     paddw   m0, m1
     movd   eax, m0
     RET
@@ -322,7 +322,7 @@ cglobal pixel_vsad_sse2, 3,3
     sub      r2d, 2
     jg .loop
 .end:
-    movhlps   m1, m0
+    MOVHL     m1, m0
     ;max sum: 31*16*255(pixel_max)=126480
     paddd     m0, m1
     movd     eax, m0
@@ -520,7 +520,7 @@ cglobal intra_sad_x3_8x8c, 3,3
     paddw     xmm1, xmm2
     paddw     xmm1, xmm3
     paddw     xmm1, xmm4
-    movhlps   xmm0, xmm1
+    MOVHL     xmm0, xmm1
     paddw     xmm1, xmm0
     movd      [r2], xmm1
 %else
@@ -692,10 +692,10 @@ cglobal intra_sad_x3_16x16, 3,5,8
 %if mmsize==16
     pslldq  m3, 4
     por     m3, m2
-    movhlps m1, m3
+    MOVHL   m1, m3
     paddw   m3, m1
     movq  [r2+0], m3
-    movhlps m1, m4
+    MOVHL   m1, m4
     paddw   m4, m1
 %else
     movd  [r2+0], m2
@@ -716,7 +716,7 @@ INIT_YMM avx2
 cglobal intra_sad_x3_16x16, 3,5,6
     pxor   xm0, xm0
     psadbw xm0, [r1-FDEC_STRIDE]
-    movhlps xm1, xm0
+    MOVHL  xm1, xm0
     paddw  xm0, xm1
     movd   r3d, xm0
 %assign x 0
@@ -748,7 +748,7 @@ cglobal intra_sad_x3_16x16, 3,5,6
     add    r3d, -FENC_STRIDE
     jge .vloop
     punpckhqdq m5, m4, m4
-    movhlps xm2, xm3
+    MOVHL  xm2, xm3
     paddw   m4, m5      ; DC / V
     paddw  xm3, xm2     ; H
     vextracti128 xm2, m4, 1
@@ -1642,7 +1642,7 @@ cglobal pixel_sad_16x%2_cache64_%1
     mov     r4d, %2/2
     pxor    xmm0, xmm0
     call    r5
-    movhlps xmm1, xmm0
+    MOVHL   xmm1, xmm0
     paddw   xmm0, xmm1
     movd    eax,  xmm0
     RET

@@ -1,7 +1,7 @@
 /*****************************************************************************
  * x264res.rc: windows resource file
  *****************************************************************************
- * Copyright (C) 2012-2014 x264 project
+ * Copyright (C) 2012-2016 x264 project
  *
  * Authors: Henrik Gramner <henrik@gramner.com>
  *
@@ -39,7 +39,11 @@ VS_VERSION_INFO VERSIONINFO
 FILEVERSION     0, X264_BUILD, X264_REV, X264_REV_DIFF
 PRODUCTVERSION  0, X264_BUILD, X264_REV, X264_REV_DIFF
 FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+#ifdef DEBUG
+FILEFLAGS       VS_FF_DEBUG
+#else
 FILEFLAGS       0
+#endif
 FILEOS          VOS_NT_WINDOWS32 /* Identical for x86-64 */
 #ifdef DLL
 FILETYPE        VFT_DLL
@@ -60,7 +64,7 @@ BEGIN
 #endif
             VALUE "FileVersion",      X264_POINTVER
             VALUE "InternalName",     "x264"
-            VALUE "LegalCopyright",   "Copyright (C) 2003-2014 x264 project"
+            VALUE "LegalCopyright",   "Copyright (C) 2003-2016 x264 project"
 #ifdef DLL
             VALUE "OriginalFilename", "libx264-" xstr(X264_BUILD) ".dll"
 #else

@@ -16,12 +16,12 @@
 #include <string.h>
 #include <sys/types.h>
 
-#include "test/acm_random.h"
 #include "third_party/googletest/src/include/gtest/gtest.h"
-#include "vpx/vpx_integer.h"
 
-#include "vp8/encoder/boolhuff.h"
+#include "test/acm_random.h"
 #include "vp8/decoder/dboolhuff.h"
+#include "vp8/encoder/boolhuff.h"
+#include "vpx/vpx_integer.h"
 
 namespace {
 const int num_tests = 10;
@@ -94,14 +94,10 @@ TEST(VP8, TestBitIO) {
         vp8_stop_encode(&bw);
 
         BOOL_DECODER br;
-#if CONFIG_DECRYPT
-        encrypt_buffer(bw_buffer, buffer_size);
-        vp8dx_start_decode(&br, bw_buffer, buffer_size,
+        encrypt_buffer(bw_buffer, kBufferSize);
+        vp8dx_start_decode(&br, bw_buffer, kBufferSize,
                            test_decrypt_cb,
                            reinterpret_cast<void *>(bw_buffer));
-#else
-        vp8dx_start_decode(&br, bw_buffer, kBufferSize, NULL, NULL);
-#endif
         bit_rnd.Reset(random_seed);
         for (int i = 0; i < kBitsToTest; ++i) {
           if (bit_method == 2) {

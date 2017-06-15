@@ -19,10 +19,14 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-#include "libavcodec/simple_idct.h"
+
 #include "libavutil/mem.h"
 #include "libavutil/x86/asm.h"
+
+#include "libavcodec/idctdsp.h"
+
 #include "idctdsp.h"
+#include "simple_idct.h"
 
 #if HAVE_INLINE_ASM
 
@@ -1158,12 +1162,12 @@ void ff_simple_idct_mmx(int16_t *block)
 void ff_simple_idct_put_mmx(uint8_t *dest, int line_size, int16_t *block)
 {
     idct(block);
-    ff_put_pixels_clamped_mmx(block, dest, line_size);
+    ff_put_pixels_clamped(block, dest, line_size);
 }
 void ff_simple_idct_add_mmx(uint8_t *dest, int line_size, int16_t *block)
 {
     idct(block);
-    ff_add_pixels_clamped_mmx(block, dest, line_size);
+    ff_add_pixels_clamped(block, dest, line_size);
 }
 
 #endif /* HAVE_INLINE_ASM */

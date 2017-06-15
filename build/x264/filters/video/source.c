@@ -1,7 +1,7 @@
 /*****************************************************************************
  * source.c: source video filter
  *****************************************************************************
- * Copyright (C) 2010-2014 x264 project
+ * Copyright (C) 2010-2016 x264 project
  *
  * Authors: Steven Walters <kemuri9@gmail.com>
  *
@@ -44,7 +44,7 @@ static int init( hnd_t *handle, cli_vid_filter_t *filter, video_info_t *info, x2
         return -1;
     h->cur_frame = -1;
 
-    if( cli_input.picture_alloc( &h->pic, info->csp, info->width, info->height ) )
+    if( cli_input.picture_alloc( &h->pic, *handle, info->csp, info->width, info->height ) )
         return -1;
 
     h->hin = *handle;
@@ -76,7 +76,7 @@ static int release_frame( hnd_t handle, cli_pic_t *pic, int frame )
 static void free_filter( hnd_t handle )
 {
     source_hnd_t *h = handle;
-    cli_input.picture_clean( &h->pic );
+    cli_input.picture_clean( &h->pic, h->hin );
     cli_input.close_file( h->hin );
     free( h );
 }

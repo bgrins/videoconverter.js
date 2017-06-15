@@ -33,14 +33,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define VPX_CODEC_DISABLE_COMPAT 1
-
 #include "vpx/vp8dx.h"
 #include "vpx/vpx_decoder.h"
 
-#include "./md5_utils.h"
-#include "./tools_common.h"
-#include "./video_reader.h"
+#include "../md5_utils.h"
+#include "../tools_common.h"
+#include "../video_reader.h"
 #include "./vpx_config.h"
 
 static void get_image_md5(const vpx_image_t *img, unsigned char digest[16]) {
@@ -73,7 +71,7 @@ static void print_md5(FILE *stream, unsigned char digest[16]) {
 
 static const char *exec_name;
 
-void usage_exit() {
+void usage_exit(void) {
   fprintf(stderr, "Usage: %s <infile> <outfile>\n", exec_name);
   exit(EXIT_FAILURE);
 }
@@ -104,9 +102,9 @@ int main(int argc, char **argv) {
   if (!decoder)
     die("Unknown input codec.");
 
-  printf("Using %s\n", vpx_codec_iface_name(decoder->interface()));
+  printf("Using %s\n", vpx_codec_iface_name(decoder->codec_interface()));
 
-  if (vpx_codec_dec_init(&codec, decoder->interface(), NULL, 0))
+  if (vpx_codec_dec_init(&codec, decoder->codec_interface(), NULL, 0))
     die_codec(&codec, "Failed to initialize decoder");
 
   while (vpx_video_reader_read_frame(reader)) {

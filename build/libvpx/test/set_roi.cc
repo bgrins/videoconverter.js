@@ -53,7 +53,7 @@ TEST(VP8RoiMapTest, ParameterCheck) {
   cpi.common.mb_rows = 240 >> 4;
   cpi.common.mb_cols = 320 >> 4;
   const int mbs = (cpi.common.mb_rows * cpi.common.mb_cols);
-  vpx_memset(cpi.segment_feature_data, 0, sizeof(cpi.segment_feature_data));
+  memset(cpi.segment_feature_data, 0, sizeof(cpi.segment_feature_data));
 
   // Segment map
   cpi.segmentation_map = reinterpret_cast<unsigned char *>(vpx_calloc(mbs, 1));
@@ -61,9 +61,9 @@ TEST(VP8RoiMapTest, ParameterCheck) {
   // Allocate memory for the source memory map.
   unsigned char *roi_map =
     reinterpret_cast<unsigned char *>(vpx_calloc(mbs, 1));
-  vpx_memset(&roi_map[mbs >> 2], 1, (mbs >> 2));
-  vpx_memset(&roi_map[mbs >> 1], 2, (mbs >> 2));
-  vpx_memset(&roi_map[mbs -(mbs >> 2)], 3, (mbs >> 2));
+  memset(&roi_map[mbs >> 2], 1, (mbs >> 2));
+  memset(&roi_map[mbs >> 1], 2, (mbs >> 2));
+  memset(&roi_map[mbs -(mbs >> 2)], 3, (mbs >> 2));
 
   // Do a test call with valid parameters.
   int roi_retval = vp8_set_roimap(&cpi, roi_map, cpi.common.mb_rows,

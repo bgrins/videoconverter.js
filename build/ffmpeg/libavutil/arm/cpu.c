@@ -128,8 +128,18 @@ int ff_get_cpu_flags_arm(void)
        trickle down. */
     if (flags & (AV_CPU_FLAG_VFPV3 | AV_CPU_FLAG_NEON))
         flags |= AV_CPU_FLAG_ARMV6T2;
+    else if (flags & (AV_CPU_FLAG_ARMV6T2 | AV_CPU_FLAG_ARMV6))
+    /* Some functions use the 'setend' instruction which is deprecated on ARMv8
+     * and serializing on some ARMv7 cores. This ensures such functions
+     * are only enabled on ARMv6. */
+        flags |= AV_CPU_FLAG_SETEND;
+
     if (flags & AV_CPU_FLAG_ARMV6T2)
         flags |= AV_CPU_FLAG_ARMV6;
+
+    /* set the virtual VFPv2 vector mode flag */
+    if ((flags & AV_CPU_FLAG_VFP) && !(flags & (AV_CPU_FLAG_VFPV3 | AV_CPU_FLAG_NEON)))
+        flags |= AV_CPU_FLAG_VFP_VM;
 
     return flags;
 }
@@ -143,7 +153,8 @@ int ff_get_cpu_flags_arm(void)
            AV_CPU_FLAG_ARMV6T2 * HAVE_ARMV6T2 |
            AV_CPU_FLAG_VFP     * HAVE_VFP     |
            AV_CPU_FLAG_VFPV3   * HAVE_VFPV3   |
-           AV_CPU_FLAG_NEON    * HAVE_NEON;
+           AV_CPU_FLAG_NEON    * HAVE_NEON    |
+           AV_CPU_FLAG_SETEND  * !(HAVE_NEON | HAVE_VFPV3);
 }
 
 #endif

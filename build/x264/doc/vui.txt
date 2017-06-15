@@ -16,14 +16,14 @@ by Christian Heine ( sennindemokrit at gmx dot net )
 * How do I use it?
     You can derive the SAR of an image from the width, height and the
     display aspect ratio (DAR) of the image as follows:
-    
+
     SAR_x   DAR_x * height
     ----- = --------------
     SAR_y   DAR_y * width
-    
+
     for example:
     width x height = 704x576, DAR = 4:3 ==> SAR = 2304:2112 or 12:11
-    
+
     Please note that if your material is a digitized analog signal, you should
     not use this equation to calculate the SAR. Refer to the manual of your
     digitizing equipment or this link instead.
@@ -36,7 +36,7 @@ by Christian Heine ( sennindemokrit at gmx dot net )
     correction of aspect ratios, and there are just few exceptions. You should
     even use it, if the SAR of your material is 1:1, as the default of x264 is
     "SAR not defined".
-    
+
 2. Overscan
 ------------
 
@@ -49,7 +49,7 @@ by Christian Heine ( sennindemokrit at gmx dot net )
     analog signal. Instead it refers to the "overscan" process on a display
     that shows only a part of the image. What that part is depends on the
     display.
-    
+
 * How do I use this option?
     As I'm not sure about what part of the image is shown when the display uses
     an overscan process, I can't provide you with rules or examples. The safe
@@ -72,7 +72,7 @@ by Christian Heine ( sennindemokrit at gmx dot net )
 * What is it?
     A purely informative setting, that explains what the type of your analog
     video was, before you digitized it.
-    
+
 * How do I use this option?
     Just set it to the desired value. ( e.g. NTSC, PAL )
     If you transcode from MPEG2, you may find the value for this option in the
@@ -101,11 +101,11 @@ by Christian Heine ( sennindemokrit at gmx dot net )
     or want to make sure that your material is played back without
     oversaturation, set if to on. Please note that the default for this option
     in x264 is off, which is not a safe assumption.
-    
+
 * Should I use this option?
     Yes, but there are few decoders/ media players that distinguish
     between the two options.
-    
+
 5. Color Primaries, Transfer Characteristics, Matrix Coefficients
 -------------------------------------------------------------------
 
@@ -120,7 +120,7 @@ by Christian Heine ( sennindemokrit at gmx dot net )
     profile of the digitizing equipment is known, it is possible to correct the
     colors and gamma of the decoded h264 stream in a way that the video stream
     looks the same, regardless of the digitizing equipment used.
-    
+
 * How do I use these options?
     If you are able to find out which characteristics your digitizing equipment
     uses, (see the equipment documentation or make reference measurements)
@@ -170,9 +170,8 @@ by Christian Heine ( sennindemokrit at gmx dot net )
     chroma sample location in that direction is equal to one of the luma
     samples. H264 Annex E contains images that tell you how to "transform" your
     Chroma Sample Location into a value of 0 to 5 that you can pass to x264.
-    
+
 * Should I use this option?
     Unless you are a perfectionist, don't bother. Media players ignore this
     setting, and favor their own (fixed) assumed Chroma Sample Location.
-
 

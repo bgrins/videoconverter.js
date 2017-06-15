@@ -44,8 +44,8 @@ static int txd_read_header(AVFormatContext *s) {
     st = avformat_new_stream(s, NULL);
     if (!st)
         return AVERROR(ENOMEM);
-    st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
-    st->codec->codec_id = AV_CODEC_ID_TXD;
+    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    st->codecpar->codec_id = AV_CODEC_ID_TXD;
     avpriv_set_pts_info(st, 64, 1, 5);
     st->avg_frame_rate = av_inv_q(st->time_base);
     /* the parameters will be extracted from the compressed bitstream */
@@ -63,7 +63,7 @@ next_chunk:
     chunk_size = avio_rl32(pb);
     marker     = avio_rl32(pb);
 
-    if (url_feof(s->pb))
+    if (avio_feof(s->pb))
         return AVERROR_EOF;
     if (marker != TXD_MARKER && marker != TXD_MARKER2) {
         av_log(s, AV_LOG_ERROR, "marker does not match\n");

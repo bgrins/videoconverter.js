@@ -51,6 +51,7 @@ char **argv_dup(int argc, const char **argv);
 unsigned int arg_parse_uint(const struct arg *arg);
 int arg_parse_int(const struct arg *arg);
 struct vpx_rational arg_parse_rational(const struct arg *arg);
+int arg_parse_enum(const struct arg *arg);
 int arg_parse_enum_or_int(const struct arg *arg);
 #ifdef __cplusplus
 }  // extern "C"

@@ -129,7 +129,7 @@ static int rtmp_http_read(URLContext *h, uint8_t *buf, int size)
             } else {
                 if (rt->nb_bytes_read == 0) {
                     /* Wait 50ms before retrying to read a server reply in
-                     * order to reduce the number of idle requets. */
+                     * order to reduce the number of idle requests. */
                     av_usleep(50000);
                 }
 
@@ -254,7 +254,7 @@ fail:
 #define DEC AV_OPT_FLAG_DECODING_PARAM
 
 static const AVOption ffrtmphttp_options[] = {
-    {"ffrtmphttp_tls", "Use a HTTPS tunneling connection (RTMPTS).", OFFSET(tls), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, DEC},
+    {"ffrtmphttp_tls", "Use a HTTPS tunneling connection (RTMPTS).", OFFSET(tls), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DEC},
     { NULL },
 };
 
@@ -265,7 +265,7 @@ static const AVClass ffrtmphttp_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-URLProtocol ff_ffrtmphttp_protocol = {
+const URLProtocol ff_ffrtmphttp_protocol = {
     .name           = "ffrtmphttp",
     .url_open       = rtmp_http_open,
     .url_read       = rtmp_http_read,

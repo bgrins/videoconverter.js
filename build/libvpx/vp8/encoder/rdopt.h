@@ -12,13 +12,15 @@
 #ifndef VP8_ENCODER_RDOPT_H_
 #define VP8_ENCODER_RDOPT_H_
 
+#include "./vpx_config.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define RDCOST(RM,DM,R,D) ( ((128+(R)*(RM)) >> 8) + (DM)*(D) )
 
-static void insertsortmv(int arr[], int len)
+static INLINE void insertsortmv(int arr[], int len)
 {
     int i, j, k;
 
@@ -41,7 +43,7 @@ static void insertsortmv(int arr[], int len)
     }
 }
 
-static void insertsortsad(int arr[],int idx[], int len)
+static INLINE void insertsortsad(int arr[],int idx[], int len)
 {
     int i, j, k;
 
@@ -70,14 +72,17 @@ static void insertsortsad(int arr[],int idx[], int len)
 }
 
 extern void vp8_initialize_rd_consts(VP8_COMP *cpi, MACROBLOCK *x, int Qvalue);
-extern void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset, int recon_uvoffset, int *returnrate, int *returndistortion, int *returnintra);
+extern void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x,
+                                   int recon_yoffset, int recon_uvoffset,
+                                   int *returnrate, int *returndistortion,
+                                   int *returnintra, int mb_row, int mb_col);
 extern void vp8_rd_pick_intra_mode(MACROBLOCK *x, int *rate);
 
 
-static void get_plane_pointers(const YV12_BUFFER_CONFIG *fb,
-                               unsigned char            *plane[3],
-                               unsigned int              recon_yoffset,
-                               unsigned int              recon_uvoffset)
+static INLINE void get_plane_pointers(const YV12_BUFFER_CONFIG *fb,
+                                      unsigned char *plane[3],
+                                      unsigned int recon_yoffset,
+                                      unsigned int recon_uvoffset)
 {
     plane[0] = fb->y_buffer + recon_yoffset;
     plane[1] = fb->u_buffer + recon_uvoffset;
@@ -85,10 +90,10 @@ static void get_plane_pointers(const YV12_BUFFER_CONFIG *fb,
 }
 
 
-static void get_predictor_pointers(const VP8_COMP *cpi,
-                                       unsigned char  *plane[4][3],
-                                       unsigned int    recon_yoffset,
-                                       unsigned int    recon_uvoffset)
+static INLINE void get_predictor_pointers(const VP8_COMP *cpi,
+                                          unsigned char *plane[4][3],
+                                          unsigned int recon_yoffset,
+                                          unsigned int recon_uvoffset)
 {
     if (cpi->ref_frame_flags & VP8_LAST_FRAME)
         get_plane_pointers(&cpi->common.yv12_fb[cpi->common.lst_fb_idx],
@@ -104,8 +109,8 @@ static void get_predictor_pointers(const VP8_COMP *cpi,
 }
 
 
-static void get_reference_search_order(const VP8_COMP *cpi,
-                                           int             ref_frame_map[4])
+static INLINE void get_reference_search_order(const VP8_COMP *cpi,
+                                              int ref_frame_map[4])
 {
     int i=0;
 
@@ -133,6 +138,9 @@ extern void vp8_mv_pred
     int near_sadidx[]
 );
 void vp8_cal_sad(VP8_COMP *cpi, MACROBLOCKD *xd, MACROBLOCK *x, int recon_yoffset, int near_sadidx[]);
+int VP8_UVSSE(MACROBLOCK *x);
+int vp8_cost_mv_ref(MB_PREDICTION_MODE m, const int near_mv_ref_ct[4]);
+void vp8_set_mbmode_and_mvs(MACROBLOCK *x, MB_PREDICTION_MODE mb, int_mv *mv);
 
 #ifdef __cplusplus
 }  // extern "C"

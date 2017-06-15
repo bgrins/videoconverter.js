@@ -26,7 +26,7 @@ void vp8_dequant_idct_add_dspr2(short *input, short *dq,
 
     vp8_short_idct4x4llm_dspr2(input, dest, stride, dest, stride);
 
-    vpx_memset(input, 0, 32);
+    memset(input, 0, 32);
 
 }
 

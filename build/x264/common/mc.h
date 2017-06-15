@@ -1,7 +1,7 @@
 /*****************************************************************************
  * mc.h: motion compensation
  *****************************************************************************
- * Copyright (C) 2004-2014 x264 project
+ * Copyright (C) 2004-2016 x264 project
  *
  * Authors: Loren Merritt <lorenm@u.washington.edu>
  *
@@ -26,6 +26,80 @@
 #ifndef X264_MC_H
 #define X264_MC_H
 
+#define MC_CLIP_ADD(s,x) (s) = X264_MIN((s)+(x),(1<<15)-1)
+#define MC_CLIP_ADD2(s,x)\
+do\
+{\
+    MC_CLIP_ADD((s)[0], (x)[0]);\
+    MC_CLIP_ADD((s)[1], (x)[1]);\
+} while(0)
+
+#define PROPAGATE_LIST(cpu)\
+void x264_mbtree_propagate_list_internal_##cpu( int16_t (*mvs)[2], int16_t *propagate_amount,\
+                                                uint16_t *lowres_costs, int16_t *output,\
+                                                int bipred_weight, int mb_y, int len );\
+\
+static void x264_mbtree_propagate_list_##cpu( x264_t *h, uint16_t *ref_costs, int16_t (*mvs)[2],\
+                                              int16_t *propagate_amount, uint16_t *lowres_costs,\
+                                              int bipred_weight, int mb_y, int len, int list )\
+{\
+    int16_t *current = h->scratch_buffer2;\
+\
+    x264_mbtree_propagate_list_internal_##cpu( mvs, propagate_amount, lowres_costs,\
+                                               current, bipred_weight, mb_y, len );\
+\
+    unsigned stride = h->mb.i_mb_stride;\
+    unsigned width = h->mb.i_mb_width;\
+    unsigned height = h->mb.i_mb_height;\
+\
+    for( unsigned i = 0; i < len; current += 32 )\
+    {\
+        int end = X264_MIN( i+8, len );\
+        for( ; i < end; i++, current += 2 )\
+        {\
+            if( !(lowres_costs[i] & (1 << (list+LOWRES_COST_SHIFT))) )\
+                continue;\
+\
+            unsigned mbx = current[0];\
+            unsigned mby = current[1];\
+            unsigned idx0 = mbx + mby * stride;\
+            unsigned idx2 = idx0 + stride;\
+\
+            /* Shortcut for the simple/common case of zero MV */\
+            if( !M32( mvs[i] ) )\
+            {\
+                MC_CLIP_ADD( ref_costs[idx0], current[16] );\
+                continue;\
+            }\
+\
+            if( mbx < width-1 && mby < height-1 )\
+            {\
+                MC_CLIP_ADD2( ref_costs+idx0, current+16 );\
+                MC_CLIP_ADD2( ref_costs+idx2, current+32 );\
+            }\
+            else\
+            {\
+                /* Note: this takes advantage of unsigned representation to\
+                 * catch negative mbx/mby. */\
+                if( mby < height )\
+                {\
+                    if( mbx < width )\
+                        MC_CLIP_ADD( ref_costs[idx0+0], current[16] );\
+                    if( mbx+1 < width )\
+                        MC_CLIP_ADD( ref_costs[idx0+1], current[17] );\
+                }\
+                if( mby+1 < height )\
+                {\
+                    if( mbx < width )\
+                        MC_CLIP_ADD( ref_costs[idx2+0], current[32] );\
+                    if( mbx+1 < width )\
+                        MC_CLIP_ADD( ref_costs[idx2+1], current[33] );\
+                }\
+            }\
+        }\
+    }\
+}
+
 struct x264_weight_t;
 typedef void (* weight_fn_t)( pixel *, intptr_t, pixel *,intptr_t, const struct x264_weight_t *, int );
 typedef struct x264_weight_t
@@ -41,6 +115,8 @@ typedef struct x264_weight_t
 } ALIGNED_16( x264_weight_t );
 
 extern const x264_weight_t x264_weight_none[3];
+extern const uint8_t x264_hpel_ref0[16];
+extern const uint8_t x264_hpel_ref1[16];
 
 #define SET_WEIGHT( w, b, s, d, o )\
 {\
@@ -86,6 +162,7 @@ typedef struct
     void (*load_deinterleave_chroma_fdec)( pixel *dst, pixel *src, intptr_t i_src, int height );
 
     void (*plane_copy)( pixel *dst, intptr_t i_dst, pixel *src, intptr_t i_src, int w, int h );
+    void (*plane_copy_swap)( pixel *dst, intptr_t i_dst, pixel *src, intptr_t i_src, int w, int h );
     void (*plane_copy_interleave)( pixel *dst,  intptr_t i_dst, pixel *srcu, intptr_t i_srcu,
                                    pixel *srcv, intptr_t i_srcv, int w, int h );
     /* may write up to 15 pixels off the end of each plane */
@@ -124,10 +201,11 @@ typedef struct
 
     void (*mbtree_propagate_cost)( int16_t *dst, uint16_t *propagate_in, uint16_t *intra_costs,
                                    uint16_t *inter_costs, uint16_t *inv_qscales, float *fps_factor, int len );
-
     void (*mbtree_propagate_list)( x264_t *h, uint16_t *ref_costs, int16_t (*mvs)[2],
                                    int16_t *propagate_amount, uint16_t *lowres_costs,
                                    int bipred_weight, int mb_y, int len, int list );
+    void (*mbtree_fix8_pack)( uint16_t *dst, float *src, int count );
+    void (*mbtree_fix8_unpack)( float *dst, uint16_t *src, int count );
 } x264_mc_functions_t;
 
 void x264_mc_init( int cpu, x264_mc_functions_t *pf, int cpu_independent );

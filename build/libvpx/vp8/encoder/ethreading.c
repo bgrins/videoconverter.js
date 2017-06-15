@@ -19,8 +19,6 @@
 
 extern void vp8cx_mb_init_quantizer(VP8_COMP *cpi, MACROBLOCK *x, int ok_to_skip);
 
-extern void vp8_loopfilter_frame(VP8_COMP *cpi, VP8_COMMON *cm);
-
 static THREAD_FUNCTION thread_loopfilter(void *p_data)
 {
     VP8_COMP *cpi = (VP8_COMP *)(((LPFTHREAD_DATA *)p_data)->ptr1);
@@ -28,12 +26,13 @@ static THREAD_FUNCTION thread_loopfilter(void *p_data)
 
     while (1)
     {
-        if (cpi->b_multi_threaded == 0)
+        if (protected_read(&cpi->mt_mutex, &cpi->b_multi_threaded) == 0)
             break;
 
         if (sem_wait(&cpi->h_event_start_lpf) == 0)
         {
-            if (cpi->b_multi_threaded == 0) /* we're shutting down */
+            /* we're shutting down */
+            if (protected_read(&cpi->mt_mutex, &cpi->b_multi_threaded) == 0)
                 break;
 
             vp8_loopfilter_frame(cpi, cm);
@@ -55,7 +54,7 @@ THREAD_FUNCTION thread_encoding_proc(void *p_data)
 
     while (1)
     {
-        if (cpi->b_multi_threaded == 0)
+        if (protected_read(&cpi->mt_mutex, &cpi->b_multi_threaded) == 0)
             break;
 
         if (sem_wait(&cpi->h_event_start_encoding[ithread]) == 0)
@@ -74,8 +73,13 @@ THREAD_FUNCTION thread_encoding_proc(void *p_data)
             int *segment_counts = mbri->segment_counts;
             int *totalrate = &mbri->totalrate;
 
-            if (cpi->b_multi_threaded == 0) /* we're shutting down */
+            /* we're shutting down */
+            if (protected_read(&cpi->mt_mutex, &cpi->b_multi_threaded) == 0)
                 break;
+
+            xd->mode_info_context = cm->mi + cm->mode_info_stride *
+                (ithread + 1);
+            xd->mode_info_stride = cm->mode_info_stride;
 
             for (mb_row = ithread + 1; mb_row < cm->mb_rows; mb_row += (cpi->encoding_thread_count + 1))
             {
@@ -87,8 +91,8 @@ THREAD_FUNCTION thread_encoding_proc(void *p_data)
                 int recon_y_stride = cm->yv12_fb[ref_fb_idx].y_stride;
                 int recon_uv_stride = cm->yv12_fb[ref_fb_idx].uv_stride;
                 int map_index = (mb_row * cm->mb_cols);
-                volatile const int *last_row_current_mb_col;
-                volatile int *current_mb_col = &cpi->mt_current_mb_col[mb_row];
+                const int *last_row_current_mb_col;
+                int *current_mb_col = &cpi->mt_current_mb_col[mb_row];
 
 #if  (CONFIG_REALTIME_ONLY & CONFIG_ONTHEFLY_BITPACKING)
                 vp8_writer *w = &cpi->bc[1 + (mb_row % num_part)];
@@ -115,15 +119,14 @@ THREAD_FUNCTION thread_encoding_proc(void *p_data)
                 /* for each macroblock col in image */
                 for (mb_col = 0; mb_col < cm->mb_cols; mb_col++)
                 {
-                    *current_mb_col = mb_col - 1;
+                    if (((mb_col - 1) % nsync) == 0) {
+                        pthread_mutex_t *mutex = &cpi->pmutex[mb_row];
+                        protected_write(mutex, current_mb_col, mb_col - 1);
+                    }
 
-                    if ((mb_col & (nsync - 1)) == 0)
-                    {
-                        while (mb_col > (*last_row_current_mb_col - nsync))
-                        {
-                            x86_pause_hint();
-                            thread_sleep(0);
-                        }
+                    if (mb_row && !(mb_col & (nsync - 1))) {
+                      pthread_mutex_t *mutex = &cpi->pmutex[mb_row-1];
+                      sync_read(mutex, mb_col, last_row_current_mb_col, nsync);
                     }
 
 #if CONFIG_REALTIME_ONLY & CONFIG_ONTHEFLY_BITPACKING
@@ -206,6 +209,25 @@ THREAD_FUNCTION thread_encoding_proc(void *p_data)
                         }
 
 #endif
+                        // Keep track of how many (consecutive) times a  block
+                        // is coded as ZEROMV_LASTREF, for base layer frames.
+                        // Reset to 0 if its coded as anything else.
+                        if (cpi->current_layer == 0) {
+                          if (xd->mode_info_context->mbmi.mode == ZEROMV &&
+                              xd->mode_info_context->mbmi.ref_frame ==
+                                  LAST_FRAME) {
+                            // Increment, check for wrap-around.
+                            if (cpi->consec_zero_last[map_index+mb_col] < 255)
+                              cpi->consec_zero_last[map_index+mb_col] += 1;
+                            if (cpi->consec_zero_last_mvbias[map_index+mb_col] < 255)
+                              cpi->consec_zero_last_mvbias[map_index+mb_col] += 1;
+                          } else {
+                            cpi->consec_zero_last[map_index+mb_col] = 0;
+                            cpi->consec_zero_last_mvbias[map_index+mb_col] = 0;
+                          }
+                          if (x->zero_last_dot_suppress)
+                            cpi->consec_zero_last_mvbias[map_index+mb_col] = 0;
+                        }
 
                         /* Special case code for cyclic refresh
                          * If cyclic update enabled then copy
@@ -246,7 +268,7 @@ THREAD_FUNCTION thread_encoding_proc(void *p_data)
                     /* pack tokens for this MB */
                     {
                         int tok_count = tp - tp_start;
-                        pack_tokens(w, tp_start, tok_count);
+                        vp8_pack_tokens(w, tp_start, tok_count);
                     }
 #else
                     cpi->tplist[mb_row].stop = tp;
@@ -279,7 +301,8 @@ THREAD_FUNCTION thread_encoding_proc(void *p_data)
                                     xd->dst.u_buffer + 8,
                                     xd->dst.v_buffer + 8);
 
-                *current_mb_col = mb_col + nsync;
+                protected_write(&cpi->pmutex[mb_row], current_mb_col,
+                                mb_col + nsync);
 
                 /* this is to account for the border */
                 xd->mode_info_context++;
@@ -331,7 +354,6 @@ static void setup_mbby_copy(MACROBLOCK *mbdst, MACROBLOCK *mbsrc)
     z->short_fdct8x4     = x->short_fdct8x4;
     z->short_walsh4x4    = x->short_walsh4x4;
     z->quantize_b        = x->quantize_b;
-    z->quantize_b_pair   = x->quantize_b_pair;
     z->optimize          = x->optimize;
 
     /*
@@ -398,14 +420,13 @@ static void setup_mbby_copy(MACROBLOCK *mbdst, MACROBLOCK *mbsrc)
         zd->subpixel_predict16x16    = xd->subpixel_predict16x16;
         zd->segmentation_enabled     = xd->segmentation_enabled;
         zd->mb_segement_abs_delta      = xd->mb_segement_abs_delta;
-        vpx_memcpy(zd->segment_feature_data, xd->segment_feature_data,
-                   sizeof(xd->segment_feature_data));
+        memcpy(zd->segment_feature_data, xd->segment_feature_data,
+               sizeof(xd->segment_feature_data));
 
-        vpx_memcpy(zd->dequant_y1_dc, xd->dequant_y1_dc,
-                   sizeof(xd->dequant_y1_dc));
-        vpx_memcpy(zd->dequant_y1, xd->dequant_y1, sizeof(xd->dequant_y1));
-        vpx_memcpy(zd->dequant_y2, xd->dequant_y2, sizeof(xd->dequant_y2));
-        vpx_memcpy(zd->dequant_uv, xd->dequant_uv, sizeof(xd->dequant_uv));
+        memcpy(zd->dequant_y1_dc, xd->dequant_y1_dc, sizeof(xd->dequant_y1_dc));
+        memcpy(zd->dequant_y1, xd->dequant_y1, sizeof(xd->dequant_y1));
+        memcpy(zd->dequant_y2, xd->dequant_y2, sizeof(xd->dequant_y2));
+        memcpy(zd->dequant_uv, xd->dequant_uv, sizeof(xd->dequant_uv));
 
 #if 1
         /*TODO:  Remove dequant from BLOCKD.  This is a temporary solution until
@@ -420,15 +441,14 @@ static void setup_mbby_copy(MACROBLOCK *mbdst, MACROBLOCK *mbsrc)
 #endif
 
 
-        vpx_memcpy(z->rd_threshes, x->rd_threshes, sizeof(x->rd_threshes));
-        vpx_memcpy(z->rd_thresh_mult, x->rd_thresh_mult,
-                   sizeof(x->rd_thresh_mult));
+        memcpy(z->rd_threshes, x->rd_threshes, sizeof(x->rd_threshes));
+        memcpy(z->rd_thresh_mult, x->rd_thresh_mult, sizeof(x->rd_thresh_mult));
 
         z->zbin_over_quant = x->zbin_over_quant;
         z->zbin_mode_boost_enabled = x->zbin_mode_boost_enabled;
         z->zbin_mode_boost = x->zbin_mode_boost;
 
-        vpx_memset(z->error_bins, 0, sizeof(z->error_bins));
+        memset(z->error_bins, 0, sizeof(z->error_bins));
     }
 }
 
@@ -454,13 +474,10 @@ void vp8cx_init_mbrthread_data(VP8_COMP *cpi,
         mbd->subpixel_predict16x16   = xd->subpixel_predict16x16;
         mb->gf_active_ptr            = x->gf_active_ptr;
 
-        vpx_memset(mbr_ei[i].segment_counts, 0, sizeof(mbr_ei[i].segment_counts));
+        memset(mbr_ei[i].segment_counts, 0, sizeof(mbr_ei[i].segment_counts));
         mbr_ei[i].totalrate = 0;
 
         mb->partition_info = x->pi + x->e_mbd.mode_info_stride * (i + 1);
-
-        mbd->mode_info_context = cm->mi   + x->e_mbd.mode_info_stride * (i + 1);
-        mbd->mode_info_stride  = cm->mode_info_stride;
 
         mbd->frame_type = cm->frame_type;
 
@@ -491,6 +508,7 @@ void vp8cx_init_mbrthread_data(VP8_COMP *cpi,
         mb->intra_error = 0;
         vp8_zero(mb->count_mb_ref_frame_usage);
         mb->mbs_tested_so_far = 0;
+        mb->mbs_zero_last_dot_suppress = 0;
     }
 }
 
@@ -500,7 +518,8 @@ int vp8cx_create_encoder_threads(VP8_COMP *cpi)
 
     cpi->b_multi_threaded = 0;
     cpi->encoding_thread_count = 0;
-    cpi->b_lpf_running = 0;
+
+    pthread_mutex_init(&cpi->mt_mutex, NULL);
 
     if (cm->processor_core_count > 1 && cpi->oxcf.multi_threaded > 1)
     {
@@ -528,7 +547,7 @@ int vp8cx_create_encoder_threads(VP8_COMP *cpi)
                         vpx_malloc(sizeof(sem_t) * th_count));
         CHECK_MEM_ERROR(cpi->mb_row_ei,
                         vpx_memalign(32, sizeof(MB_ROW_COMP) * th_count));
-        vpx_memset(cpi->mb_row_ei, 0, sizeof(MB_ROW_COMP) * th_count);
+        memset(cpi->mb_row_ei, 0, sizeof(MB_ROW_COMP) * th_count);
         CHECK_MEM_ERROR(cpi->en_thread_data,
                         vpx_malloc(sizeof(ENCODETHREAD_DATA) * th_count));
 
@@ -565,7 +584,7 @@ int vp8cx_create_encoder_threads(VP8_COMP *cpi)
         if(rc)
         {
             /* shutdown other threads */
-            cpi->b_multi_threaded = 0;
+            protected_write(&cpi->mt_mutex, &cpi->b_multi_threaded, 0);
             for(--ithread; ithread >= 0; ithread--)
             {
                 pthread_join(cpi->h_encoding_thread[ithread], 0);
@@ -578,6 +597,8 @@ int vp8cx_create_encoder_threads(VP8_COMP *cpi)
             vpx_free(cpi->h_encoding_thread);
             vpx_free(cpi->mb_row_ei);
             vpx_free(cpi->en_thread_data);
+
+            pthread_mutex_destroy(&cpi->mt_mutex);
 
             return -1;
         }
@@ -596,7 +617,7 @@ int vp8cx_create_encoder_threads(VP8_COMP *cpi)
             if(rc)
             {
                 /* shutdown other threads */
-                cpi->b_multi_threaded = 0;
+                protected_write(&cpi->mt_mutex, &cpi->b_multi_threaded, 0);
                 for(--ithread; ithread >= 0; ithread--)
                 {
                     sem_post(&cpi->h_event_start_encoding[ithread]);
@@ -613,6 +634,8 @@ int vp8cx_create_encoder_threads(VP8_COMP *cpi)
                 vpx_free(cpi->mb_row_ei);
                 vpx_free(cpi->en_thread_data);
 
+                pthread_mutex_destroy(&cpi->mt_mutex);
+
                 return -2;
             }
         }
@@ -622,10 +645,10 @@ int vp8cx_create_encoder_threads(VP8_COMP *cpi)
 
 void vp8cx_remove_encoder_threads(VP8_COMP *cpi)
 {
-    if (cpi->b_multi_threaded)
+    if (protected_read(&cpi->mt_mutex, &cpi->b_multi_threaded))
     {
         /* shutdown other threads */
-        cpi->b_multi_threaded = 0;
+        protected_write(&cpi->mt_mutex, &cpi->b_multi_threaded, 0);
         {
             int i;
 
@@ -651,5 +674,6 @@ void vp8cx_remove_encoder_threads(VP8_COMP *cpi)
         vpx_free(cpi->mb_row_ei);
         vpx_free(cpi->en_thread_data);
     }
+    pthread_mutex_destroy(&cpi->mt_mutex);
 }
 #endif

@@ -28,11 +28,6 @@
 #undef MOVNTQ2
 #undef PREFETCH
 
-#if COMPILE_TEMPLATE_MMXEXT
-#define PREFETCH "prefetchnta"
-#else
-#define PREFETCH  " # nop"
-#endif
 
 #if COMPILE_TEMPLATE_MMXEXT
 #define REAL_MOVNTQ(a,b) "movntq " #a ", " #b " \n\t"
@@ -353,7 +348,7 @@ static void RENAME(yuv2rgb32_X_ar)(SwsContext *c, const int16_t *lumFilter,
     x86_reg dstW_reg = dstW;
     x86_reg uv_off = c->uv_offx2;
 
-    if (CONFIG_SWSCALE_ALPHA && c->alpPixBuf) {
+    if (CONFIG_SWSCALE_ALPHA && c->needAlpha) {
         YSCALEYUV2PACKEDX_ACCURATE
         YSCALEYUV2RGBX
         "movq                      %%mm2, "U_TEMP"(%0)  \n\t"
@@ -386,7 +381,7 @@ static void RENAME(yuv2rgb32_X)(SwsContext *c, const int16_t *lumFilter,
     x86_reg dstW_reg = dstW;
     x86_reg uv_off = c->uv_offx2;
 
-    if (CONFIG_SWSCALE_ALPHA && c->alpPixBuf) {
+    if (CONFIG_SWSCALE_ALPHA && c->needAlpha) {
         YSCALEYUV2PACKEDX
         YSCALEYUV2RGBX
         YSCALEYUV2PACKEDX_YA(ALP_MMX_FILTER_OFFSET, %%mm0, %%mm3, %%mm6, %%mm1, %%mm7)
@@ -400,6 +395,35 @@ static void RENAME(yuv2rgb32_X)(SwsContext *c, const int16_t *lumFilter,
         YSCALEYUV2RGBX
         "pcmpeqd %%mm7, %%mm7 \n\t"
         WRITEBGR32(%4, "%5", %%REGa, %%mm2, %%mm4, %%mm5, %%mm7, %%mm0, %%mm1, %%mm3, %%mm6)
+        YSCALEYUV2PACKEDX_END
+    }
+}
+
+static void RENAME(yuv2bgr32_X)(SwsContext *c, const int16_t *lumFilter,
+                                const int16_t **lumSrc, int lumFilterSize,
+                                const int16_t *chrFilter, const int16_t **chrUSrc,
+                                const int16_t **chrVSrc,
+                                int chrFilterSize, const int16_t **alpSrc,
+                                uint8_t *dest, int dstW, int dstY)
+{
+    x86_reg dummy=0;
+    x86_reg dstW_reg = dstW;
+    x86_reg uv_off = c->uv_offx2;
+
+    if (CONFIG_SWSCALE_ALPHA && c->needAlpha) {
+        YSCALEYUV2PACKEDX
+        YSCALEYUV2RGBX
+        YSCALEYUV2PACKEDX_YA(ALP_MMX_FILTER_OFFSET, %%mm0, %%mm3, %%mm6, %%mm1, %%mm7)
+        "psraw                        $3, %%mm1         \n\t"
+        "psraw                        $3, %%mm7         \n\t"
+        "packuswb                  %%mm7, %%mm1         \n\t"
+        WRITEBGR32(%4, "%5", %%REGa, %%mm5, %%mm4, %%mm2, %%mm1, %%mm0, %%mm7, %%mm3, %%mm6)
+        YSCALEYUV2PACKEDX_END
+    } else {
+        YSCALEYUV2PACKEDX
+        YSCALEYUV2RGBX
+        "pcmpeqd %%mm7, %%mm7 \n\t"
+        WRITEBGR32(%4, "%5", %%REGa, %%mm5, %%mm4, %%mm2, %%mm7, %%mm0, %%mm1, %%mm3, %%mm6)
         YSCALEYUV2PACKEDX_END
     }
 }
@@ -865,7 +889,7 @@ static void RENAME(yuv2rgb32_2)(SwsContext *c, const int16_t *buf[2],
     const int16_t *buf0  = buf[0],  *buf1  = buf[1],
                   *ubuf0 = ubuf[0], *ubuf1 = ubuf[1];
 
-    if (CONFIG_SWSCALE_ALPHA && c->alpPixBuf) {
+    if (CONFIG_SWSCALE_ALPHA && c->needAlpha) {
         const int16_t *abuf0 = abuf[0], *abuf1 = abuf[1];
 #if ARCH_X86_64
         __asm__ volatile(
@@ -1191,7 +1215,7 @@ static void RENAME(yuv2rgb32_1)(SwsContext *c, const int16_t *buf0,
 
     if (uvalpha < 2048) { // note this is not correct (shifts chrominance by 0.5 pixels) but it is a bit faster
         const int16_t *ubuf1 = ubuf[0];
-        if (CONFIG_SWSCALE_ALPHA && c->alpPixBuf) {
+        if (CONFIG_SWSCALE_ALPHA && c->needAlpha) {
             __asm__ volatile(
                 "mov %%"REG_b", "ESP_OFFSET"(%5)        \n\t"
                 "mov        %4, %%"REG_b"               \n\t"
@@ -1220,7 +1244,7 @@ static void RENAME(yuv2rgb32_1)(SwsContext *c, const int16_t *buf0,
         }
     } else {
         const int16_t *ubuf1 = ubuf[1];
-        if (CONFIG_SWSCALE_ALPHA && c->alpPixBuf) {
+        if (CONFIG_SWSCALE_ALPHA && c->needAlpha) {
             __asm__ volatile(
                 "mov %%"REG_b", "ESP_OFFSET"(%5)        \n\t"
                 "mov        %4, %%"REG_b"               \n\t"
@@ -1470,191 +1494,6 @@ static void RENAME(yuv2yuyv422_1)(SwsContext *c, const int16_t *buf0,
         );
     }
 }
-
-#if COMPILE_TEMPLATE_MMXEXT
-static void RENAME(hyscale_fast)(SwsContext *c, int16_t *dst,
-                                 int dstWidth, const uint8_t *src,
-                                 int srcW, int xInc)
-{
-    int32_t *filterPos = c->hLumFilterPos;
-    int16_t *filter    = c->hLumFilter;
-    void    *mmxextFilterCode = c->lumMmxextFilterCode;
-    int i;
-#if defined(PIC)
-    uint64_t ebxsave;
-#endif
-#if ARCH_X86_64
-    uint64_t retsave;
-#endif
-
-    __asm__ volatile(
-#if defined(PIC)
-        "mov               %%"REG_b", %5        \n\t"
-#if ARCH_X86_64
-        "mov               -8(%%rsp), %%"REG_a" \n\t"
-        "mov               %%"REG_a", %6        \n\t"
-#endif
-#else
-#if ARCH_X86_64
-        "mov               -8(%%rsp), %%"REG_a" \n\t"
-        "mov               %%"REG_a", %5        \n\t"
-#endif
-#endif
-        "pxor                  %%mm7, %%mm7     \n\t"
-        "mov                      %0, %%"REG_c" \n\t"
-        "mov                      %1, %%"REG_D" \n\t"
-        "mov                      %2, %%"REG_d" \n\t"
-        "mov                      %3, %%"REG_b" \n\t"
-        "xor               %%"REG_a", %%"REG_a" \n\t" // i
-        PREFETCH"        (%%"REG_c")            \n\t"
-        PREFETCH"      32(%%"REG_c")            \n\t"
-        PREFETCH"      64(%%"REG_c")            \n\t"
-
-#if ARCH_X86_64
-#define CALL_MMXEXT_FILTER_CODE \
-        "movl            (%%"REG_b"), %%esi     \n\t"\
-        "call                    *%4            \n\t"\
-        "movl (%%"REG_b", %%"REG_a"), %%esi     \n\t"\
-        "add               %%"REG_S", %%"REG_c" \n\t"\
-        "add               %%"REG_a", %%"REG_D" \n\t"\
-        "xor               %%"REG_a", %%"REG_a" \n\t"\
-
-#else
-#define CALL_MMXEXT_FILTER_CODE \
-        "movl (%%"REG_b"), %%esi        \n\t"\
-        "call         *%4                       \n\t"\
-        "addl (%%"REG_b", %%"REG_a"), %%"REG_c" \n\t"\
-        "add               %%"REG_a", %%"REG_D" \n\t"\
-        "xor               %%"REG_a", %%"REG_a" \n\t"\
-
-#endif /* ARCH_X86_64 */
-
-        CALL_MMXEXT_FILTER_CODE
-        CALL_MMXEXT_FILTER_CODE
-        CALL_MMXEXT_FILTER_CODE
-        CALL_MMXEXT_FILTER_CODE
-        CALL_MMXEXT_FILTER_CODE
-        CALL_MMXEXT_FILTER_CODE
-        CALL_MMXEXT_FILTER_CODE
-        CALL_MMXEXT_FILTER_CODE
-
-#if defined(PIC)
-        "mov                      %5, %%"REG_b" \n\t"
-#if ARCH_X86_64
-        "mov                      %6, %%"REG_a" \n\t"
-        "mov               %%"REG_a", -8(%%rsp) \n\t"
-#endif
-#else
-#if ARCH_X86_64
-        "mov                      %5, %%"REG_a" \n\t"
-        "mov               %%"REG_a", -8(%%rsp) \n\t"
-#endif
-#endif
-        :: "m" (src), "m" (dst), "m" (filter), "m" (filterPos),
-           "m" (mmxextFilterCode)
-#if defined(PIC)
-          ,"m" (ebxsave)
-#endif
-#if ARCH_X86_64
-          ,"m"(retsave)
-#endif
-        : "%"REG_a, "%"REG_c, "%"REG_d, "%"REG_S, "%"REG_D
-#if !defined(PIC)
-         ,"%"REG_b
-#endif
-    );
-
-    for (i=dstWidth-1; (i*xInc)>>16 >=srcW-1; i--)
-        dst[i] = src[srcW-1]*128;
-}
-
-static void RENAME(hcscale_fast)(SwsContext *c, int16_t *dst1, int16_t *dst2,
-                                 int dstWidth, const uint8_t *src1,
-                                 const uint8_t *src2, int srcW, int xInc)
-{
-    int32_t *filterPos = c->hChrFilterPos;
-    int16_t *filter    = c->hChrFilter;
-    void    *mmxextFilterCode = c->chrMmxextFilterCode;
-    int i;
-#if defined(PIC)
-    DECLARE_ALIGNED(8, uint64_t, ebxsave);
-#endif
-#if ARCH_X86_64
-    DECLARE_ALIGNED(8, uint64_t, retsave);
-#endif
-
-    __asm__ volatile(
-#if defined(PIC)
-        "mov          %%"REG_b", %7         \n\t"
-#if ARCH_X86_64
-        "mov          -8(%%rsp), %%"REG_a"  \n\t"
-        "mov          %%"REG_a", %8         \n\t"
-#endif
-#else
-#if ARCH_X86_64
-        "mov          -8(%%rsp), %%"REG_a"  \n\t"
-        "mov          %%"REG_a", %7         \n\t"
-#endif
-#endif
-        "pxor             %%mm7, %%mm7      \n\t"
-        "mov                 %0, %%"REG_c"  \n\t"
-        "mov                 %1, %%"REG_D"  \n\t"
-        "mov                 %2, %%"REG_d"  \n\t"
-        "mov                 %3, %%"REG_b"  \n\t"
-        "xor          %%"REG_a", %%"REG_a"  \n\t" // i
-        PREFETCH"   (%%"REG_c")             \n\t"
-        PREFETCH" 32(%%"REG_c")             \n\t"
-        PREFETCH" 64(%%"REG_c")             \n\t"
-
-        CALL_MMXEXT_FILTER_CODE
-        CALL_MMXEXT_FILTER_CODE
-        CALL_MMXEXT_FILTER_CODE
-        CALL_MMXEXT_FILTER_CODE
-        "xor          %%"REG_a", %%"REG_a"  \n\t" // i
-        "mov                 %5, %%"REG_c"  \n\t" // src
-        "mov                 %6, %%"REG_D"  \n\t" // buf2
-        PREFETCH"   (%%"REG_c")             \n\t"
-        PREFETCH" 32(%%"REG_c")             \n\t"
-        PREFETCH" 64(%%"REG_c")             \n\t"
-
-        CALL_MMXEXT_FILTER_CODE
-        CALL_MMXEXT_FILTER_CODE
-        CALL_MMXEXT_FILTER_CODE
-        CALL_MMXEXT_FILTER_CODE
-
-#if defined(PIC)
-        "mov %7, %%"REG_b"    \n\t"
-#if ARCH_X86_64
-        "mov                 %8, %%"REG_a"  \n\t"
-        "mov          %%"REG_a", -8(%%rsp)  \n\t"
-#endif
-#else
-#if ARCH_X86_64
-        "mov                 %7, %%"REG_a"  \n\t"
-        "mov          %%"REG_a", -8(%%rsp)  \n\t"
-#endif
-#endif
-        :: "m" (src1), "m" (dst1), "m" (filter), "m" (filterPos),
-           "m" (mmxextFilterCode), "m" (src2), "m"(dst2)
-#if defined(PIC)
-          ,"m" (ebxsave)
-#endif
-#if ARCH_X86_64
-          ,"m"(retsave)
-#endif
-        : "%"REG_a, "%"REG_c, "%"REG_d, "%"REG_S, "%"REG_D
-#if !defined(PIC)
-         ,"%"REG_b
-#endif
-    );
-
-    for (i=dstWidth-1; (i*xInc)>>16 >=srcW-1; i--) {
-        dst1[i] = src1[srcW-1]*128;
-        dst2[i] = src2[srcW-1]*128;
-    }
-}
-#endif /* COMPILE_TEMPLATE_MMXEXT */
-
 static av_cold void RENAME(sws_init_swscale)(SwsContext *c)
 {
     enum AVPixelFormat dstFormat = c->dstFormat;
@@ -1681,6 +1520,7 @@ static av_cold void RENAME(sws_init_swscale)(SwsContext *c)
                 if (!(c->flags & SWS_FULL_CHR_H_INT)) {
                     switch (c->dstFormat) {
                     case AV_PIX_FMT_RGB32:   c->yuv2packedX = RENAME(yuv2rgb32_X);   break;
+                    case AV_PIX_FMT_BGR32:   c->yuv2packedX = RENAME(yuv2bgr32_X);   break;
 #if HAVE_6REGS
                     case AV_PIX_FMT_BGR24:   c->yuv2packedX = RENAME(yuv2bgr24_X);   break;
 #endif
@@ -1723,8 +1563,8 @@ static av_cold void RENAME(sws_init_swscale)(SwsContext *c)
     // Use the new MMX scaler if the MMXEXT one can't be used (it is faster than the x86 ASM one).
 #if COMPILE_TEMPLATE_MMXEXT
     if (c->flags & SWS_FAST_BILINEAR && c->canMMXEXTBeUsed) {
-        c->hyscale_fast = RENAME(hyscale_fast);
-        c->hcscale_fast = RENAME(hcscale_fast);
+        c->hyscale_fast = ff_hyscale_fast_mmxext;
+        c->hcscale_fast = ff_hcscale_fast_mmxext;
     } else {
 #endif /* COMPILE_TEMPLATE_MMXEXT */
         c->hyscale_fast = NULL;

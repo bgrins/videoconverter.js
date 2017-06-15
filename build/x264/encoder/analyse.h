@@ -1,7 +1,7 @@
 /*****************************************************************************
  * analyse.h: macroblock analysis
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *          Loren Merritt <lorenm@u.washington.edu>
@@ -27,8 +27,7 @@
 #ifndef X264_ANALYSE_H
 #define X264_ANALYSE_H
 
-float *x264_analyse_prepare_costs( x264_t *h );
-int x264_analyse_init_costs( x264_t *h, float *logs, int qp );
+int x264_analyse_init_costs( x264_t *h );
 void x264_analyse_free_costs( x264_t *h );
 void x264_analyse_weight_frame( x264_t *h, int end );
 void x264_macroblock_analyse( x264_t *h );

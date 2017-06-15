@@ -15,13 +15,21 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "./vp9/encoder/vp9_resize.h"
+#include "../tools_common.h"
+#include "../vp9/encoder/vp9_resize.h"
 
-static void usage(char *progname) {
+static const char *exec_name = NULL;
+
+static void usage() {
   printf("Usage:\n");
   printf("%s <input_yuv> <width>x<height> <target_width>x<target_height> ",
-         progname);
+         exec_name);
   printf("<output_yuv> [<frames>]\n");
+}
+
+void usage_exit(void) {
+  usage();
+  exit(EXIT_FAILURE);
 }
 
 static int parse_dim(char *v, int *width, int *height) {
@@ -47,9 +55,11 @@ int main(int argc, char *argv[]) {
   int f, frames;
   int width, height, target_width, target_height;
 
+  exec_name = argv[0];
+
   if (argc < 5) {
     printf("Incorrect parameters:\n");
-    usage(argv[0]);
+    usage();
     return 1;
   }
 
@@ -57,25 +67,25 @@ int main(int argc, char *argv[]) {
   fout = argv[4];
   if (!parse_dim(argv[2], &width, &height)) {
     printf("Incorrect parameters: %s\n", argv[2]);
-    usage(argv[0]);
+    usage();
     return 1;
   }
   if (!parse_dim(argv[3], &target_width, &target_height)) {
     printf("Incorrect parameters: %s\n", argv[3]);
-    usage(argv[0]);
+    usage();
     return 1;
   }
 
   fpin = fopen(fin, "rb");
   if (fpin == NULL) {
     printf("Can't open file %s to read\n", fin);
-    usage(argv[0]);
+    usage();
     return 1;
   }
   fpout = fopen(fout, "wb");
   if (fpout == NULL) {
     printf("Can't open file %s to write\n", fout);
-    usage(argv[0]);
+    usage();
     return 1;
   }
   if (argc >= 6)

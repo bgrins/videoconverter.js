@@ -1,11 +1,11 @@
 /*****************************************************************************
  * x264.h: x264 public header
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *          Loren Merritt <lorenm@u.washington.edu>
- *          Jason Garrett-Glaser <darkshikari@gmail.com>
+ *          Fiona Glaser <fiona@x264.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,8 +28,12 @@
 #ifndef X264_X264_H
 #define X264_X264_H
 
-#if !defined(_STDINT_H) && !defined(_STDINT_H_) && !defined(_STDINT_H_INCLUDED) &&\
-    !defined(_INTTYPES_H) && !defined(_INTTYPES_H_)
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#if !defined(_STDINT_H) && !defined(_STDINT_H_) && !defined(_STDINT_H_INCLUDED) && !defined(_STDINT) &&\
+    !defined(_SYS_STDINT_H_) && !defined(_INTTYPES_H) && !defined(_INTTYPES_H_) && !defined(_INTTYPES)
 # ifdef _MSC_VER
 #  pragma message("You must include stdint.h or inttypes.h before x264.h")
 # else
@@ -41,7 +45,7 @@
 
 #include "x264_config.h"
 
-#define X264_BUILD 142
+#define X264_BUILD 148
 
 /* Application developers planning to link against a shared library version of
  * libx264 from a Microsoft Visual Studio or similar development environment
@@ -90,7 +94,7 @@ enum nal_priority_e
  * All data returned in an x264_nal_t, including the data in p_payload, is no longer
  * valid after the next call to x264_encoder_encode.  Thus it must be used or copied
  * before calling x264_encoder_encode or x264_encoder_headers again. */
-typedef struct
+typedef struct x264_nal_t
 {
     int i_ref_idc;  /* nal_priority_e */
     int i_type;     /* nal_unit_type_e */
@@ -129,8 +133,8 @@ typedef struct
 #define X264_CPU_AVX             0x0000400  /* AVX support: requires OS support even if YMM registers aren't used. */
 #define X264_CPU_XOP             0x0000800  /* AMD XOP */
 #define X264_CPU_FMA4            0x0001000  /* AMD FMA4 */
-#define X264_CPU_AVX2            0x0002000  /* AVX2 */
-#define X264_CPU_FMA3            0x0004000  /* Intel FMA3 */
+#define X264_CPU_FMA3            0x0002000  /* FMA3 */
+#define X264_CPU_AVX2            0x0004000  /* AVX2 */
 #define X264_CPU_BMI1            0x0008000  /* BMI1 */
 #define X264_CPU_BMI2            0x0010000  /* BMI2 */
 /* x86 modifiers */
@@ -152,10 +156,14 @@ typedef struct
 /* PowerPC */
 #define X264_CPU_ALTIVEC         0x0000001
 
-/* ARM */
+/* ARM and AArch64 */
 #define X264_CPU_ARMV6           0x0000001
 #define X264_CPU_NEON            0x0000002  /* ARM NEON */
 #define X264_CPU_FAST_NEON_MRC   0x0000004  /* Transfer from NEON to ARM register is fast (Cortex-A9) */
+#define X264_CPU_ARMV8           0x0000008
+
+/* MIPS */
+#define X264_CPU_MSA             0x0000001  /* MIPS MSA */
 
 /* Analyse flags */
 #define X264_ANALYSE_I4x4       0x0001  /* Analyse i4x4 */
@@ -182,6 +190,7 @@ typedef struct
 #define X264_AQ_NONE                 0
 #define X264_AQ_VARIANCE             1
 #define X264_AQ_AUTOVARIANCE         2
+#define X264_AQ_AUTOVARIANCE_BIASED  3
 #define X264_B_ADAPT_NONE            0
 #define X264_B_ADAPT_FAST            1
 #define X264_B_ADAPT_TRELLIS         2
@@ -200,10 +209,12 @@ static const char * const x264_b_pyramid_names[] = { "none", "strict", "normal",
 static const char * const x264_overscan_names[] = { "undef", "show", "crop", 0 };
 static const char * const x264_vidformat_names[] = { "component", "pal", "ntsc", "secam", "mac", "undef", 0 };
 static const char * const x264_fullrange_names[] = { "off", "on", 0 };
-static const char * const x264_colorprim_names[] = { "", "bt709", "undef", "", "bt470m", "bt470bg", "smpte170m", "smpte240m", "film", "bt2020", 0 };
+static const char * const x264_colorprim_names[] = { "", "bt709", "undef", "", "bt470m", "bt470bg", "smpte170m", "smpte240m", "film", "bt2020", "smpte428",
+                                                     "smpte431", "smpte432", 0 };
 static const char * const x264_transfer_names[] = { "", "bt709", "undef", "", "bt470m", "bt470bg", "smpte170m", "smpte240m", "linear", "log100", "log316",
-                                                    "iec61966-2-4", "bt1361e", "iec61966-2-1", "bt2020-10", "bt2020-12", 0 };
-static const char * const x264_colmatrix_names[] = { "GBR", "bt709", "undef", "", "fcc", "bt470bg", "smpte170m", "smpte240m", "YCgCo", "bt2020nc", "bt2020c", 0 };
+                                                    "iec61966-2-4", "bt1361e", "iec61966-2-1", "bt2020-10", "bt2020-12", "smpte2084", "smpte428", 0 };
+static const char * const x264_colmatrix_names[] = { "GBR", "bt709", "undef", "", "fcc", "bt470bg", "smpte170m", "smpte240m", "YCgCo", "bt2020nc", "bt2020c",
+                                                     "smpte2085", 0 };
 static const char * const x264_nal_hrd_names[] = { "none", "vbr", "cbr", 0 };
 
 /* Colorspace type */
@@ -212,16 +223,17 @@ static const char * const x264_nal_hrd_names[] = { "none", "vbr", "cbr", 0 };
 #define X264_CSP_I420           0x0001  /* yuv 4:2:0 planar */
 #define X264_CSP_YV12           0x0002  /* yvu 4:2:0 planar */
 #define X264_CSP_NV12           0x0003  /* yuv 4:2:0, with one y plane and one packed u+v */
-#define X264_CSP_I422           0x0004  /* yuv 4:2:2 planar */
-#define X264_CSP_YV16           0x0005  /* yvu 4:2:2 planar */
-#define X264_CSP_NV16           0x0006  /* yuv 4:2:2, with one y plane and one packed u+v */
-#define X264_CSP_V210           0x0007  /* 10-bit yuv 4:2:2 packed in 32 */
-#define X264_CSP_I444           0x0008  /* yuv 4:4:4 planar */
-#define X264_CSP_YV24           0x0009  /* yvu 4:4:4 planar */
-#define X264_CSP_BGR            0x000a  /* packed bgr 24bits   */
-#define X264_CSP_BGRA           0x000b  /* packed bgr 32bits   */
-#define X264_CSP_RGB            0x000c  /* packed rgb 24bits   */
-#define X264_CSP_MAX            0x000d  /* end of list */
+#define X264_CSP_NV21           0x0004  /* yuv 4:2:0, with one y plane and one packed v+u */
+#define X264_CSP_I422           0x0005  /* yuv 4:2:2 planar */
+#define X264_CSP_YV16           0x0006  /* yvu 4:2:2 planar */
+#define X264_CSP_NV16           0x0007  /* yuv 4:2:2, with one y plane and one packed u+v */
+#define X264_CSP_V210           0x0008  /* 10-bit yuv 4:2:2 packed in 32 */
+#define X264_CSP_I444           0x0009  /* yuv 4:4:4 planar */
+#define X264_CSP_YV24           0x000a  /* yvu 4:4:4 planar */
+#define X264_CSP_BGR            0x000b  /* packed bgr 24bits   */
+#define X264_CSP_BGRA           0x000c  /* packed bgr 32bits   */
+#define X264_CSP_RGB            0x000d  /* packed rgb 24bits   */
+#define X264_CSP_MAX            0x000e  /* end of list */
 #define X264_CSP_VFLIP          0x1000  /* the csp is vertically flipped */
 #define X264_CSP_HIGH_DEPTH     0x2000  /* the csp has a depth of 16 bits per pixel component */
 
@@ -233,7 +245,7 @@ static const char * const x264_nal_hrd_names[] = { "none", "vbr", "cbr", 0 };
 #define X264_TYPE_BREF          0x0004  /* Non-disposable B-frame */
 #define X264_TYPE_B             0x0005
 #define X264_TYPE_KEYFRAME      0x0006  /* IDR or I depending on b_open_gop option */
-#define IS_X264_TYPE_I(x) ((x)==X264_TYPE_I || (x)==X264_TYPE_IDR)
+#define IS_X264_TYPE_I(x) ((x)==X264_TYPE_I || (x)==X264_TYPE_IDR || (x)==X264_TYPE_KEYFRAME)
 #define IS_X264_TYPE_B(x) ((x)==X264_TYPE_B || (x)==X264_TYPE_BREF)
 
 /* Log level */
@@ -255,7 +267,7 @@ static const char * const x264_nal_hrd_names[] = { "none", "vbr", "cbr", 0 };
 /* Zones: override ratecontrol or other options for specific sections of the video.
  * See x264_encoder_reconfig() for which options can be changed.
  * If zones overlap, whichever comes later in the list takes precedence. */
-typedef struct
+typedef struct x264_zone_t
 {
     int i_start, i_end; /* range of frame numbers */
     int b_force_qp; /* whether to use qp vs bitrate factor */
@@ -549,7 +561,7 @@ void x264_nal_encode( x264_t *h, uint8_t *dst, x264_nal_t *nal );
  * H.264 level restriction information
  ****************************************************************************/
 
-typedef struct
+typedef struct x264_level_t
 {
     int level_idc;
     int mbps;        /* max macroblock processing rate (macroblocks/sec) */
@@ -686,7 +698,7 @@ enum pic_struct_e
     PIC_STRUCT_TRIPLE            = 9, // triple frame
 };
 
-typedef struct
+typedef struct x264_hrd_t
 {
     double cpb_initial_arrival_time;
     double cpb_final_arrival_time;
@@ -704,14 +716,14 @@ typedef struct
  * Payloads are written first in order of input, apart from in the case when HRD
  * is enabled where payloads are written after the Buffering Period SEI. */
 
-typedef struct
+typedef struct x264_sei_payload_t
 {
     int payload_size;
     int payload_type;
     uint8_t *payload;
 } x264_sei_payload_t;
 
-typedef struct
+typedef struct x264_sei_t
 {
     int num_payloads;
     x264_sei_payload_t *payloads;
@@ -719,7 +731,7 @@ typedef struct
     void (*sei_free)( void* );
 } x264_sei_t;
 
-typedef struct
+typedef struct x264_image_t
 {
     int     i_csp;       /* Colorspace */
     int     i_plane;     /* Number of image planes */
@@ -727,7 +739,7 @@ typedef struct
     uint8_t *plane[4];   /* Pointers to each plane */
 } x264_image_t;
 
-typedef struct
+typedef struct x264_image_properties_t
 {
     /* All arrays of data here are ordered as follows:
      * each array contains one offset per macroblock, in raster scan order.  In interlaced
@@ -783,13 +795,11 @@ typedef struct
     double f_crf_avg;
 } x264_image_properties_t;
 
-typedef struct
+typedef struct x264_picture_t
 {
     /* In: force picture type (if not auto)
      *     If x264 encoding parameters are violated in the forcing of picture types,
      *     x264 will correct the input picture type and log a warning.
-     *     The quality of frametype decisions may suffer if a great deal of fine-grained
-     *     mixing of auto and forced frametypes is done.
      * Out: type of the picture encoded */
     int     i_type;
     /* In: force quantizer for != X264_QP_AUTO */
@@ -943,5 +953,9 @@ void    x264_encoder_intra_refresh( x264_t * );
  *
  *      Returns 0 on success, negative on failure. */
 int x264_encoder_invalidate_reference( x264_t *, int64_t pts );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

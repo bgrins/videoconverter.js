@@ -16,14 +16,19 @@
 extern "C" {
 #endif
 
-struct VP9Common;
+#include "vp9/common/vp9_enums.h"
+
 struct VP9Decoder;
+struct vpx_read_bit_buffer;
 
-void vp9_init_dequantizer(struct VP9Common *cm);
+int vp9_read_sync_code(struct vpx_read_bit_buffer *const rb);
+void vp9_read_frame_size(struct vpx_read_bit_buffer *rb,
+                         int *width, int *height);
+BITSTREAM_PROFILE vp9_read_profile(struct vpx_read_bit_buffer *rb);
 
-int vp9_decode_frame(struct VP9Decoder *pbi,
-                     const uint8_t *data, const uint8_t *data_end,
-                     const uint8_t **p_data_end);
+void vp9_decode_frame(struct VP9Decoder *pbi,
+                      const uint8_t *data, const uint8_t *data_end,
+                      const uint8_t **p_data_end);
 
 #ifdef __cplusplus
 }  // extern "C"

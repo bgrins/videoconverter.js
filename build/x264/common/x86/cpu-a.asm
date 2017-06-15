@@ -1,11 +1,11 @@
 ;*****************************************************************************
 ;* cpu-a.asm: x86 cpu utilities
 ;*****************************************************************************
-;* Copyright (C) 2003-2014 x264 project
+;* Copyright (C) 2003-2016 x264 project
 ;*
 ;* Authors: Laurent Aimar <fenrir@via.ecp.fr>
 ;*          Loren Merritt <lorenm@u.washington.edu>
-;*          Jason Garrett-Glaser <darkshikari@gmail.com>
+;*          Fiona Glaser <fiona@x264.com>
 ;*
 ;* This program is free software; you can redistribute it and/or modify
 ;* it under the terms of the GNU General Public License as published by
@@ -144,54 +144,4 @@ cglobal cpu_emms
 ;-----------------------------------------------------------------------------
 cglobal cpu_sfence
     sfence
-    ret
-
-cextern intel_cpu_indicator_init
-
-;-----------------------------------------------------------------------------
-; void safe_intel_cpu_indicator_init( void );
-;-----------------------------------------------------------------------------
-cglobal safe_intel_cpu_indicator_init
-    push r0
-    push r1
-    push r2
-    push r3
-    push r4
-    push r5
-    push r6
-%if ARCH_X86_64
-    push r7
-    push r8
-    push r9
-    push r10
-    push r11
-    push r12
-    push r13
-    push r14
-%endif
-    push rbp
-    mov  rbp, rsp
-%if WIN64
-    sub  rsp, 32 ; shadow space
-%endif
-    and  rsp, ~31
-    call intel_cpu_indicator_init
-    leave
-%if ARCH_X86_64
-    pop r14
-    pop r13
-    pop r12
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-    pop r7
-%endif
-    pop r6
-    pop r5
-    pop r4
-    pop r3
-    pop r2
-    pop r1
-    pop r0
     ret

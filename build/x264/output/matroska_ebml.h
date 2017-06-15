@@ -1,7 +1,7 @@
 /*****************************************************************************
  * matroska_ebml.h: matroska muxer utilities
  *****************************************************************************
- * Copyright (C) 2005-2014 x264 project
+ * Copyright (C) 2005-2016 x264 project
  *
  * Authors: Mike Matsnev <mike@haali.su>
  *
@@ -27,10 +27,10 @@
 #define X264_MATROSKA_EBML_H
 
 /* Matroska display size units from the spec */
-#define	DS_PIXELS        0
-#define	DS_CM            1
-#define	DS_INCHES        2
-#define	DS_ASPECT_RATIO  3
+#define DS_PIXELS        0
+#define DS_CM            1
+#define DS_INCHES        2
+#define DS_ASPECT_RATIO  3
 
 typedef struct mk_writer mk_writer;
 

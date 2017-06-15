@@ -56,6 +56,25 @@ AVOutputFormat ff_ac3_muxer = {
 #endif
 
 #if CONFIG_ADX_MUXER
+
+static int adx_write_trailer(AVFormatContext *s)
+{
+    AVIOContext *pb = s->pb;
+    AVCodecParameters *par = s->streams[0]->codecpar;
+
+    if (pb->seekable) {
+        int64_t file_size = avio_tell(pb);
+        uint64_t sample_count = (file_size - 36) / par->channels / 18 * 32;
+        if (sample_count <= UINT32_MAX) {
+            avio_seek(pb, 12, SEEK_SET);
+            avio_wb32(pb, sample_count);
+            avio_seek(pb, file_size, SEEK_SET);
+        }
+    }
+
+    return 0;
+}
+
 AVOutputFormat ff_adx_muxer = {
     .name              = "adx",
     .long_name         = NULL_IF_CONFIG_SMALL("CRI ADX"),
@@ -64,6 +83,7 @@ AVOutputFormat ff_adx_muxer = {
     .video_codec       = AV_CODEC_ID_NONE,
     .write_header      = force_one_stream,
     .write_packet      = ff_raw_write_packet,
+    .write_trailer     = adx_write_trailer,
     .flags             = AVFMT_NOTIMESTAMPS,
 };
 #endif
@@ -95,7 +115,7 @@ AVOutputFormat ff_data_muxer = {
 AVOutputFormat ff_dirac_muxer = {
     .name              = "dirac",
     .long_name         = NULL_IF_CONFIG_SMALL("raw Dirac"),
-    .extensions        = "drc",
+    .extensions        = "drc,vc2",
     .audio_codec       = AV_CODEC_ID_NONE,
     .video_codec       = AV_CODEC_ID_DIRAC,
     .write_header      = force_one_stream,
@@ -173,6 +193,20 @@ AVOutputFormat ff_g723_1_muxer = {
 };
 #endif
 
+#if CONFIG_GSM_MUXER
+AVOutputFormat ff_gsm_muxer = {
+    .name              = "gsm",
+    .long_name         = NULL_IF_CONFIG_SMALL("raw GSM"),
+    .mime_type         = "audio/x-gsm",
+    .extensions        = "gsm",
+    .audio_codec       = AV_CODEC_ID_GSM,
+    .video_codec       = AV_CODEC_ID_NONE,
+    .write_header      = force_one_stream,
+    .write_packet      = ff_raw_write_packet,
+    .flags             = AVFMT_NOTIMESTAMPS,
+};
+#endif
+
 #if CONFIG_H261_MUXER
 AVOutputFormat ff_h261_muxer = {
     .name              = "h261",
@@ -205,7 +239,7 @@ AVOutputFormat ff_h263_muxer = {
 AVOutputFormat ff_h264_muxer = {
     .name              = "h264",
     .long_name         = NULL_IF_CONFIG_SMALL("raw H.264 video"),
-    .extensions        = "h264",
+    .extensions        = "h264,264",
     .audio_codec       = AV_CODEC_ID_NONE,
     .video_codec       = AV_CODEC_ID_H264,
     .write_header      = force_one_stream,
@@ -218,9 +252,10 @@ AVOutputFormat ff_h264_muxer = {
 AVOutputFormat ff_hevc_muxer = {
     .name              = "hevc",
     .long_name         = NULL_IF_CONFIG_SMALL("raw HEVC video"),
-    .extensions        = "hevc",
+    .extensions        = "hevc,h265,265",
     .audio_codec       = AV_CODEC_ID_NONE,
     .video_codec       = AV_CODEC_ID_HEVC,
+    .write_header      = force_one_stream,
     .write_packet      = ff_raw_write_packet,
     .flags             = AVFMT_NOTIMESTAMPS,
 };
@@ -233,6 +268,7 @@ AVOutputFormat ff_m4v_muxer = {
     .extensions        = "m4v",
     .audio_codec       = AV_CODEC_ID_NONE,
     .video_codec       = AV_CODEC_ID_MPEG4,
+    .write_header      = force_one_stream,
     .write_packet      = ff_raw_write_packet,
     .flags             = AVFMT_NOTIMESTAMPS,
 };
@@ -249,6 +285,19 @@ AVOutputFormat ff_mjpeg_muxer = {
     .write_header      = force_one_stream,
     .write_packet      = ff_raw_write_packet,
     .flags             = AVFMT_NOTIMESTAMPS,
+};
+#endif
+
+#if CONFIG_SINGLEJPEG_MUXER
+AVOutputFormat ff_singlejpeg_muxer = {
+    .name              = "singlejpeg",
+    .long_name         = NULL_IF_CONFIG_SMALL("JPEG single image"),
+    .mime_type         = "image/jpeg",
+    .audio_codec       = AV_CODEC_ID_NONE,
+    .video_codec       = AV_CODEC_ID_MJPEG,
+    .write_packet      = ff_raw_write_packet,
+    .flags             = AVFMT_NOTIMESTAMPS,
+    .write_header      = force_one_stream,
 };
 #endif
 

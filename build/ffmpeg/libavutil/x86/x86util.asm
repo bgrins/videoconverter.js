@@ -69,6 +69,15 @@
     SWAP %2, %3
 %endmacro
 
+%macro TRANSPOSE2x4x4B 5
+    SBUTTERFLY bw,  %1, %2, %5
+    SBUTTERFLY bw,  %3, %4, %5
+    SBUTTERFLY wd,  %1, %3, %5
+    SBUTTERFLY wd,  %2, %4, %5
+    SBUTTERFLY dq,  %1, %2, %5
+    SBUTTERFLY dq,  %3, %4, %5
+%endmacro
+
 %macro TRANSPOSE2x4x4W 5
     SBUTTERFLY wd,  %1, %2, %5
     SBUTTERFLY wd,  %3, %4, %5
@@ -96,6 +105,43 @@
     movlhps m%5, m%2, m%4
     movhlps m%4, m%2
     SWAP %5, %2, %3
+%endmacro
+
+%macro TRANSPOSE8x4D 9-11
+%if ARCH_X86_64
+    SBUTTERFLY dq,  %1, %2, %9
+    SBUTTERFLY dq,  %3, %4, %9
+    SBUTTERFLY dq,  %5, %6, %9
+    SBUTTERFLY dq,  %7, %8, %9
+    SBUTTERFLY qdq, %1, %3, %9
+    SBUTTERFLY qdq, %2, %4, %9
+    SBUTTERFLY qdq, %5, %7, %9
+    SBUTTERFLY qdq, %6, %8, %9
+    SWAP %2, %5
+    SWAP %4, %7
+%else
+; in:  m0..m7
+; out: m0..m7, unless %11 in which case m2 is in %9
+; spills into %9 and %10
+    movdqa %9, m%7
+    SBUTTERFLY dq,  %1, %2, %7
+    movdqa %10, m%2
+    movdqa m%7, %9
+    SBUTTERFLY dq,  %3, %4, %2
+    SBUTTERFLY dq,  %5, %6, %2
+    SBUTTERFLY dq,  %7, %8, %2
+    SBUTTERFLY qdq, %1, %3, %2
+    movdqa %9, m%3
+    movdqa m%2, %10
+    SBUTTERFLY qdq, %2, %4, %3
+    SBUTTERFLY qdq, %5, %7, %3
+    SBUTTERFLY qdq, %6, %8, %3
+    SWAP %2, %5
+    SWAP %4, %7
+%if %0<11
+    movdqa m%3, %9
+%endif
+%endif
 %endmacro
 
 %macro TRANSPOSE8x8W 9-11
@@ -164,13 +210,13 @@
 %endif
 %endmacro
 
-%macro PSIGNW_MMX 2
+%macro PSIGNW 2
+%if cpuflag(ssse3)
+    psignw     %1, %2
+%else
     pxor       %1, %2
     psubw      %1, %2
-%endmacro
-
-%macro PSIGNW_SSSE3 2
-    psignw     %1, %2
+%endif
 %endmacro
 
 %macro ABS1 2
@@ -308,6 +354,17 @@
 %else
     pmaddwd %1, [pw_1]
     HADDD   %1, %2
+%endif
+%endmacro
+
+%macro HADDPS 3 ; dst, src, tmp
+%if cpuflag(sse3)
+    haddps  %1, %1, %2
+%else
+    movaps  %3, %1
+    shufps  %1, %2, q2020
+    shufps  %3, %2, q3131
+    addps   %1, %3
 %endif
 %endmacro
 
@@ -598,7 +655,9 @@
 %endmacro
 
 %macro SPLATW 2-3 0
-%if mmsize == 16
+%if cpuflag(avx2) && %3 == 0
+    vpbroadcastw %1, %2
+%elif mmsize == 16
     pshuflw    %1, %2, (%3)*0x55
     punpcklqdq %1, %1
 %elif cpuflag(mmxext)
@@ -628,6 +687,11 @@
 %elif cpuflag(sse)
     shufps  %1, %1, 0
 %endif
+%endmacro
+
+%macro CLIPUB 3 ;(dst, min, max)
+    pmaxub %1, %2
+    pminub %1, %3
 %endmacro
 
 %macro CLIPW 3 ;(dst, min, max)
@@ -711,25 +775,6 @@
     psrad        %1, 16
 %endif
 %endmacro
-
-%macro PMA_EMU 4
-    %macro %1 5-8 %2, %3, %4
-        %if cpuflag(xop)
-            v%6 %1, %2, %3, %4
-        %elifidn %1, %4
-            %7 %5, %2, %3
-            %8 %1, %4, %5
-        %else
-            %7 %1, %2, %3
-            %8 %1, %4
-        %endif
-    %endmacro
-%endmacro
-
-PMA_EMU  PMACSWW,  pmacsww,  pmullw, paddw
-PMA_EMU  PMACSDD,  pmacsdd,  pmulld, paddd ; sse4 emulation
-PMA_EMU PMACSDQL, pmacsdql,  pmuldq, paddq ; sse4 emulation
-PMA_EMU PMADCSWD, pmadcswd, pmaddwd, paddd
 
 ; Wrapper for non-FMA version of fmaddps
 %macro FMULADD_PS 5

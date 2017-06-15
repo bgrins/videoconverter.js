@@ -1,7 +1,7 @@
 /*****************************************************************************
  * mp4.c: mp4 muxer
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *          Loren Merritt <lorenm@u.washington.edu>
@@ -169,8 +169,9 @@ static int open_file( char *psz_filename, hnd_t *p_handle, cli_output_opt_t *opt
     FILE *fh = x264_fopen( psz_filename, "w" );
     if( !fh )
         return -1;
-    FAIL_IF_ERR( !x264_is_regular_file( fh ), "mp4", "MP4 output is incompatible with non-regular file `%s'\n", psz_filename )
+    int b_regular = x264_is_regular_file( fh );
     fclose( fh );
+    FAIL_IF_ERR( !b_regular, "mp4", "MP4 output is incompatible with non-regular file `%s'\n", psz_filename )
 
     mp4_hnd_t *p_mp4 = calloc( 1, sizeof(mp4_hnd_t) );
     if( !p_mp4 )

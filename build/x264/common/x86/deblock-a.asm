@@ -1,10 +1,10 @@
 ;*****************************************************************************
 ;* deblock-a.asm: x86 deblocking
 ;*****************************************************************************
-;* Copyright (C) 2005-2014 x264 project
+;* Copyright (C) 2005-2016 x264 project
 ;*
 ;* Authors: Loren Merritt <lorenm@u.washington.edu>
-;*          Jason Garrett-Glaser <darkshikari@gmail.com>
+;*          Fiona Glaser <fiona@x264.com>
 ;*          Oskar Arvidsson <oskar@irock.se>
 ;*
 ;* This program is free software; you can redistribute it and/or modify
@@ -423,7 +423,7 @@ DEBLOCK_LUMA_64
 %endif
 
 %macro SWAPMOVA 2
-%ifid %1
+%ifnum sizeof%1
     SWAP %1, %2
 %else
     mova %1, %2
@@ -869,8 +869,8 @@ DEBLOCK_LUMA_INTRA
     mova       m2, m0
     punpckldq  m0, m1
     punpckhdq  m2, m1
-    movhlps    m1, m0
-    movhlps    m3, m2
+    MOVHL      m1, m0
+    MOVHL      m3, m2
 %endif
 %endmacro
 
@@ -883,7 +883,7 @@ DEBLOCK_LUMA_INTRA
     punpcklwd  m1, m2
 %else
     punpcklwd  m1, m2
-    movhlps    m0, m1
+    MOVHL      m0, m1
 %endif
     movd       %3, m0
     movd       %1, m1
@@ -1266,11 +1266,7 @@ cglobal deblock_h_luma, 5,9,0,0x60+16*WIN64
     lea    r8, [r1*3]
     lea    r6, [r0-4]
     lea    r5, [r0-4+r8]
-%if WIN64
-    %define pix_tmp rsp+0x30 ; shadow space + r4
-%else
-    %define pix_tmp rsp
-%endif
+    %xdefine pix_tmp rsp+0x30*WIN64 ; shadow space + r4
 
     ; transpose 6x16 -> tmp space
     TRANSPOSE6x8_MEM  PASS8ROWS(r6, r5, r1, r8), pix_tmp

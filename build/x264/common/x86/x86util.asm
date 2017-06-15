@@ -1,7 +1,7 @@
 ;*****************************************************************************
 ;* x86util.asm: x86 utility macros
 ;*****************************************************************************
-;* Copyright (C) 2008-2014 x264 project
+;* Copyright (C) 2008-2016 x264 project
 ;*
 ;* Authors: Holger Lubitz <holger@lubitz.org>
 ;*          Loren Merritt <lorenm@u.washington.edu>
@@ -290,6 +290,18 @@
     pminsw %1, %3
 %endmacro
 
+%macro MOVHL 2 ; dst, src
+%ifidn %1, %2
+    punpckhqdq %1, %2
+%elif cpuflag(avx)
+    punpckhqdq %1, %2, %2
+%elif cpuflag(sse4)
+    pshufd     %1, %2, q3232 ; pshufd is slow on some older CPUs, so only use it on more modern ones
+%else
+    movhlps    %1, %2        ; may cause an int/float domain transition and has a dependency on dst
+%endif
+%endmacro
+
 %macro HADDD 2 ; sum junk
 %if sizeof%1 == 32
 %define %2 xmm%2
@@ -298,13 +310,12 @@
     paddd   %1, %2
 %endif
 %if mmsize >= 16
-%if cpuflag(xop) && sizeof%1 == 16
-    vphadddq %1, %1
-%endif
-    movhlps %2, %1
+    MOVHL   %2, %1
     paddd   %1, %2
 %endif
-%if notcpuflag(xop) || sizeof%1 != 16
+%if cpuflag(xop) && sizeof%1 == 16
+    vphadddq %1, %1
+%else
     PSHUFLW %2, %1, q0032
     paddd   %1, %2
 %endif
@@ -315,11 +326,11 @@
 %macro HADDW 2 ; reg, tmp
 %if cpuflag(xop) && sizeof%1 == 16
     vphaddwq  %1, %1
-    movhlps   %2, %1
+    MOVHL     %2, %1
     paddd     %1, %2
 %else
-    pmaddwd %1, [pw_1]
-    HADDD   %1, %2
+    pmaddwd   %1, [pw_1]
+    HADDD     %1, %2
 %endif
 %endmacro
 
@@ -337,7 +348,7 @@
 %macro HADDUW 2
 %if cpuflag(xop) && sizeof%1 == 16
     vphadduwq %1, %1
-    movhlps   %2, %1
+    MOVHL     %2, %1
     paddd     %1, %2
 %else
     HADDUWD   %1, %2

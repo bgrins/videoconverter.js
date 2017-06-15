@@ -1,12 +1,12 @@
 /*****************************************************************************
  * x264: top-level x264cli functions
  *****************************************************************************
- * Copyright (C) 2003-2014 x264 project
+ * Copyright (C) 2003-2016 x264 project
  *
  * Authors: Loren Merritt <lorenm@u.washington.edu>
  *          Laurent Aimar <fenrir@via.ecp.fr>
  *          Steven Walters <kemuri9@gmail.com>
- *          Jason Garrett-Glaser <darkshikari@gmail.com>
+ *          Fiona Glaser <fiona@x264.com>
  *          Kieran Kunhya <kieran@kunhya.com>
  *          Henrik Gramner <henrik@gramner.com>
  *
@@ -38,7 +38,6 @@
 #endif
 
 #include <signal.h>
-#define _GNU_SOURCE
 #include <getopt.h>
 #include "common/common.h"
 #include "x264cli.h"
@@ -209,6 +208,13 @@ static const char * const output_csp_names[] =
 #endif
     0
 };
+static const char * const chroma_format_names[] =
+{
+    [0] = "all",
+    [X264_CSP_I420] = "i420",
+    [X264_CSP_I422] = "i422",
+    [X264_CSP_I444] = "i444"
+};
 
 static const char * const range_names[] = { "auto", "tv", "pc", 0 };
 
@@ -320,10 +326,13 @@ static void print_version_info( void )
     printf( "intel: %.2f (%d)\n", __INTEL_COMPILER / 100.f, __INTEL_COMPILER_BUILD_DATE );
 #elif defined(__GNUC__)
     printf( "gcc: " __VERSION__ "\n" );
+#elif defined(_MSC_FULL_VER)
+    printf( "msvc: %.2f (%u)\n", _MSC_VER / 100.f, _MSC_FULL_VER );
 #else
     printf( "using an unknown compiler\n" );
 #endif
-    printf( "configuration: --bit-depth=%d --chroma-format=%s\n", x264_bit_depth, X264_CHROMA_FORMAT ? (output_csp_names[0]+1) : "all" );
+    printf( "x264 configuration: --bit-depth=%d --chroma-format=%s\n", X264_BIT_DEPTH, chroma_format_names[X264_CHROMA_FORMAT] );
+    printf( "libx264 configuration: --bit-depth=%d --chroma-format=%s\n", x264_bit_depth, chroma_format_names[x264_chroma_format] );
     printf( "x264 license: " );
 #if HAVE_GPL
     printf( "GPL version 2 or later\n" );
@@ -432,7 +441,7 @@ static void print_csp_names( int longhelp )
     printf( "                              - valid csps for `lavf' demuxer:\n" );
     printf( INDENT );
     size_t line_len = strlen( INDENT );
-    for( enum PixelFormat i = AV_PIX_FMT_NONE+1; i < AV_PIX_FMT_NB; i++ )
+    for( enum AVPixelFormat i = AV_PIX_FMT_NONE+1; i < AV_PIX_FMT_NB; i++ )
     {
         const char *pfname = av_get_pix_fmt_name( i );
         if( pfname )
@@ -531,7 +540,7 @@ static void help( x264_param_t *defaults, int longhelp )
         "                                  Overrides all settings.\n" );
     H2(
 #if X264_CHROMA_FORMAT <= X264_CSP_I420
-#if BIT_DEPTH==8
+#if X264_BIT_DEPTH==8
         "                                  - baseline:\n"
         "                                    --no-8x8dct --bframes 0 --no-cabac\n"
         "                                    --cqm flat --weightp 0\n"
@@ -559,7 +568,7 @@ static void help( x264_param_t *defaults, int longhelp )
         else H0(
         "                                  - "
 #if X264_CHROMA_FORMAT <= X264_CSP_I420
-#if BIT_DEPTH==8
+#if X264_BIT_DEPTH==8
         "baseline,main,high,"
 #endif
         "high10,"
@@ -701,7 +710,9 @@ static void help( x264_param_t *defaults, int longhelp )
         "                                  - 2: row alternation - L and R are interlaced by row\n"
         "                                  - 3: side by side - L is on the left, R on the right\n"
         "                                  - 4: top bottom - L is on top, R on bottom\n"
-        "                                  - 5: frame alternation - one view per frame\n" );
+        "                                  - 5: frame alternation - one view per frame\n"
+        "                                  - 6: mono - 2D frame without any frame packing\n"
+        "                                  - 7: tile format - L is on top-left, R split across\n" );
     H0( "\n" );
     H0( "Ratecontrol:\n" );
     H0( "\n" );
@@ -724,7 +735,8 @@ static void help( x264_param_t *defaults, int longhelp )
     H2( "      --aq-mode <integer>     AQ method [%d]\n"
         "                                  - 0: Disabled\n"
         "                                  - 1: Variance AQ (complexity mask)\n"
-        "                                  - 2: Auto-variance AQ (experimental)\n", defaults->rc.i_aq_mode );
+        "                                  - 2: Auto-variance AQ\n"
+        "                                  - 3: Auto-variance AQ with bias to dark scenes\n", defaults->rc.i_aq_mode );
     H1( "      --aq-strength <float>   Reduces blocking and blurring in flat and\n"
         "                              textured areas. [%.1f]\n", defaults->rc.f_aq_strength );
     H1( "\n" );
@@ -833,17 +845,19 @@ static void help( x264_param_t *defaults, int longhelp )
         "                                  - %s\n", range_names[0], stringify_names( buf, range_names ) );
     H2( "      --colorprim <string>    Specify color primaries [\"%s\"]\n"
         "                                  - undef, bt709, bt470m, bt470bg, smpte170m,\n"
-        "                                    smpte240m, film, bt2020\n",
+        "                                    smpte240m, film, bt2020, smpte428,\n"
+        "                                    smpte431, smpte432\n",
                                        strtable_lookup( x264_colorprim_names, defaults->vui.i_colorprim ) );
     H2( "      --transfer <string>     Specify transfer characteristics [\"%s\"]\n"
         "                                  - undef, bt709, bt470m, bt470bg, smpte170m,\n"
         "                                    smpte240m, linear, log100, log316,\n"
         "                                    iec61966-2-4, bt1361e, iec61966-2-1,\n"
-        "                                    bt2020-10, bt2020-12\n",
+        "                                    bt2020-10, bt2020-12, smpte2084, smpte428\n",
                                        strtable_lookup( x264_transfer_names, defaults->vui.i_transfer ) );
     H2( "      --colormatrix <string>  Specify color matrix setting [\"%s\"]\n"
         "                                  - undef, bt709, fcc, bt470bg, smpte170m,\n"
-        "                                    smpte240m, GBR, YCgCo, bt2020nc, bt2020c\n",
+        "                                    smpte240m, GBR, YCgCo, bt2020nc, bt2020c,\n"
+        "                                    smpte2085\n",
                                        strtable_lookup( x264_colmatrix_names, defaults->vui.i_colmatrix ) );
     H2( "      --chromaloc <integer>   Specify chroma sample location (0 to 5) [%d]\n",
                                        defaults->vui.i_chroma_loc );
@@ -1284,11 +1298,11 @@ static int init_vid_filters( char *sequence, hnd_t *handle, video_info_t *info, 
     /* force the output csp to what the user specified (or the default) */
     param->i_csp = info->csp;
     int csp = info->csp & X264_CSP_MASK;
-    if( output_csp == X264_CSP_I420 && (csp < X264_CSP_I420 || csp > X264_CSP_NV12) )
+    if( output_csp == X264_CSP_I420 && (csp < X264_CSP_I420 || csp >= X264_CSP_I422) )
         param->i_csp = X264_CSP_I420;
-    else if( output_csp == X264_CSP_I422 && (csp < X264_CSP_I422 || csp > X264_CSP_V210) )
+    else if( output_csp == X264_CSP_I422 && (csp < X264_CSP_I422 || csp >= X264_CSP_I444) )
         param->i_csp = X264_CSP_I422;
-    else if( output_csp == X264_CSP_I444 && (csp < X264_CSP_I444 || csp > X264_CSP_YV24) )
+    else if( output_csp == X264_CSP_I444 && (csp < X264_CSP_I444 || csp >= X264_CSP_BGR) )
         param->i_csp = X264_CSP_I444;
     else if( output_csp == X264_CSP_RGB && (csp < X264_CSP_BGR || csp > X264_CSP_RGB) )
         param->i_csp = X264_CSP_RGB;
@@ -1728,19 +1742,23 @@ generic_option:
 
 static void parse_qpfile( cli_opt_t *opt, x264_picture_t *pic, int i_frame )
 {
-    int num = -1, qp, ret;
+    int num = -1;
     char type;
-    uint64_t file_pos;
     while( num < i_frame )
     {
-        file_pos = ftell( opt->qpfile );
-        qp = -1;
-        ret = fscanf( opt->qpfile, "%d %c%*[ \t]%d\n", &num, &type, &qp );
+        int64_t file_pos = ftell( opt->qpfile );
+        int qp = -1;
+        int ret = fscanf( opt->qpfile, "%d %c%*[ \t]%d\n", &num, &type, &qp );
         pic->i_type = X264_TYPE_AUTO;
         pic->i_qpplus1 = X264_QP_AUTO;
         if( num > i_frame || ret == EOF )
         {
-            fseek( opt->qpfile, file_pos, SEEK_SET );
+            if( file_pos < 0 || fseek( opt->qpfile, file_pos, SEEK_SET ) )
+            {
+                x264_cli_log( "x264", X264_LOG_ERROR, "qpfile seeking failed\n" );
+                fclose( opt->qpfile );
+                opt->qpfile = NULL;
+            }
             break;
         }
         if( num < i_frame && ret >= 2 )

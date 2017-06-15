@@ -38,7 +38,7 @@
 
 #include <float.h>
 
-static const char *var_names[] = {
+static const char * const var_names[] = {
     "in_w" , "iw",  ///< width of the input video
     "in_h" , "ih",  ///< height of the input video
     "out_w", "ow",  ///< width of the input video
@@ -101,7 +101,7 @@ static const AVOption rotate_options[] = {
     { "oh",        "set output height expression", OFFSET(outh_expr_str), AV_OPT_TYPE_STRING, {.str="ih"}, CHAR_MIN, CHAR_MAX, .flags=FLAGS },
     { "fillcolor", "set background fill color",    OFFSET(fillcolor_str), AV_OPT_TYPE_STRING, {.str="black"}, CHAR_MIN, CHAR_MAX, .flags=FLAGS },
     { "c",         "set background fill color",    OFFSET(fillcolor_str), AV_OPT_TYPE_STRING, {.str="black"}, CHAR_MIN, CHAR_MAX, .flags=FLAGS },
-    { "bilinear",  "use bilinear interpolation",   OFFSET(use_bilinear),  AV_OPT_TYPE_INT, {.i64=1}, 0, 1, .flags=FLAGS },
+    { "bilinear",  "use bilinear interpolation",   OFFSET(use_bilinear),  AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, .flags=FLAGS },
     { NULL }
 };
 
@@ -130,7 +130,7 @@ static av_cold void uninit(AVFilterContext *ctx)
 
 static int query_formats(AVFilterContext *ctx)
 {
-    static enum PixelFormat pix_fmts[] = {
+    static const enum AVPixelFormat pix_fmts[] = {
         AV_PIX_FMT_GBRP,   AV_PIX_FMT_GBRAP,
         AV_PIX_FMT_ARGB,   AV_PIX_FMT_RGBA,
         AV_PIX_FMT_ABGR,   AV_PIX_FMT_BGRA,
@@ -145,8 +145,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
-    return 0;
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static double get_rotated_w(void *opaque, double angle)
@@ -237,12 +239,12 @@ static int config_props(AVFilterLink *outlink)
                            func1_names, func1, NULL, NULL, rot, 0, ctx);
     rot->var_values[VAR_OUT_W] = rot->var_values[VAR_OW] = res;
     rot->outw = res + 0.5;
-    SET_SIZE_EXPR(outh, "out_w");
+    SET_SIZE_EXPR(outh, "out_h");
     rot->var_values[VAR_OUT_H] = rot->var_values[VAR_OH] = res;
     rot->outh = res + 0.5;
 
     /* evaluate the width again, as it may depend on the evaluated output height */
-    SET_SIZE_EXPR(outw, "out_h");
+    SET_SIZE_EXPR(outw, "out_w");
     rot->var_values[VAR_OUT_W] = rot->var_values[VAR_OW] = res;
     rot->outw = res + 0.5;
 
@@ -492,11 +494,11 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     for (plane = 0; plane < rot->nb_planes; plane++) {
         int hsub = plane == 1 || plane == 2 ? rot->hsub : 0;
         int vsub = plane == 1 || plane == 2 ? rot->vsub : 0;
-        const int outw = FF_CEIL_RSHIFT(outlink->w, hsub);
-        const int outh = FF_CEIL_RSHIFT(outlink->h, vsub);
+        const int outw = AV_CEIL_RSHIFT(outlink->w, hsub);
+        const int outh = AV_CEIL_RSHIFT(outlink->h, vsub);
         ThreadData td = { .in = in,   .out  = out,
-                          .inw  = FF_CEIL_RSHIFT(inlink->w, hsub),
-                          .inh  = FF_CEIL_RSHIFT(inlink->h, vsub),
+                          .inw  = AV_CEIL_RSHIFT(inlink->w, hsub),
+                          .inh  = AV_CEIL_RSHIFT(inlink->h, vsub),
                           .outh = outh, .outw = outw,
                           .xi = -(outw-1) * c / 2, .yi =  (outw-1) * s / 2,
                           .xprime = -(outh-1) * s / 2,

@@ -22,12 +22,12 @@
 
 /**
  * @file
- * DSP functions (inverse transforms, motion compensation, wavelet recompostions)
+ * DSP functions (inverse transforms, motion compensation, wavelet recompositions)
  * for Indeo Video Interactive codecs.
  */
 
 #include "avcodec.h"
-#include "ivi_common.h"
+#include "ivi.h"
 #include "ivi_dsp.h"
 
 void ff_ivi_recompose53(const IVIPlaneDesc *plane, uint8_t *dst,

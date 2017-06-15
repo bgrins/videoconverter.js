@@ -29,19 +29,20 @@
  */
 
 #include "avcodec.h"
+#include "blockdsp.h"
+#include "bytestream.h"
 #include "bswapdsp.h"
 #include "get_bits.h"
 #include "aandcttab.h"
 #include "eaidct.h"
 #include "idctdsp.h"
 #include "internal.h"
-#include "mpeg12.h"
 #include "mpeg12data.h"
-#include "libavutil/imgutils.h"
+#include "mpeg12vlc.h"
 
 #define EA_PREAMBLE_SIZE    8
-#define MADk_TAG MKTAG('M', 'A', 'D', 'k')    /* MAD i-frame */
-#define MADm_TAG MKTAG('M', 'A', 'D', 'm')    /* MAD p-frame */
+#define MADk_TAG MKTAG('M', 'A', 'D', 'k')    /* MAD I-frame */
+#define MADm_TAG MKTAG('M', 'A', 'D', 'm')    /* MAD P-frame */
 #define MADe_TAG MKTAG('M', 'A', 'D', 'e')    /* MAD lqp-frame */
 
 typedef struct MadContext {
@@ -68,7 +69,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     ff_blockdsp_init(&s->bdsp, avctx);
     ff_bswapdsp_init(&s->bbdsp);
     ff_idctdsp_init(&s->idsp, avctx);
-    ff_init_scantable_permutation(s->idsp.idct_permutation, FF_NO_IDCT_PERM);
+    ff_init_scantable_permutation(s->idsp.idct_permutation, FF_IDCT_PERM_NONE);
     ff_init_scantable(s->idsp.idct_permutation, &s->scantable, ff_zigzag_direct);
     ff_mpeg12_init_vlcs();
 
@@ -100,7 +101,7 @@ static inline void comp_block(MadContext *t, AVFrame *frame,
              frame->linesize[0],
              t->last_frame->data[0] + offset,
              t->last_frame->linesize[0], add);
-    } else if (!(t->avctx->flags & CODEC_FLAG_GRAY)) {
+    } else if (!(t->avctx->flags & AV_CODEC_FLAG_GRAY)) {
         int index = j - 3;
         unsigned offset = (mb_y * 8 + (mv_y/2))*t->last_frame->linesize[index] + mb_x * 8 + (mv_x/2);
         if (offset >= (t->avctx->height/2 - 7) * t->last_frame->linesize[index] - 7)
@@ -119,7 +120,7 @@ static inline void idct_put(MadContext *t, AVFrame *frame, int16_t *block,
         ff_ea_idct_put_c(
             frame->data[0] + (mb_y*16 + ((j&2)<<2))*frame->linesize[0] + mb_x*16 + ((j&1)<<3),
             frame->linesize[0], block);
-    } else if (!(t->avctx->flags & CODEC_FLAG_GRAY)) {
+    } else if (!(t->avctx->flags & AV_CODEC_FLAG_GRAY)) {
         int index = j - 3;
         ff_ea_idct_put_c(
             frame->data[index] + (mb_y*8)*frame->linesize[index] + mb_x*8,
@@ -150,6 +151,11 @@ static inline int decode_block_intra(MadContext *s, int16_t * block)
                 break;
             } else if (level != 0) {
                 i += run;
+                if (i > 63) {
+                    av_log(s->avctx, AV_LOG_ERROR,
+                           "ac-tex damaged at %d %d\n", s->mb_x, s->mb_y);
+                    return -1;
+                }
                 j = scantable[i];
                 level = (level*quant_matrix[j]) >> 4;
                 level = (level-1)|1;
@@ -164,6 +170,11 @@ static inline int decode_block_intra(MadContext *s, int16_t * block)
                 run = SHOW_UBITS(re, &s->gb, 6)+1; LAST_SKIP_BITS(re, &s->gb, 6);
 
                 i += run;
+                if (i > 63) {
+                    av_log(s->avctx, AV_LOG_ERROR,
+                           "ac-tex damaged at %d %d\n", s->mb_x, s->mb_y);
+                    return -1;
+                }
                 j = scantable[i];
                 if (level < 0) {
                     level = -level;
@@ -174,10 +185,6 @@ static inline int decode_block_intra(MadContext *s, int16_t * block)
                     level = (level*quant_matrix[j]) >> 4;
                     level = (level-1)|1;
                 }
-            }
-            if (i > 63) {
-                av_log(s->avctx, AV_LOG_ERROR, "ac-tex damaged at %d %d\n", s->mb_x, s->mb_y);
-                return -1;
             }
 
             block[j] = level;
@@ -243,30 +250,32 @@ static int decode_frame(AVCodecContext *avctx,
 {
     const uint8_t *buf = avpkt->data;
     int buf_size       = avpkt->size;
-    const uint8_t *buf_end = buf+buf_size;
     MadContext *s     = avctx->priv_data;
     AVFrame *frame    = data;
+    GetByteContext gb;
     int width, height;
     int chunk_type;
     int inter, ret;
 
-    if (buf_size < 26) {
-        av_log(avctx, AV_LOG_ERROR, "Input buffer too small\n");
-        *got_frame = 0;
+    bytestream2_init(&gb, buf, buf_size);
+
+    chunk_type = bytestream2_get_le32(&gb);
+    inter = (chunk_type == MADm_TAG || chunk_type == MADe_TAG);
+    bytestream2_skip(&gb, 10);
+
+    av_reduce(&avctx->framerate.den, &avctx->framerate.num,
+              bytestream2_get_le16(&gb), 1000, 1<<30);
+
+    width  = bytestream2_get_le16(&gb);
+    height = bytestream2_get_le16(&gb);
+    bytestream2_skip(&gb, 1);
+    calc_quant_matrix(s, bytestream2_get_byte(&gb));
+    bytestream2_skip(&gb, 2);
+
+    if (bytestream2_get_bytes_left(&gb) < 2) {
+        av_log(avctx, AV_LOG_ERROR, "Input data too small\n");
         return AVERROR_INVALIDDATA;
     }
-
-    chunk_type = AV_RL32(&buf[0]);
-    inter = (chunk_type == MADm_TAG || chunk_type == MADe_TAG);
-    buf += 8;
-
-    av_reduce(&avctx->time_base.num, &avctx->time_base.den,
-              AV_RL16(&buf[6]), 1000, 1<<30);
-
-    width  = AV_RL16(&buf[8]);
-    height = AV_RL16(&buf[10]);
-    calc_quant_matrix(s, buf[13]);
-    buf += 16;
 
     if (width < 16 || height < 16) {
         av_log(avctx, AV_LOG_ERROR, "Dimensions too small\n");
@@ -275,7 +284,7 @@ static int decode_frame(AVCodecContext *avctx,
 
     if (avctx->width != width || avctx->height != height) {
         av_frame_unref(s->last_frame);
-        if((width * height)/2048*7 > buf_end-buf)
+        if((width * height)/2048*7 > bytestream2_get_bytes_left(&gb))
             return AVERROR_INVALIDDATA;
         if ((ret = ff_set_dimensions(avctx, width, height)) < 0)
             return ret;
@@ -298,13 +307,13 @@ static int decode_frame(AVCodecContext *avctx,
     }
 
     av_fast_padded_malloc(&s->bitstream_buf, &s->bitstream_buf_size,
-                          buf_end - buf);
+                          bytestream2_get_bytes_left(&gb));
     if (!s->bitstream_buf)
         return AVERROR(ENOMEM);
-    s->bbdsp.bswap16_buf(s->bitstream_buf, (const uint16_t *) buf,
-                         (buf_end - buf) / 2);
-    memset((uint8_t*)s->bitstream_buf + (buf_end-buf), 0, FF_INPUT_BUFFER_PADDING_SIZE);
-    init_get_bits(&s->gb, s->bitstream_buf, 8*(buf_end-buf));
+    s->bbdsp.bswap16_buf(s->bitstream_buf, (const uint16_t *)(buf + bytestream2_tell(&gb)),
+                         bytestream2_get_bytes_left(&gb) / 2);
+    memset((uint8_t*)s->bitstream_buf + bytestream2_get_bytes_left(&gb), 0, AV_INPUT_BUFFER_PADDING_SIZE);
+    init_get_bits(&s->gb, s->bitstream_buf, 8*(bytestream2_get_bytes_left(&gb)));
 
     for (s->mb_y=0; s->mb_y < (avctx->height+15)/16; s->mb_y++)
         for (s->mb_x=0; s->mb_x < (avctx->width +15)/16; s->mb_x++)
@@ -326,7 +335,7 @@ static av_cold int decode_end(AVCodecContext *avctx)
 {
     MadContext *t = avctx->priv_data;
     av_frame_free(&t->last_frame);
-    av_free(t->bitstream_buf);
+    av_freep(&t->bitstream_buf);
     return 0;
 }
 
@@ -339,5 +348,5 @@ AVCodec ff_eamad_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

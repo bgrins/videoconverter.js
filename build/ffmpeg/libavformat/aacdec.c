@@ -84,9 +84,9 @@ static int adts_aac_read_header(AVFormatContext *s)
     if (!st)
         return AVERROR(ENOMEM);
 
-    st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-    st->codec->codec_id   = s->iformat->raw_codec_id;
-    st->need_parsing      = AVSTREAM_PARSE_FULL_RAW;
+    st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+    st->codecpar->codec_id   = s->iformat->raw_codec_id;
+    st->need_parsing         = AVSTREAM_PARSE_FULL_RAW;
 
     ff_id3v1_read(s);
     if (s->pb->seekable &&
@@ -110,5 +110,6 @@ AVInputFormat ff_aac_demuxer = {
     .read_packet  = ff_raw_read_partial_packet,
     .flags        = AVFMT_GENERIC_INDEX,
     .extensions   = "aac",
+    .mime_type    = "audio/aac,audio/aacp,audio/x-aac",
     .raw_codec_id = AV_CODEC_ID_AAC,
 };
