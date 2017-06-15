@@ -86,9 +86,10 @@ cp dist/lib/libx264.a dist/libx264.bc
 cp ffmpeg/ffmpeg dist/ffmpeg.bc
 
 cd dist
-emcc -s OUTLINING_LIMIT=100000 -s VERBOSE=1 -s TOTAL_MEMORY=33554432 -O2 -v ffmpeg.bc libx264.bc  libvpx.bc libz.bc -o ../ffmpeg-all-codecs.js --pre-js ../ffmpeg_pre.js --post-js ../ffmpeg_post.js
+emcc -s VERBOSE=1 -s TOTAL_MEMORY=33554432 -O2 -v ffmpeg.bc libx264.bc  libvpx.bc libz.bc -o ../ffmpeg-all-codecs.js --pre-js ../ffmpeg_pre.js --post-js ../ffmpeg_post.js  -s WASM=1 -s "BINARYEN_METHOD='native-wasm'" -s ALLOW_MEMORY_GROWTH=1
 cd ..
 
 cp ffmpeg-all-codecs.js* ../demo
+cp ffmpeg-all-codecs.wasm* ../demo
 
 echo "Finished Build"
